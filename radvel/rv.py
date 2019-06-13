@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""APRV.PY - APOGEE Radial Velocity Software
+"""RV.PY - Generic Radial Velocity Software
 
 """
 
@@ -194,6 +194,25 @@ def xcorr_dtype(nlag):
 
 # astropy.modeling can handle errors and constraints
 
+# Create a "wavelength-trimmed" version of a CannonModel model
+def trim_cannon_model(model,lo,hi):
+
+    npix = hi-lo+1
+    nlabels = len(model.vectorizer.label_names)
+    labelled_set = np.zeros([2,nlabels])
+    normalized_flux = np.zeros([2,npix])
+    normalized_ivar = normalized_flux.copy()*0
+    omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+    omodel._s2 = model._s2[lo:hi+1]
+    omodel._scales = model._scales
+    omodel._theta = model._theta[lo:hi+1,:]
+    omodel._design_matrix = model._design_matrix
+    omodel._fiducials = model._fiducials
+    omodel.dispersion = model.dispersion[lo:hi+1]
+    omodel.regularization = model.regularization
+    return omodel
+
+    
 # Object for representing 1D spectra
 class Spec1D:
     # Initialize the object
