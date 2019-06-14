@@ -49,6 +49,10 @@ def gt(x,limit):
     if type(x) is np.ndarray: return np.array(out)
     return out        
 
+def minmax(arr):
+    """Return the minimum and maximum"""
+    return np.array([np.min(arr),np.max(arr)])
+
 def limit(x,llimit,ulimit):
     """Require x to be within upper and lower limits"""
     return lt(gt(x,llimit),ulimit)

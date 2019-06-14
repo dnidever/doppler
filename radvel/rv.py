@@ -25,138 +25,13 @@ from scipy.interpolate import interp1d
 #from lmfit import Model
 #from apogee.utils import yanny, apload
 #from sdss_access.path import path
+import thecannon as tc
 import bindata
+from utils import *
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
-
-def lt(x,limit):
-    """Takes the lesser of x or limit"""
-    if np.array(x).size>1:
-        out = [i if (i<limit) else limit for i in x]
-    else:
-        out = x if (x<limit) else limit
-    if type(x) is np.ndarray: return np.array(out)
-    return out
-    
-def gt(x,limit):
-    """Takes the greater of x or limit"""
-    if np.array(x).size>1:
-        out = [i if (i>limit) else limit for i in x]
-    else:
-        out = x if (x>limit) else limit
-    if type(x) is np.ndarray: return np.array(out)
-    return out        
-
-def limit(x,llimit,ulimit):
-    """Require x to be within upper and lower limits"""
-    return lt(gt(x,llimit),ulimit)
-    
-def gaussian(x, amp, cen, sig, const=0):
-    """1-D gaussian: gaussian(x, amp, cen, sig)"""
-    return (amp / (np.sqrt(2*np.pi) * sig)) * np.exp(-(x-cen)**2 / (2*sig**2)) + const
-
-def gaussbin(x, amp, cen, sig, const=0, dx=1.0):
-    """1-D gaussian with pixel binning
-    
-    This function returns a binned Gaussian
-    par = [height, center, sigma]
-    
-    Parameters
-    ----------
-    x : array
-       The array of X-values.
-    amp : float
-       The Gaussian height/amplitude.
-    cen : float
-       The central position of the Gaussian.
-    sig : float
-       The Gaussian sigma.
-    const : float, optional, default=0.0
-       A constant offset.
-    dx : float, optional, default=1.0
-      The width of each "pixel" (scalar).
-    
-    Returns
-    -------
-    geval : array
-          The binned Gaussian in the pixel
-
-    """
-
-    xcen = np.array(x)-cen             # relative to the center
-    x1cen = xcen - 0.5*dx  # left side of bin
-    x2cen = xcen + 0.5*dx  # right side of bin
-
-    t1cen = x1cen/(np.sqrt(2.0)*sig)  # scale to a unitless Gaussian
-    t2cen = x2cen/(np.sqrt(2.0)*sig)
-
-    # For each value we need to calculate two integrals
-    #  one on the left side and one on the right side
-
-    # Evaluate each point
-    #   ERF = 2/sqrt(pi) * Integral(t=0-z) exp(-t^2) dt
-    #   negative for negative z
-    geval_lower = erf(t1cen)
-    geval_upper = erf(t2cen)
-
-    geval = amp*np.sqrt(2.0)*sig * np.sqrt(np.pi)/2.0 * ( geval_upper - geval_lower )
-    geval += const   # add constant offset
-
-    return geval
-
-def gaussfit(x,y,initpar,sigma=None, bounds=None, binned=False):
-    """Fit 1-D Gaussian to X/Y data"""
-    #gmodel = Model(gaussian)
-    #result = gmodel.fit(y, x=x, amp=initpar[0], cen=initpar[1], sig=initpar[2], const=initpar[3])
-    #return result
-    func = gaussian
-    if binned is True: func=gaussbin
-    return curve_fit(func, x, y, p0=initpar, sigma=sigma, bounds=bounds)
-
-def poly(x,coef):
-    y = np.array(x).copy()*0.0
-    for i in range(len(np.array(coef))):
-        y += np.array(coef)[i]*np.array(x)**i
-    return y
-
-def poly_resid(coef,x,y,sigma=1.0):
-    sig = sigma
-    if sigma is None: sig=1.0
-    return (poly(x,coef)-y)/sig
-
-def poly_fit(x,y,nord,robust=False,sigma=None,bounds=(-np.inf,np.inf)):
-    initpar = np.zeros(nord+1)
-    # Normal polynomial fitting
-    if robust is False:
-        #coef = curve_fit(poly, x, y, p0=initpar, sigma=sigma, bounds=bounds)
-        weights = None
-        if sigma is not None: weights=1/sigma
-        coef = np.polyfit(x,y,nord,w=weights)
-    # Fit with robust polynomial
-    else:
-        res_robust = least_squares(poly_resid, initpar, loss='soft_l1', f_scale=0.1, args=(x,y,sigma))
-        if res_robust.success is False:
-            raise Exception("Problem with least squares polynomial fitting. Status="+str(res_robust.status))
-        coef = res_robust.x
-    return coef
-    
-# Derivate of slope of an array
-def slope(array):
-    """Derivate of slope of an array: slp = slope(array)"""
-    n = len(array)
-    return array[1:n]-array[0:n-1]
-
-# Median Absolute Deviation
-def mad(data, axis=None, func=None, ignore_nan=False):
-    """ Calculate the median absolute deviation."""
-    if type(data) is not np.ndarray: raise ValueError("data must be a numpy array")    
-    return 1.4826 * astropy.stats.median_absolute_deviation(data,axis=axis,func=func,ignore_nan=ignore_nan)
-
-# Gaussian filter
-def gsmooth(data,fwhm,axis=-1,mode='reflect',cval=0.0,truncate=4.0):
-    return gaussian_filter1d(data,fwhm/2.35,axis=axis,mode=mode,cval=cval,truncate=truncate)
 
 def xcorr_dtype(nlag):
     """Return the dtype for the xcorr structure"""
@@ -167,32 +42,40 @@ def xcorr_dtype(nlag):
                       ("vrelerr",float),("w0",float),("dw",float),("chisq",float)])
     return dtype
 
-# NUMPY HAS PERCENTILE AND NANPERCENTILE FUNCTIONS!!
-# Calculate a percentile value from a given 1D array
-#def percentile(arr,percfrac=0.50):
-#    '''
-#    This calculates a percentile from a 1D array.
-#
-#    Parameters
-#    ----------
-#    array : float or int array
-#          The array of values.
-#    percfrac: float, 0-1
-#          The percentage fraction from 0 to 1.
-#
-#    Returns
-#    -------
-#    value : float or int
-#          The calculated percentile value.
-#
-#    '''
-#    if len(arr)==0: return np.nan
-#    si = np.sort(arr)
-#    ind = np.int(np.round(percfrac*len(arr)))
-#    if ind>(len(arr)-1):ind=len(arr)-1
-#    return arr[ind]
-
 # astropy.modeling can handle errors and constraints
+
+# Load the cannon model
+def load_all_cannon_models():
+    fil = os.path.abspath(__file__)
+    codedir = os.path.dirname(fil)
+    datadir = os.path.dirname(codedir)+'/data/'
+    files = glob(datadir+'cannongrid*.pkl')
+    nfiles = len(files)
+    if nfiles==0:
+        raise Exception("No Cannon model files in "+datadir)
+    models = []
+    for f in files:
+        model1 = tc.CannonModel.read(f)
+        ranges = np.zeros([3,2])
+        for i in range(3):
+            ranges[i,:] = minmax(model1._training_set_labels[:,i])
+        model1.ranges = ranges
+        models.append(model1)
+    return models
+
+# Get correct cannon model for a given set of inputs
+def get_best_cannon_model(models,pars):
+    n = len(models)
+    for m in models:
+        #inside.append(m.in_convex_hull(pars))        
+        # in_convex_hull() is very slow
+        inside = True
+        for i in range(3):
+            inside &= (pars[i]>=m.ranges[i,0]) & (pars[i]<=m.ranges[i,1])
+        if inside:
+            return m
+    
+    return None
 
 # Create a "wavelength-trimmed" version of a CannonModel model
 def trim_cannon_model(model,lo,hi):
@@ -212,42 +95,53 @@ def trim_cannon_model(model,lo,hi):
     omodel.regularization = model.regularization
     return omodel
 
-def rebin(arr, new_shape):
-    if arr.ndim>2:
-        raise Exception("Maximum 2D arrays")
-    if arr.ndim==0:
-        raise Exception("Must be an array")
-    if arr.ndim==2:
-        shape = (new_shape[0], arr.shape[0] // new_shape[0],
-                 new_shape[1], arr.shape[1] // new_shape[1])
-        return arr.reshape(shape).mean(-1).mean(1)
-    if arr.ndim==1:
-        shape = (np.array(new_shape,ndmin=1)[0], arr.shape[0] // np.array(new_shape,ndmin=1)[0])
-        return arr.reshape(shape).mean(-1)
-
-def model_spectrum(model,w0=None,w1=None,dw=None,teff=None,logg=None,feh=None):
-    if w0 is None:
-        raise Exception("Need to input W0")
-    if w1 is None:
-        raise Exception("Need to input W1")
-    if dw is None:
-        raise Exception("Need to input DW")
+def model_spectrum(models,teff=None,logg=None,feh=None,w0=None,w1=None,dw=None,):
     if teff is None:
         raise Exception("Need to input TEFF")    
     if logg is None:
         raise Exception("Need to input LOGG")
     if feh is None:
         raise Exception("Need to input FEH")    
+    
+    pars = np.array([teff,logg,feh])
+    # Get best cannon model
+    model = get_best_cannon_model(models,pars)
 
     npix = model.dispersion.shape[0]
+    dw0 = model.dispersion[1]-model.dispersion[0]
+
+    # Defaults for w0, w1, dw
+    if w0 is None:
+        w0 = np.min(model.dispersion)
+    if w1 is None:
+        w1 = np.max(model.dispersion)
+    if dw is None:
+        dw = dw0
+        
     # Get pixel range
     lo = np.argmin(np.abs(model.dispersion-w0))
-    hi = np.argmin(np.abs(model.dispersion-w1))    
+    hi = np.argmin(np.abs(model.dispersion-w1))
     # With buffer
     lobuff = gt(lo-10,0)
     hibuff = lt(hi+10,npix-1)
     # Get trimmed Cannon model
-    model2 = trim_cannon_model(model,lo,hi)
+    model2 = trim_cannon_model(model,lobuff,hibuff)
+    npix2 = model2.dispersion.shape[0]
+    # Get the spectrum
+    wave1 = model2.dispersion
+    spec1 = model2(pars)
+    # Rebin
+    if dw != dw0:
+        binsize = int(dw // dw0)
+        newnpix = int(npix2 // binsize)
+        wave2 = rebin(wave1[0:newnpix*binsize],newnpix)
+        spec2 = rebin(spec1[0:newnpix*binsize],newnpix)
+        return wave2,spec2
+    else:
+        return wave1,spec1
+
+    # Add smoothing?
+    # Add interpolation?
     
     
 # Object for representing 1D spectra
@@ -1078,8 +972,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
         # Apply flat-topped Gaussian prior with unit amplitude
         #  add a broader Gaussian underneath so the rest of the
         #   CCF isn't completely lost
-       if prior is not None:
-           ccf *= np.exp(-0.5*(((lag-prior[0])/prior[1])**4))*0.8+np.exp(-0.5*(((lag-prior[0])/150)**2))*0.2
+        if prior is not None:
+            ccf *= np.exp(-0.5*(((lag-prior[0])/prior[1])**4))*0.8+np.exp(-0.5*(((lag-prior[0])/150)**2))*0.2
         
     else:   # no good pixels
         ccf = np.float(lag)*0.0
