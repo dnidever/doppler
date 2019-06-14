@@ -212,6 +212,43 @@ def trim_cannon_model(model,lo,hi):
     omodel.regularization = model.regularization
     return omodel
 
+def rebin(arr, new_shape):
+    if arr.ndim>2:
+        raise Exception("Maximum 2D arrays")
+    if arr.ndim==0:
+        raise Exception("Must be an array")
+    if arr.ndim==2:
+        shape = (new_shape[0], arr.shape[0] // new_shape[0],
+                 new_shape[1], arr.shape[1] // new_shape[1])
+        return arr.reshape(shape).mean(-1).mean(1)
+    if arr.ndim==1:
+        shape = (np.array(new_shape,ndmin=1)[0], arr.shape[0] // np.array(new_shape,ndmin=1)[0])
+        return arr.reshape(shape).mean(-1)
+
+def model_spectrum(model,w0=None,w1=None,dw=None,teff=None,logg=None,feh=None):
+    if w0 is None:
+        raise Exception("Need to input W0")
+    if w1 is None:
+        raise Exception("Need to input W1")
+    if dw is None:
+        raise Exception("Need to input DW")
+    if teff is None:
+        raise Exception("Need to input TEFF")    
+    if logg is None:
+        raise Exception("Need to input LOGG")
+    if feh is None:
+        raise Exception("Need to input FEH")    
+
+    npix = model.dispersion.shape[0]
+    # Get pixel range
+    lo = np.argmin(np.abs(model.dispersion-w0))
+    hi = np.argmin(np.abs(model.dispersion-w1))    
+    # With buffer
+    lobuff = gt(lo-10,0)
+    hibuff = lt(hi+10,npix-1)
+    # Get trimmed Cannon model
+    model2 = trim_cannon_model(model,lo,hi)
+    
     
 # Object for representing 1D spectra
 class Spec1D:
