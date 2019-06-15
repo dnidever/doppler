@@ -143,10 +143,10 @@ def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None
         npix2 = model2.dispersion.shape[0]
         # Get the spectrum
         wave1 = model2.dispersion
-        spec1 = model2(pars)
+        flux1 = model2(pars)
     else:
         wave1 = model.dispersion
-        spec1 = model(pars)
+        flux1 = model(pars)
         npix2 = npix
         
     # Rebin
@@ -155,43 +155,82 @@ def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None
         newnpix = int(npix2 // binsize)
         # Need to fix this to include w0 and w1 if possible
         wave2 = rebin(wave1[0:newnpix*binsize],newnpix)
-        spec2 = rebin(spec1[0:newnpix*binsize],newnpix)
+        flux2 = rebin(flux1[0:newnpix*binsize],newnpix)
     else:
         wave2 = wave1
-        spec2 = spec1
+        flux2 = flux1
 
     # Smoothing
     if fwhm is not None:
         fwhmpix = fwhm/dw
-        spec2 = gsmooth(spec2,fwhmpix)
+        flux2 = gsmooth(flux2,fwhmpix)
     # Interpolation
     if wave is not None:
-        tspec2 = spec2.copy()
-        f = interp1d(wave2,tspec2,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
-        spec2 = f(wave)
-        del(tspec2)
+        tflux2 = flux2.copy()
+        f = interp1d(wave2,tflux2,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
+        flux2 = f(wave)
+        del(tflux2)
         wave2 = wave.copy()
+
+    # Create Spec1D object
+    spec = Spec1D(flux2,wave=wave2,instrument='Model')
+    spec.teff = teff
+    spec.logg = logg
+    spec.feh = feh
+    if fwhm is not None:
+        spec.fwhm = fwhm
+    spec.snr = np.inf
         
-    return wave2, spec2
+    return spec
     
     
 # Object for representing 1D spectra
 class Spec1D:
     # Initialize the object
-    def __init__(self,flux):
+    def __init__(self,flux,err=None,wave=None,mask=None,instrument=None,filename=None,snr=None):
         self.flux = flux
+        self.err = None
+        self.wave = None
+        self.mask = None
+        self.instrument = None
+        self.filename = None
+        self.snr = None
+        if err is not None:
+            self.err = err
+        if wave is not None:
+            self.wave = wave
+        if mask is not None:
+            self.mask = mask
+        if instrument is not None:
+            self.instrument = instrument
+        if filename is not None:
+            self.filename = filename
+        if snr is not None:
+            self.snr = snr
         return
 
     def __repr__(self):
         s = repr(self.__class__)+"\n"
-        s += self.instrument+" "+self.sptype+" "+self.waveregime+" spectrum\n"
-        s += "File = "+self.filename+"\n"
-        s += ("S/N = %7.2f" % self.snr)+"\n"
+        if self.instrument is not None:
+            s += self.instrument+" spectrum\n"
+        if self.filename is not None:
+            s += "File = "+self.filename+"\n"
+        if self.snr is not None:
+            s += ("S/N = %7.2f" % self.snr)+"\n"
         s += "Flux = "+str(self.flux)+"\n"
-        s += "Err = "+str(self.err)+"\n"
-        s += "Wave = "+str(self.wave)
+        if self.err is not None:
+            s += "Err = "+str(self.err)+"\n"
+        if self.wave is not None:
+            s += "Wave = "+str(self.wave)
         return s
 
+    def normalize(self,ncorder=6,perclevel=0.95):
+        self._flux = self.flux  # Save the original
+        nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
+        self.flux = nspec
+        self.cont = cont
+        return
+    
 # Load a spectrum
 def rdspec(filename=None):
     '''
@@ -718,7 +757,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     ----------
     spec : Spec1D object
            A spectrum object.  This at least needs
-                to have a SPEC or FLUX tag and a WAVE tag.
+                to have a FLUX and WAVE attribute.
     ncorder : int, default=6
             The continuum polynomial order.  The default is 6.
     noerrcorr : bool, default=False
@@ -803,8 +842,11 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     w = spec.wave.copy()
     x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
     y = spec.flux.copy()
-    if hasattr(spec,'err') is True: yerr=spec.err.copy()
-
+    yerr = None
+    if hasattr(spec,'err') is True:
+        if spec.err is not None:
+            yerr = spec.err.copy()
+            
     # Get good pixels, and set bad pixels to NAN
     #--------------------------------------------
     gdmask = (y>0)        # need positive fluxes
@@ -812,8 +854,9 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
 
     # Exclude pixels with mask=bad
     if hasattr(spec,'mask') is True:
-        mask = spec.mask.copy()
-        gdmask = (mask == 0)
+        if spec.mask is not None:
+            mask = spec.mask.copy()
+            gdmask = (mask == 0)
     gdpix = (gdmask == 1)
     ngdpix = np.sum(gdpix)
     bdpix = (gdmask != 1)
@@ -838,7 +881,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
 
     # Subtract smoothed error from it to remove the effects
     #  of noise on the continuum measurement
-    if (hasattr(spec,'err')) & (noerrcorr is False):
+    if (yerr is not None) & (noerrcorr is False):
         smyerr = medfilt(yerr,151)                            # first median filter
         smyerr = gsmooth(smyerr,100)                          # Gaussian smoothing
         coef_err = poly_fit(x,smyerr,ncorder,robust=True)     # fit with robust poly
@@ -863,7 +906,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     cont2 = poly(x,coef2)
 
     # Subtract smoothed error again
-    if (hasattr(spec,'err')) & (noerrcorr is False):    
+    if (yerr is not None) & (noerrcorr is False):    
       cont2 -= med_yerr/cont1
 
     # Final continuum
