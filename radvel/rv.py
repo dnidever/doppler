@@ -77,25 +77,37 @@ def get_best_cannon_model(models,pars):
     
     return None
 
-# Create a "wavelength-trimmed" version of a CannonModel model
-def trim_cannon_model(model,lo,hi):
+# Create a "wavelength-trimmed" version of a CannonModel model (or multiple models)
+def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
 
-    npix = hi-lo+1
-    nlabels = len(model.vectorizer.label_names)
-    labelled_set = np.zeros([2,nlabels])
-    normalized_flux = np.zeros([2,npix])
-    normalized_ivar = normalized_flux.copy()*0
-    omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
-    omodel._s2 = model._s2[lo:hi+1]
-    omodel._scales = model._scales
-    omodel._theta = model._theta[lo:hi+1,:]
-    omodel._design_matrix = model._design_matrix
-    omodel._fiducials = model._fiducials
-    omodel.dispersion = model.dispersion[lo:hi+1]
-    omodel.regularization = model.regularization
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = trim_cannon_model(model1,x0=x0,x1=x1,w0=w0,w1=w1)
+            omodel.append(omodel1)
+    else:
+        if x0 is None:
+            x0 = np.argmin(np.abs(model.dispersion-w0))
+        if x1 is None:
+            x1 = np.argmin(np.abs(model.dispersion-w1))
+        npix = x1-x0+1
+        nlabels = len(model.vectorizer.label_names)
+        labelled_set = np.zeros([2,nlabels])
+        normalized_flux = np.zeros([2,npix])
+        normalized_ivar = normalized_flux.copy()*0
+        omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+        omodel._s2 = model._s2[x0:x1+1]
+        omodel._scales = model._scales
+        omodel._theta = model._theta[x0:x1+1,:]
+        omodel._design_matrix = model._design_matrix
+        omodel._fiducials = model._fiducials
+        omodel.dispersion = model.dispersion[x0:x1+1]
+        omodel.regularization = model.regularization
+
     return omodel
 
-def model_spectrum(models,teff=None,logg=None,feh=None,w0=None,w1=None,dw=None,):
+def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None,dw=None,fwhm=None,trim=False):
     if teff is None:
         raise Exception("Need to input TEFF")    
     if logg is None:
@@ -110,6 +122,12 @@ def model_spectrum(models,teff=None,logg=None,feh=None,w0=None,w1=None,dw=None,)
     npix = model.dispersion.shape[0]
     dw0 = model.dispersion[1]-model.dispersion[0]
 
+    # Wave array input
+    if wave is not None:
+        w0 = np.min(wave)
+        w1 = np.max(wave)
+        dw = np.min(slope(wave))
+    
     # Defaults for w0, w1, dw
     if w0 is None:
         w0 = np.min(model.dispersion)
@@ -117,31 +135,44 @@ def model_spectrum(models,teff=None,logg=None,feh=None,w0=None,w1=None,dw=None,)
         w1 = np.max(model.dispersion)
     if dw is None:
         dw = dw0
+
+    # Trim the model
+    if trim is True:
+        # Get trimmed Cannon model
+        model2 = trim_cannon_model(model,w0=w0-10*dw,w1=w1+10*dw)
+        npix2 = model2.dispersion.shape[0]
+        # Get the spectrum
+        wave1 = model2.dispersion
+        spec1 = model2(pars)
+    else:
+        wave1 = model.dispersion
+        spec1 = model(pars)
+        npix2 = npix
         
-    # Get pixel range
-    lo = np.argmin(np.abs(model.dispersion-w0))
-    hi = np.argmin(np.abs(model.dispersion-w1))
-    # With buffer
-    lobuff = gt(lo-10,0)
-    hibuff = lt(hi+10,npix-1)
-    # Get trimmed Cannon model
-    model2 = trim_cannon_model(model,lobuff,hibuff)
-    npix2 = model2.dispersion.shape[0]
-    # Get the spectrum
-    wave1 = model2.dispersion
-    spec1 = model2(pars)
     # Rebin
     if dw != dw0:
         binsize = int(dw // dw0)
         newnpix = int(npix2 // binsize)
+        # Need to fix this to include w0 and w1 if possible
         wave2 = rebin(wave1[0:newnpix*binsize],newnpix)
         spec2 = rebin(spec1[0:newnpix*binsize],newnpix)
-        return wave2,spec2
     else:
-        return wave1,spec1
+        wave2 = wave1
+        spec2 = spec1
 
-    # Add smoothing?
-    # Add interpolation?
+    # Smoothing
+    if fwhm is not None:
+        fwhmpix = fwhm/dw
+        spec2 = gsmooth(spec2,fwhmpix)
+    # Interpolation
+    if wave is not None:
+        tspec2 = spec2.copy()
+        f = interp1d(wave2,tspec2,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
+        spec2 = f(wave)
+        del(tspec2)
+        wave2 = wave.copy()
+        
+    return wave2, spec2
     
     
 # Object for representing 1D spectra
