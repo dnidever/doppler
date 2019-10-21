@@ -17,7 +17,7 @@ from astropy.table import Table, Column
 from astropy import modeling
 from glob import glob
 from scipy.signal import medfilt
-from scipy.ndimage.filters import median_filter,gaussian_filter1d
+from scipy.ndimage.filters import median_filter,gaussian_filter1d,convolve
 from scipy.optimize import curve_fit, least_squares
 from scipy.special import erf
 from scipy.interpolate import interp1d
@@ -26,8 +26,9 @@ from scipy.interpolate import interp1d
 #from apogee.utils import yanny, apload
 #from sdss_access.path import path
 import thecannon as tc
-import bindata
-from utils import *
+#import bindata
+#from utils import *
+from dlnpyutils import utils as dln, bindata
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -43,6 +44,7 @@ def xcorr_dtype(nlag):
     return dtype
 
 # astropy.modeling can handle errors and constraints
+
 
 # Load the cannon model
 def load_all_cannon_models():
@@ -106,6 +108,112 @@ def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
         omodel.regularization = model.regularization
 
     return omodel
+
+# Rebin a CannonModel model
+def rebin_cannon_model(model,binsize):
+
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = rebin_cannon_model(model1,binsize)
+            omodel.append(omodel1)
+    else:
+        npix, npars = model.theta.shape
+        npix2 = npix // binsize
+        labelled_set = np.zeros([2,nlabels])
+        normalized_flux = np.zeros([2,npix2])
+        normalized_ivar = normalized_flux.copy()*0
+        omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+        omodel._s2 = dln.rebin(model._s2[0:npix2*binsize],npix2)
+        omodel._scales = model._scales
+        omodel._theta = np.zeros((npix2,npars),np.float64)
+        for i in range(npars):
+            omodel._theta[:,i] = dln.rebin(model._theta[0:npix2*binsize,i],npix2)
+        omodel._design_matrix = model._design_matrix
+        omodel._fiducials = model._fiducials
+        if model.dispersion is not None:
+            omodel.dispersion = dln.rebin(model.dispersion[0:npix2*binsize],npix2)
+        omodel.regularization = model.regularization
+
+    return omodel
+
+# Interpolate a CannonModel model
+def interp_cannon_model(model,xout=None,wout=None):
+
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = interp_cannon_model(model1,xout=xout,wout=wout)
+            omodel.append(omodel1)
+    else:
+        if (xout is None) & (wout is None):
+            raise Exception('xout or wout must be input')
+
+        if (wout is not None) & (model.dispersion is None):
+            raise Exception('wout input but no dispersion information in model')
+    
+        # Convert wout to xout
+        if (xout is None) & (wout is not None):
+            npix, npars = model.theta.shape
+            x = np.arange(npix)
+            xout = interp1d(model.dispersion,x,kind='cubic',bounds_error=False,
+                            fill_value=(np.nan,np.nan),assume_sorted=True)(wout)
+
+        npix, npars = model.theta.shape
+        npix2 = len(xout)
+        labelled_set = np.zeros([2,nlabels])
+        normalized_flux = np.zeros([2,npix2])
+        normalized_ivar = normalized_flux.copy()*0
+        omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+        x = np.arange(npix)
+        omodel._s2 = interp1d(x,model._s2,kind='cubic',bounds_error=False,
+                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+        omodel._scales = model._scales
+        omodel._theta = np.zeros((npix2,npars),np.float64)
+        for i in range(npars):
+            omodel._theta[:,i] = interp1d(x,model._theta[:,i],kind='cubic',bounds_error=False,
+                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+        omodel._design_matrix = model._design_matrix
+        omodel._fiducials = model._fiducials
+        if model.dispersion is not None:
+            omodel.dispersion = interp1d(x,model.dispersion,kind='cubic',bounds_error=False,
+                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+        omodel.regularization = model.regularization
+
+    return omodel
+
+# Convolve a CannonModel model
+def convolve_cannon_model(model,kernel):
+
+    #  Need to allow this to be vary with wavelength
+    
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = convolve_cannon_model(model1,kernel)
+            omodel.append(omodel1)
+    else:
+        npix, npars = model.theta.shape
+        labelled_set = np.zeros([2,nlabels])
+        normalized_flux = np.zeros([2,npix])
+        normalized_ivar = normalized_flux.copy()*0
+        omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+        omodel._s2 = convolve(model._s2,kernel,mode="reflect")
+        omodel._scales = model._scales
+        omodel._theta = np.zeros((npix,npars),np.float64)
+        for i in range(npars):
+            omodel._theta[:,i] = convolve(model._theta[:,i],kernel,mode="reflect")
+        omodel._design_matrix = model._design_matrix
+        omodel._fiducials = model._fiducials
+        if model.dispersion is not None:
+            omodel.dispersion = model.dispersion
+        omodel.regularization = model.regularization
+
+    return omodel
+
 
 def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None,dw=None,fwhm=None,trim=False):
     if teff is None:
@@ -230,6 +338,22 @@ class Spec1D:
         self.flux = nspec
         self.cont = cont
         return
+
+    def rv(self,template):
+        """Calculate the RV with respect to a template spectrum"""
+        pass
+        return
+        
+    def solve(self):
+        """Find the RV and stellar parameters of this spectrum"""
+        pass
+        return
+
+   # maybe add an interp() method to interpolate the
+   # spectrum onto a new wavelength scale, outputs a new object
+
+   # a load() or read() method that you can use to read in a spectrum
+   # from a file, basically just calls the rdspec() function.
     
 # Load a spectrum
 def rdspec(filename=None):
