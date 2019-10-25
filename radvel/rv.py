@@ -154,19 +154,44 @@ def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None
     spec.snr = np.inf
         
     return spec
-    
+
+# Object for representing LSF (line spread function)
+class Lsf:
+    # Initalize the object
+    def __init__(self,wave=None,pars=None,xtype='Wave',lsftype='Gaussian'):
+        if wave is None and xtype=='Wave':
+            raise Exception('Need wavelength information if xtype=Wave')
+        self.wave = wave
+        self.type = lsftype
+        if pars is not None:
+            self.pars = pars
+            self.xtype = xtype
+        else:
+            print('No LSF information input.  Assuming Nyquist sampling.')
+            # constant FWHM=2.5, sigma=2.5/2.35
+            self.pars = np.array([2.5 / 2.35])
+            self.xtype = 'Pixels'
+
+    # Return FWHM at some positions
+    def fwhm(self,x):
+        return np.polyval(pars[::-1],x)*2.35
+
+    # Return actual LSF values
+    def vals(self,x):
+        pass
     
 # Object for representing 1D spectra
 class Spec1D:
     # Initialize the object
-    def __init__(self,flux,err=None,wave=None,mask=None,instrument=None,filename=None,snr=None):
+    def __init__(self,flux,err=None,wave=None,mask=None,lsfpars=None,lsftype='Gaussian',
+                 lsfxtype='Wave',instrument=None,filename=None):
         self.flux = flux
         self.err = None
         self.wave = None
         self.mask = None
+        self.lsf = Lsf(lsfpars,xtype=lsfxtype,lsftype=lsftype)
         self.instrument = None
         self.filename = None
-        self.snr = None
         if err is not None:
             self.err = err
         if wave is not None:
@@ -177,8 +202,6 @@ class Spec1D:
             self.instrument = instrument
         if filename is not None:
             self.filename = filename
-        if snr is not None:
-            self.snr = snr
         return
 
     def __repr__(self):

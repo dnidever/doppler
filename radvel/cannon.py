@@ -110,6 +110,65 @@ def get_best_cannon_model(models,pars):
     
     return None
 
+# Prepare the cannon model for a specific observed spectrum
+def prepare_cannon_model(model,spec):
+
+    if spec.wave is None:
+        raise Exception('No wavelength in observed spectrum')
+    if spec.lsf is None:
+        raise Exception('No LSF in observed spectrum')
+    if model.dispersion is None:
+        raise Exception('No model wavelength information')
+
+    
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = prepare_cannon_model(model1,spec)
+            omodel.append(omodel1)
+    else:
+
+        w = spec.wave
+        w0 = np.min(w)
+        w1 = np.max(w)
+        dw = dln.slope(w)
+        dw = np.hstack((dw,dw[-1]))
+        npix = len(spec.wave)
+
+        if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
+            raise Exception('Model does not cover the observed wavelength range')
+            
+        # Trim
+        if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
+            tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
+        else:
+            tmodel = model
+            
+        # Rebin
+        #  get LSF FWHM (A) for a handful of positions across the spectrum
+        xp = np.arange(npix//20)*20
+        fwhm = spec.lsf.fwhm(w[xp])
+        fwmpix = fwhm/dw[xp]
+        # need at least ~3 pixels per LSF FWHM across the spectrum
+        nbin = np.min(fwhmpix)//3
+        if nbin==0:
+            raise Exception('Model has lower resolution than the observed spectrum')
+        if nbin>1:
+            rmodel = rebin_cannon_model(tmodel,nbin)
+        else:
+            rmodel = tmodel
+        
+        # Convolve
+        cmodel = gconvolve_cannon_model(rmodel,gcoef)
+
+        # Interpolate
+        omodel = interp_cannon_model(cmodel,wout=spec.wave)
+        
+
+    return omodel
+
+    
 # Create a "wavelength-trimmed" version of a CannonModel model (or multiple models)
 def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
 
