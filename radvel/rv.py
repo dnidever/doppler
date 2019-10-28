@@ -46,6 +46,47 @@ def xcorr_dtype(nlag):
 # astropy.modeling can handle errors and constraints
 
 
+def sparsify(lsf):
+    # sparsify
+    # make a sparse matrix
+    # from J.Bovy's lsf.py APOGEE code
+    nx = lsf.shape[1]
+    diagonals = []
+    offsets = []
+    for ii in range(nx):
+        offset= nx//2-ii
+        offsets.append(offset)
+        if offset < 0:
+            diagonals.append(lsf[:offset,ii])
+        else:
+            diagonals.append(lsf[offset:,ii])
+    return sparse.diags(diagonals,offsets)
+
+def convolve_sparse(spec,lsf):
+    # convolution with matrices
+    # from J.Bovy's lsf.py APOGEE code    
+    # spec - [npix]
+    # lsf - [npix,nlsf]
+    npix,nlsf = lsf.shape
+    lsf2 = sparsify(lsf)
+    spec2 = np.reshape(spec,(1,npix))
+    spec2 = sparse.csr_matrix(spec2) 
+    out = lsf2.dot(spec2.T).T.toarray()
+    out = np.reshape(out,len(spec))
+    # The ends are messed up b/c not normalized
+    hlf = nlsf//2
+    for i in range(hlf+1):
+        lsf1 = lsf[i,hlf-i:]
+        lsf1 /= np.sum(lsf1)
+        out[i] = np.sum(spec[0:len(lsf1)]*lsf1)
+    for i in range(hlf+1):
+        ii = npix-i-1
+        lsf1 = lsf[ii,:hlf+1+i]
+        lsf1 /= np.sum(lsf1)
+        out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
+    return out
+        
+
 # Load the cannon model
 def load_all_cannon_models():
     fil = os.path.abspath(__file__)
@@ -158,50 +199,184 @@ def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None
 # Object for representing LSF (line spread function)
 class Lsf:
     # Initalize the object
-    def __init__(self,wave=None,pars=None,xtype='Wave',lsftype='Gaussian'):
+    def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None):
+        # xtype is wave or pixels.  designates what units to use BOTH for the input
+        #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
         self.wave = wave
+        self.pars = pars
         self.type = lsftype
-        if pars is not None:
-            self.pars = pars
-            self.xtype = xtype
-        else:
+        self.xtype = xtype
+        self._sigma = sigma
+        self._array = None
+        if (pars is None) & (sigma is None):
             print('No LSF information input.  Assuming Nyquist sampling.')
             # constant FWHM=2.5, sigma=2.5/2.35
             self.pars = np.array([2.5 / 2.35])
             self.xtype = 'Pixels'
 
-    # Return FWHM at some positions
-    def fwhm(self,x):
-        return np.polyval(pars[::-1],x)*2.35
+    def wave2pix(self,w):
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        return interp1d(self.wave,np.arange(len(self.wave)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+        
+    def pix2wave(self,x):
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        return interp1d(np.arange(len(self.wave)),self.wave,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
 
+        
+    # Return FWHM at some positions
+    def fwhm(self,x=None):
+        #return np.polyval(pars[::-1],x)*2.35
+        return self.sigma(x)*2.35
+        
+    # Return Gaussian sigma
+    def sigma(self,x=None,xtype='pixels'):
+        # The sigma will be returned in units given in lsf.xtype
+        if self._sigma is not None:
+            if x is None:
+                return self._sigma
+            else:
+                # Wavelength input
+                if xtype.lower().find('wave') > -1:
+                    x0 = np.array(x).copy()
+                    x = self.wave2pix(x0)
+                # Integer, just return the values
+                if( type(x)==int) | (np.array(x).dtype.kind=='i'):
+                    return self._sigma[x]
+                # Floats, interpolate
+                else:
+                    return interp1d(np.arange(len(self._sigma)),self.sigma,kind='cubic',bounds_error=False,
+                                    fill_value=(np.nan,np.nan),assume_sorted=True)(x)
+        # Need to calculate
+        else:
+            if x is None:
+                x = len(self.wave)
+            if self.pars is None:
+                   raise Exception("No LSF parameters")
+            # Pixels input
+            if xtype.lower().find('pix') > -1:
+                # Pixel LSF parameters
+                if self.xtype.lower().find('pix') > -1:
+                    return np.polyval(self.pars[::-1],x)
+                # Wave LSF parameters
+                else:
+                    w = self.pix2wave(x)
+                    return np.polyval(self.pars[::-1],w)                    
+            # Wavelengths input
+            else:
+                # Wavelength LSF parameters
+                if self.xtype.lower().find('wave') > -1:
+                    return np.polyval(self.pars[::-1],x)
+                # Pixel LSF parameters
+                else:
+                    x0 = np.array(x).copy()
+                    x = self.wave2pix(x0)
+                    return np.polyval(self.pars[::-1],x)  
+    
     # Return actual LSF values
     def vals(self,x):
+        # x must be 2D to give x/wavelength CENTERS and the grid on
+        #  which to put them
+        # or we could have two inputs, xcenter and xgrid
         pass
+
+        # create the LSF array using the input wavelength array input
+
+
+    # Return full LSF values for the spectrum
+    def array(self):
+        # Return what we already have
+        if self._array is not None:
+            return self._array
+        
+        ## currently this assumes the LSF parameters use type='Wave'x
+        #if self.xtype!='Wave' or self.lsftype!='Gaussian':
+        #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
+        #    return
+
+        npix = len(self.wave)
+        x = np.arange(npix)
+        xsigma = self.sigma()
+
+        # Convert sigma from wavelength to pixels, if necessary
+        if self.xtype.lower().find('wave') > -1:
+            wsigma = xsigma.copy()
+            dw = dln.slope(self.wave)
+            dw = np.hstack((dw,dw[-1]))            
+            xsigma = wsigma / dw
+
+        # Figure out nLSF pixels needed, +/-3 sigma
+        nlsf = np.int(np.round(np.max(xsigma)*6))
+        if nlsf % 2 == 0: nlsf+=1                   # must be odd
+        
+        # Make LSF array
+        lsf = np.zeros((npix,nlsf))
+        xlsf = np.arange(nlsf)-nlsf//2
+        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
+        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
+        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
+        # should I use gaussbin????
+        
+        self._array = lsf   # save for next time
+        return lsf
+
+    
+    # Return full LSF values using contiguous input array
+    def anyarray(self,x,xtype='pixels'):
+
+        ## currently this assumes the LSF parameters use type='Wave'x
+        #if self.xtype!='Wave' or self.lsftype!='Gaussian':
+        #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
+        #    return
+
+        npix = len(x)
+        xsigma = self.sigma(x,xtype=xtype)
+
+        # Get wavelength and pixel arrays
+        if xtype.lower().find('pix') > -1:
+            w = self.pix2wave(x)
+        else:
+            w = x
+            
+        # Convert sigma from wavelength to pixels, if necessary
+        if self.xtype.lower().find('wave') > -1:
+            wsigma = xsigma.copy()
+            dw = dln.slope(w)
+            dw = np.hstack((dw,dw[-1]))            
+            xsigma = wsigma / dw
+
+        # Figure out nLSF pixels needed, +/-3 sigma
+        nlsf = np.int(np.round(np.max(xsigma)*6))
+        if nlsf % 2 == 0: nlsf+=1                   # must be odd
+        
+        # Make LSF array
+        lsf = np.zeros((npix,nlsf))
+        xlsf = np.arange(nlsf)-nlsf//2
+        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
+        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
+        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
+        # should I use gaussbin????
+        return lsf
+
     
 # Object for representing 1D spectra
 class Spec1D:
     # Initialize the object
     def __init__(self,flux,err=None,wave=None,mask=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',instrument=None,filename=None):
+                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None):
         self.flux = flux
-        self.err = None
-        self.wave = None
-        self.mask = None
-        self.lsf = Lsf(lsfpars,xtype=lsfxtype,lsftype=lsftype)
-        self.instrument = None
-        self.filename = None
-        if err is not None:
-            self.err = err
-        if wave is not None:
-            self.wave = wave
-        if mask is not None:
-            self.mask = mask
-        if instrument is not None:
-            self.instrument = instrument
-        if filename is not None:
-            self.filename = filename
+        self.err = err
+        self.wave = wave
+        self.mask = mask
+        self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
+        self.instrument = instrument
+        self.filename = filename
+        self.snr = None
+        if self.err is not None:
+            self.snr = np.nanmedian(flux)/np.nanmedian(err)
         return
 
     def __repr__(self):
@@ -219,6 +394,20 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    def wave2pix(self,w):
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        return interp1d(self.wave,np.arange(len(self.wave)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+        
+    def pix2wave(self,x):
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        return interp1d(np.arange(len(self.wave)),self.wave,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
+    
+    @staticmethod
+    def read(filename=None):
+        return rdspec(filename=filename)
+    
     def normalize(self,ncorder=6,perclevel=0.95):
         self._flux = self.flux  # Save the original
         nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
@@ -288,7 +477,8 @@ def rdspec(filename=None):
     # APOGEE apVisit, visit-level spectrum
     if base.find("apVisit") > -1:
         flux = fits.getdata(filename,1)
-        spec = Spec1D(flux)
+        wave = fits.getdata(filename,3)
+        spec = Spec1D(flux,wave=wave)
         spec.filename = filename
         spec.sptype = "apVisit"
         spec.waveregime = "NIR"
@@ -296,7 +486,6 @@ def rdspec(filename=None):
         spec.head = fits.getheader(filename,0)
         spec.err = fits.getdata(filename,2)
         spec.mask = fits.getdata(filename,3)
-        spec.wave = fits.getdata(filename,4)
         spec.sky = fits.getdata(filename,5)
         spec.skyerr = fits.getdata(filename,6)
         spec.telluric = fits.getdata(filename,7)
@@ -363,14 +552,11 @@ def rdspec(filename=None):
         head = fits.getheader(filename,0)
         tab1 = Table.read(filename,1)
         cat1 = Table.read(filename,2)
-        spec = Spec1D(tab1["flux"].data[0])
-        spec.filename = filename
-        spec.sptype = "spec"
-        spec.waveregime = "Optical"
-        spec.instrument = "BOSS"
-        spec.head = head
+        flux = tab1["flux"].data
+        wave = 10**tab1["loglam"].data
+        wdisp = tab1["wdisp"].data
         # checking for zeros in IVAR
-        ivar = tab1["ivar"].data[0].copy()
+        ivar = tab1["ivar"].data.copy()
         bad = (ivar==0)
         if np.sum(bad) > 0:
             ivar[bad] = 1.0
@@ -378,18 +564,21 @@ def rdspec(filename=None):
             err[bad] = np.nan
         else:
             err = 1.0/np.sqrt(ivar)
-        spec.err = err
-        spec.ivar = tab1["ivar"].data[0]
-        spec.wave = 10**tab1["loglam"].data[0]
-        spec.mask = tab1["or_mask"].data[0]
-        spec.and_mask = tab1["and_mask"].data[0]
-        spec.or_mask = tab1["or_mask"].data[0]
-        spec.sky = tab1["sky"].data[0]
-        spec.wdisp = tab1["wdisp"].data[0]
-        spec.model = tab1["model"].data[0]
+        spec = Spec1D(flux,err=err,wave=wave,lsfsigma=wdisp,lsfxtype='Wave')
+        spec.filename = filename
+        spec.sptype = "spec"
+        spec.waveregime = "Optical"
+        spec.instrument = "BOSS"
+        spec.head = head
+        spec.ivar = tab1["ivar"].data
+        spec.mask = tab1["or_mask"].data
+        spec.and_mask = tab1["and_mask"].data
+        spec.or_mask = tab1["or_mask"].data
+        spec.sky = tab1["sky"].data
+        spec.model = tab1["model"].data
         spec.meta = cat1
         # What are the units?
-        spec.snr = cat1["SN_MEDIAN_ALL"].data
+        spec.snr = cat1["SN_MEDIAN_ALL"].data[0]
         return spec        
 
 

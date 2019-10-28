@@ -6,8 +6,8 @@
 
 from __future__ import print_function
 
-__authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20180922'  # yyyymmdd                                                                                                                           
+__authors__ = 'David Nidever <dnidever@montana.edu>'
+__version__ = '20190922'  # yyyymmdd
 
 import os
 import numpy as np
@@ -91,7 +91,7 @@ def load_all_cannon_models():
         model1 = tc.CannonModel.read(f)
         ranges = np.zeros([3,2])
         for i in range(3):
-            ranges[i,:] = minmax(model1._training_set_labels[:,i])
+            ranges[i,:] = dln.minmax(model1._training_set_labels[:,i])
         model1.ranges = ranges
         models.append(model1)
     return models
@@ -128,7 +128,6 @@ def prepare_cannon_model(model,spec):
             omodel1 = prepare_cannon_model(model1,spec)
             omodel.append(omodel1)
     else:
-
         w = spec.wave
         w0 = np.min(w)
         w1 = np.max(w)
@@ -160,11 +159,11 @@ def prepare_cannon_model(model,spec):
             rmodel = tmodel
         
         # Convolve
-        cmodel = gconvolve_cannon_model(rmodel,gcoef)
+        lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave')
+        cmodel = convolve_cannon_model(rmodel,lsf)
 
         # Interpolate
         omodel = interp_cannon_model(cmodel,wout=spec.wave)
-        
 
     return omodel
 
@@ -278,15 +277,17 @@ def interp_cannon_model(model,xout=None,wout=None):
     return omodel
 
 # Convolve a CannonModel model
-def convolve_cannon_model(model,kernel):
+def convolve_cannon_model(model,lsf):
 
     #  Need to allow this to be vary with wavelength
+    # lsf can be a 1D kernel, or a 2D LSF array that gives
+    #  the kernel for each pixel separately
     
     if type(model) is list:
         omodel = []
         for i in range(len(model)):
             model1 = model[i]
-            omodel1 = convolve_cannon_model(model1,kernel)
+            omodel1 = convolve_cannon_model(model1,lsf)
             omodel.append(omodel1)
     else:
         npix, npars = model.theta.shape
@@ -295,11 +296,16 @@ def convolve_cannon_model(model,kernel):
         normalized_flux = np.zeros([2,npix])
         normalized_ivar = normalized_flux.copy()*0
         omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
-        omodel._s2 = convolve(model._s2,kernel,mode="reflect")
+        if lsf.ndim==1:
+            omodel._s2 = convolve(model._s2,lsf,mode="reflect")
+            for i in range(npars):
+                omodel._theta[:,i] = convolve(model._theta[:,i],lsf,mode="reflect")
+        else:
+            omodel._s2 = convolve_sparse(model._s2,lsf)
+            for i in range(npars):
+                omodel._theta[:,i] = convolve_sparse(model._theta[:,i],lsf)
         omodel._scales = model._scales
         omodel._theta = np.zeros((npix,npars),np.float64)
-        for i in range(npars):
-            omodel._theta[:,i] = convolve(model._theta[:,i],kernel,mode="reflect")
         omodel._design_matrix = model._design_matrix
         omodel._fiducials = model._fiducials
         if model.dispersion is not None:
