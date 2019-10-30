@@ -30,10 +30,13 @@ import thecannon as tc
 #import bindata
 #from utils import *
 from dlnpyutils import utils as dln, bindata
+from .rv import Spec1D
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+
+cspeed = 2.99792458e5  # speed of light in km/s
 
 # astropy.modeling can handle errors and constraints
 
@@ -98,7 +101,9 @@ def load_all_cannon_models():
 
 # Get correct cannon model for a given set of inputs
 def get_best_cannon_model(models,pars):
-    n = len(models)
+    n = dln.size(models)
+    if n==1:
+        return models
     for m in models:
         #inside.append(m.in_convex_hull(pars))        
         # in_convex_hull() is very slow
@@ -110,64 +115,6 @@ def get_best_cannon_model(models,pars):
     
     return None
 
-# Prepare the cannon model for a specific observed spectrum
-def prepare_cannon_model(model,spec):
-
-    if spec.wave is None:
-        raise Exception('No wavelength in observed spectrum')
-    if spec.lsf is None:
-        raise Exception('No LSF in observed spectrum')
-    if model.dispersion is None:
-        raise Exception('No model wavelength information')
-
-    
-    if type(model) is list:
-        omodel = []
-        for i in range(len(model)):
-            model1 = model[i]
-            omodel1 = prepare_cannon_model(model1,spec)
-            omodel.append(omodel1)
-    else:
-        w = spec.wave
-        w0 = np.min(w)
-        w1 = np.max(w)
-        dw = dln.slope(w)
-        dw = np.hstack((dw,dw[-1]))
-        npix = len(spec.wave)
-
-        if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
-            raise Exception('Model does not cover the observed wavelength range')
-            
-        # Trim
-        if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
-            tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
-        else:
-            tmodel = model
-            
-        # Rebin
-        #  get LSF FWHM (A) for a handful of positions across the spectrum
-        xp = np.arange(npix//20)*20
-        fwhm = spec.lsf.fwhm(w[xp])
-        fwmpix = fwhm/dw[xp]
-        # need at least ~3 pixels per LSF FWHM across the spectrum
-        nbin = np.min(fwhmpix)//3
-        if nbin==0:
-            raise Exception('Model has lower resolution than the observed spectrum')
-        if nbin>1:
-            rmodel = rebin_cannon_model(tmodel,nbin)
-        else:
-            rmodel = tmodel
-        
-        # Convolve
-        lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave')
-        cmodel = convolve_cannon_model(rmodel,lsf)
-
-        # Interpolate
-        omodel = interp_cannon_model(cmodel,wout=spec.wave)
-
-    return omodel
-
-    
 # Create a "wavelength-trimmed" version of a CannonModel model (or multiple models)
 def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
 
@@ -195,7 +142,8 @@ def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
         omodel._fiducials = model._fiducials
         omodel.dispersion = model.dispersion[x0:x1+1]
         omodel.regularization = model.regularization
-
+        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        
     return omodel
 
 # Rebin a CannonModel model
@@ -209,7 +157,7 @@ def rebin_cannon_model(model,binsize):
             omodel.append(omodel1)
     else:
         npix, npars = model.theta.shape
-        npix2 = npix // binsize
+        npix2 = np.round(npix // binsize).astype(int)
         nlabels = len(model.vectorizer.label_names)
         labelled_set = np.zeros([2,nlabels])
         normalized_flux = np.zeros([2,npix2])
@@ -225,12 +173,12 @@ def rebin_cannon_model(model,binsize):
         if model.dispersion is not None:
             omodel.dispersion = dln.rebin(model.dispersion[0:npix2*binsize],npix2)
         omodel.regularization = model.regularization
-
+        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        
     return omodel
 
 # Interpolate a CannonModel model
 def interp_cannon_model(model,xout=None,wout=None):
-
     if (xout is None) & (wout is None):
         raise Exception('xout or wout must be input')
     
@@ -251,7 +199,6 @@ def interp_cannon_model(model,xout=None,wout=None):
             x = np.arange(npix)
             xout = interp1d(model.dispersion,x,kind='cubic',bounds_error=False,
                             fill_value=(np.nan,np.nan),assume_sorted=True)(wout)
-
         npix, npars = model.theta.shape
         npix2 = len(xout)
         nlabels = len(model.vectorizer.label_names)
@@ -273,7 +220,8 @@ def interp_cannon_model(model,xout=None,wout=None):
             omodel.dispersion = interp1d(x,model.dispersion,kind='cubic',bounds_error=False,
                            fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
         omodel.regularization = model.regularization
-
+        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        
     return omodel
 
 # Convolve a CannonModel model
@@ -296,6 +244,8 @@ def convolve_cannon_model(model,lsf):
         normalized_flux = np.zeros([2,npix])
         normalized_ivar = normalized_flux.copy()*0
         omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+        omodel._theta = model._theta*0
+        #omodel._theta = np.zeros((npix2,npars),np.float64)
         if lsf.ndim==1:
             omodel._s2 = convolve(model._s2,lsf,mode="reflect")
             for i in range(npars):
@@ -305,13 +255,13 @@ def convolve_cannon_model(model,lsf):
             for i in range(npars):
                 omodel._theta[:,i] = convolve_sparse(model._theta[:,i],lsf)
         omodel._scales = model._scales
-        omodel._theta = np.zeros((npix,npars),np.float64)
         omodel._design_matrix = model._design_matrix
         omodel._fiducials = model._fiducials
         if model.dispersion is not None:
             omodel.dispersion = model.dispersion
         omodel.regularization = model.regularization
-
+        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        
     return omodel
 
 # Convolve a CannonModel model with a wavelength-dependent Gaussian
@@ -382,83 +332,119 @@ def gconvolve_cannon_model(model,xgcoef=None,wgcoef=None):
         if model.dispersion is not None:
             omodel.dispersion = model.dispersion
         omodel.regularization = model.regularization
-
+        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        
     return omodel
 
 
-def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None,dw=None,fwhm=None,trim=False):
+# Prepare the cannon model for a specific observed spectrum
+def prepare_cannon_model(model,spec,dointerp=False):
+
+    if spec.wave is None:
+        raise Exception('No wavelength in observed spectrum')
+    if spec.lsf is None:
+        raise Exception('No LSF in observed spectrum')
+    if type(model) is not list:
+        if model.dispersion is None:
+            raise Exception('No model wavelength information')
+
+    
+    if type(model) is list:
+        omodel = []
+        for i in range(len(model)):
+            model1 = model[i]
+            omodel1 = prepare_cannon_model(model1,spec,dointerp=dointerp)
+            omodel.append(omodel1)
+    else:
+        # Observed spectrum values
+        w = spec.wave
+        w0 = np.min(w)
+        w1 = np.max(w)
+        dw = dln.slope(w)
+        dw = np.hstack((dw,dw[-1]))
+        npix = len(spec.wave)
+
+        if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
+            raise Exception('Model does not cover the observed wavelength range')
+
+        # Trim
+        if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
+            tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
+            tmodel.trim = True
+        else:
+            tmodel = model
+            tmodel.trim = False
+
+        # Rebin
+        #  get LSF FWHM (A) for a handful of positions across the spectrum
+        xp = np.arange(npix//20)*20
+        fwhm = spec.lsf.fwhm(w[xp],xtype='Wave')
+        #  convert FWHM (A) in number of model pixels at those positions
+        dwmod = dln.slope(tmodel.dispersion)
+        dwmod = np.hstack((dwmod,dwmod[-1]))
+        xpmod = interp1d(tmodel.dispersion,np.arange(len(tmodel.dispersion)),kind='cubic',bounds_error=False,
+                                    fill_value=(np.nan,np.nan),assume_sorted=False)(w[xp])
+        xpmod = np.round(xpmod).astype(int)
+        fwhmpix = fwhm/dwmod[xpmod]
+        # need at least ~3 pixels per LSF FWHM across the spectrum
+        nbin = np.round(np.min(fwhmpix)//3).astype(int)
+        if nbin==0:
+            raise Exception('Model has lower resolution than the observed spectrum')
+        if nbin>1:
+            rmodel = rebin_cannon_model(tmodel,nbin)
+            rmodel.rebin = True
+        else:
+            rmodel = tmodel
+            rmodel.rebin = False
+            
+        # Convolve
+        lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave')
+        cmodel = convolve_cannon_model(rmodel,lsf)
+        cmodel.convolve = True
+        
+        # Interpolate
+        if dointerp is True:
+            omodel = interp_cannon_model(cmodel,wout=spec.wave)
+            omodel.interp = True
+        else:
+            omodel = cmodel
+            omodel.interp = False
+        
+    return omodel
+
+def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
     if teff is None:
         raise Exception("Need to input TEFF")    
     if logg is None:
         raise Exception("Need to input LOGG")
     if feh is None:
-        raise Exception("Need to input FEH")    
+        raise Exception("Need to input FEH")
+    if rv is None: rv=0.0
     
     pars = np.array([teff,logg,feh])
     # Get best cannon model
     model = get_best_cannon_model(models,pars)
+    # Create the model spectrum
+    model_spec = model(pars)
+    model_wave = model.dispersion.copy()
+    npix = len(model_spec)
 
-    npix = model.dispersion.shape[0]
-    dw0 = model.dispersion[1]-model.dispersion[0]
-
-    # Wave array input
-    if wave is not None:
-        w0 = np.min(wave)
-        w1 = np.max(wave)
-        dw = np.min(slope(wave))
+    # Apply doppler shift to wavelength
+    model_wave *= (1+rv/cspeed)
+    # w = synwave*(1.0d0 + par[0]/cspeed)
     
-    # Defaults for w0, w1, dw
-    if w0 is None:
-        w0 = np.min(model.dispersion)
-    if w1 is None:
-        w1 = np.max(model.dispersion)
-    if dw is None:
-        dw = dw0
-
-    # Trim the model
-    if trim is True:
-        # Get trimmed Cannon model
-        model2 = trim_cannon_model(model,w0=w0-10*dw,w1=w1+10*dw)
-        npix2 = model2.dispersion.shape[0]
-        # Get the spectrum
-        wave1 = model2.dispersion
-        flux1 = model2(pars)
-    else:
-        wave1 = model.dispersion
-        flux1 = model(pars)
-        npix2 = npix
-        
-    # Rebin
-    if dw != dw0:
-        binsize = int(dw // dw0)
-        newnpix = int(npix2 // binsize)
-        # Need to fix this to include w0 and w1 if possible
-        wave2 = rebin(wave1[0:newnpix*binsize],newnpix)
-        flux2 = rebin(flux1[0:newnpix*binsize],newnpix)
-    else:
-        wave2 = wave1
-        flux2 = flux1
-
-    # Smoothing
-    if fwhm is not None:
-        fwhmpix = fwhm/dw
-        flux2 = gsmooth(flux2,fwhmpix)
     # Interpolation
-    if wave is not None:
-        tflux2 = flux2.copy()
-        f = interp1d(wave2,tflux2,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
-        flux2 = f(wave)
-        del(tflux2)
-        wave2 = wave.copy()
+    model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
+                                    fill_value=(np.nan,np.nan),assume_sorted=True)(spec.wave)
 
     # Create Spec1D object
-    spec = Spec1D(flux2,wave=wave2,instrument='Model')
-    spec.teff = teff
-    spec.logg = logg
-    spec.feh = feh
-    if fwhm is not None:
-        spec.fwhm = fwhm
-    spec.snr = np.inf
+    sigma = spec.lsf.sigma(xtype='Wave')
+    mspec = Spec1D(model_spec_interp,wave=spec.wave.copy(),lsfsigma=sigma,instrument='Model')
+    mspec.teff = teff
+    mspec.logg = logg
+    mspec.feh = feh
+    mspec.rv = rv
+    mspec.snr = np.inf
         
-    return spec
+    return mspec
   

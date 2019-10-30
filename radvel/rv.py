@@ -45,6 +45,52 @@ def xcorr_dtype(nlag):
 
 # astropy.modeling can handle errors and constraints
 
+# Convert wavelengths to pixels for a dispersion solution
+def w2p(dispersion,w,extrapolate=True):
+    """ dispersion is the wavelength array of the spectrum"""
+    x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+    # Need to extrapolate
+    if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
+        win = dispersion
+        xin = np.arange(len(dispersion))
+        si = np.argsort(win)
+        win = win[si]
+        xin = xin[si]
+        npix = len(win)
+        # At the beginning
+        if (np.min(w)<np.min(dispersion)):
+            coef1 = dln.poly_fit(win[0:10], xin[0:10], 2)
+            bd1, nbd1 = dln.where(w < np.min(dispersion))
+            x[bd1] = dln.poly(w[bd1],coef1)
+        # At the end
+        if (np.max(w)>np.max(dispersion)):
+            coef2 = dln.poly_fit(win[npix-10:], xin[npix-10:], 2)
+            bd2, nbd2 = dln.where(w > np.max(dispersion))
+            x[bd2] = dln.poly(w[bd2],coef2)                
+    return x
+
+
+# Convert pixels to wavelength for a dispersion solution
+def p2w(dispersion,x,extrapolate=True):
+    """ dispersion is the wavelength array of the spectrum"""
+    npix = len(dispersion)
+    w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
+    # Need to extrapolate
+    if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
+        xin = np.arange(npix)
+        win = dispersion
+        # At the beginning
+        if (np.min(x)<0):
+            coef1 = dln.poly_fit(xin[0:10], win[0:10], 2)
+            bd1, nbd1 = dln.where(x < 0)
+            w[bd1] = dln.poly(x[bd1],coef1)
+        # At the end
+        if (np.max(x)>(npix-1)):
+            coef2 = dln.poly_fit(xin[npix-10:], win[npix-10:], 2)
+            bd2, nbd2 = dln.where(x > (npix-1))
+            w[bd2] = dln.poly(x[bd2],coef2)                
+    return w
+
 
 def sparsify(lsf):
     # sparsify
@@ -85,116 +131,7 @@ def convolve_sparse(spec,lsf):
         lsf1 /= np.sum(lsf1)
         out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
     return out
-        
 
-# Load the cannon model
-def load_all_cannon_models():
-    fil = os.path.abspath(__file__)
-    codedir = os.path.dirname(fil)
-    datadir = os.path.dirname(codedir)+'/data/'
-    files = glob(datadir+'cannongrid*.pkl')
-    nfiles = len(files)
-    if nfiles==0:
-        raise Exception("No Cannon model files in "+datadir)
-    models = []
-    for f in files:
-        model1 = tc.CannonModel.read(f)
-        ranges = np.zeros([3,2])
-        for i in range(3):
-            ranges[i,:] = minmax(model1._training_set_labels[:,i])
-        model1.ranges = ranges
-        models.append(model1)
-    return models
-
-# Get correct cannon model for a given set of inputs
-def get_best_cannon_model(models,pars):
-    n = len(models)
-    for m in models:
-        #inside.append(m.in_convex_hull(pars))        
-        # in_convex_hull() is very slow
-        inside = True
-        for i in range(3):
-            inside &= (pars[i]>=m.ranges[i,0]) & (pars[i]<=m.ranges[i,1])
-        if inside:
-            return m
-    
-    return None
-
-def model_spectrum(models,teff=None,logg=None,feh=None,wave=None,w0=None,w1=None,dw=None,fwhm=None,trim=False):
-    if teff is None:
-        raise Exception("Need to input TEFF")    
-    if logg is None:
-        raise Exception("Need to input LOGG")
-    if feh is None:
-        raise Exception("Need to input FEH")    
-    
-    pars = np.array([teff,logg,feh])
-    # Get best cannon model
-    model = get_best_cannon_model(models,pars)
-
-    npix = model.dispersion.shape[0]
-    dw0 = model.dispersion[1]-model.dispersion[0]
-
-    # Wave array input
-    if wave is not None:
-        w0 = np.min(wave)
-        w1 = np.max(wave)
-        dw = np.min(slope(wave))
-    
-    # Defaults for w0, w1, dw
-    if w0 is None:
-        w0 = np.min(model.dispersion)
-    if w1 is None:
-        w1 = np.max(model.dispersion)
-    if dw is None:
-        dw = dw0
-
-    # Trim the model
-    if trim is True:
-        # Get trimmed Cannon model
-        model2 = trim_cannon_model(model,w0=w0-10*dw,w1=w1+10*dw)
-        npix2 = model2.dispersion.shape[0]
-        # Get the spectrum
-        wave1 = model2.dispersion
-        flux1 = model2(pars)
-    else:
-        wave1 = model.dispersion
-        flux1 = model(pars)
-        npix2 = npix
-        
-    # Rebin
-    if dw != dw0:
-        binsize = int(dw // dw0)
-        newnpix = int(npix2 // binsize)
-        # Need to fix this to include w0 and w1 if possible
-        wave2 = rebin(wave1[0:newnpix*binsize],newnpix)
-        flux2 = rebin(flux1[0:newnpix*binsize],newnpix)
-    else:
-        wave2 = wave1
-        flux2 = flux1
-
-    # Smoothing
-    if fwhm is not None:
-        fwhmpix = fwhm/dw
-        flux2 = gsmooth(flux2,fwhmpix)
-    # Interpolation
-    if wave is not None:
-        tflux2 = flux2.copy()
-        f = interp1d(wave2,tflux2,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
-        flux2 = f(wave)
-        del(tflux2)
-        wave2 = wave.copy()
-
-    # Create Spec1D object
-    spec = Spec1D(flux2,wave=wave2,instrument='Model')
-    spec.teff = teff
-    spec.logg = logg
-    spec.feh = feh
-    if fwhm is not None:
-        spec.fwhm = fwhm
-    spec.snr = np.inf
-        
-    return spec
 
 # Object for representing LSF (line spread function)
 class Lsf:
@@ -216,24 +153,24 @@ class Lsf:
             self.pars = np.array([2.5 / 2.35])
             self.xtype = 'Pixels'
 
-    def wave2pix(self,w):
+    def wave2pix(self,w,extrapolate=True):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return interp1d(self.wave,np.arange(len(self.wave)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+        return w2p(self.wave,w,extrapolate=extrapolate)
         
-    def pix2wave(self,x):
+    def pix2wave(self,x,extrapolate=True):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return interp1d(np.arange(len(self.wave)),self.wave,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
-
+        return p2w(self.wave,x,extrapolate=extrapolate)
+                
         
     # Return FWHM at some positions
-    def fwhm(self,x=None):
+    def fwhm(self,x=None,xtype='pixels'):
         #return np.polyval(pars[::-1],x)*2.35
-        return self.sigma(x)*2.35
+        return self.sigma(x,xtype=xtype)*2.35
         
     # Return Gaussian sigma
-    def sigma(self,x=None,xtype='pixels'):
+    def sigma(self,x=None,xtype='pixels',extrapolate=True):
         # The sigma will be returned in units given in lsf.xtype
         if self._sigma is not None:
             if x is None:
@@ -241,15 +178,31 @@ class Lsf:
             else:
                 # Wavelength input
                 if xtype.lower().find('wave') > -1:
-                    x0 = np.array(x).copy()
+                    x0 = np.array(x).copy()    # backup
                     x = self.wave2pix(x0)
                 # Integer, just return the values
                 if( type(x)==int) | (np.array(x).dtype.kind=='i'):
                     return self._sigma[x]
                 # Floats, interpolate
                 else:
-                    return interp1d(np.arange(len(self._sigma)),self.sigma,kind='cubic',bounds_error=False,
-                                    fill_value=(np.nan,np.nan),assume_sorted=True)(x)
+                    sig = interp1d(np.arange(len(self._sigma)),self._sigma,kind='cubic',bounds_error=False,
+                                   fill_value=(np.nan,np.nan),assume_sorted=True)(x)
+                    # Extrapolate
+                    npix = len(self._sigma)
+                    if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
+                        xin = np.arange(npix)
+                        # At the beginning
+                        if (np.min(x)<0):
+                            coef1 = dln.poly_fit(xin[0:10], self._sigma[0:10], 2)
+                            bd1, nbd1 = dln.where(x <0)
+                            sig[bd1] = dln.poly(x[bd1],coef1)
+                        # At the end
+                        if (np.max(x)>(npix-1)):
+                            coef2 = dln.poly_fit(xin[npix-10:], self._sigma[npix-10:], 2)
+                            bd2, nbd2 = dln.where(x > (npix-1))
+                            sig[bd2] = dln.poly(x[bd2],coef2)
+                    return sig
+                        
         # Need to calculate
         else:
             if x is None:
@@ -275,7 +228,17 @@ class Lsf:
                     x0 = np.array(x).copy()
                     x = self.wave2pix(x0)
                     return np.polyval(self.pars[::-1],x)  
-    
+
+    # Clean up bad LSF values
+    def clean(self):
+        if self._sigma is not None:
+            smlen = np.round(len(self._sigma) // 50).astype(int)
+            if smlen==0: smlen=3
+            smsig = dln.gsmooth(self._sigma,smlen)
+            bd,nbd = dln.where(self._sigma <= 0)
+            if nbd>0:
+                self._sigma[bd] = smsig[bd]
+                
     # Return actual LSF values
     def vals(self,x):
         # x must be 2D to give x/wavelength CENTERS and the grid on
@@ -394,15 +357,15 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
-    def wave2pix(self,w):
+    def wave2pix(self,w,extrapolate=True):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return interp1d(self.wave,np.arange(len(self.wave)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+        return w2p(self.wave,w,extrapolate=extrapolate)
         
-    def pix2wave(self,x):
+    def pix2wave(self,x,extrapolate=True):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return interp1d(np.arange(len(self.wave)),self.wave,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
+        return p2w(self.wave,x,extrapolate=extrapolate)
     
     @staticmethod
     def read(filename=None):
@@ -561,10 +524,11 @@ def rdspec(filename=None):
         if np.sum(bad) > 0:
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
-            err[bad] = np.nan
+            err[bad] = 1e30  #np.nan
         else:
             err = 1.0/np.sqrt(ivar)
         spec = Spec1D(flux,err=err,wave=wave,lsfsigma=wdisp,lsfxtype='Wave')
+        spec.lsf.clean()   # clean up some bad LSF values
         spec.filename = filename
         spec.sptype = "spec"
         spec.waveregime = "Optical"
@@ -597,7 +561,7 @@ def rdspec(filename=None):
         if np.sum(bad) > 0:
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
-            err[bad] = np.nan
+            err[bad] = 1e30 #np.nan
         else:
             err = 1.0/np.sqrt(ivar)
         spec.err = err
