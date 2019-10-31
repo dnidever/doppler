@@ -373,9 +373,27 @@ class Spec1D:
     
     def normalize(self,ncorder=6,perclevel=0.95):
         self._flux = self.flux  # Save the original
-        nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
-        self.flux = nspec
+        #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
+
+        binsize = 0.05
+        perclevel = 90.0
+        w = self.wave.copy()
+        x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
+        y = self.flux.copy()
+        gdmask = (y>0)        # need positive fluxes
+        ytemp = y.copy()
+        # Bin the data points
+        xr = [np.nanmin(x),np.nanmax(x)]
+        bins = np.ceil((xr[1]-xr[0])/binsize)+1
+        ybin, bin_edges, binnumber = bindata.binned_statistic(x,ytemp,statistic='percentile',
+                                                              percentile=perclevel,bins=bins,range=None)
+        xbin = bin_edges[0:-1]+0.5*binsize
+        # Interpolate to full grid
+        cont = dln.interp(xbin,ybin,x,extrapolate=True)
+
+        self.flux = self.flux/cont
         self.cont = cont
+        self.normalized = 1
         return
 
     def rv(self,template):
@@ -957,7 +975,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
         if hasattr(spec,a) is False:
             raise ValueError("spec object must have "+a)
 
-    # Can only 1D or 2D arrays
+    # Can only do 1D or 2D arrays
     if spec.flux.ndim>2:
         raise Exception("Flux can only be 1D or 2D arrays")
         
@@ -1040,17 +1058,17 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     if ngdbin<(ncorder+1):
         raise Exception("Not enough good flux points to fit the continuum")
     # Fit with robust polynomial
-    coef1 = poly_fit(xbin[gdbin],ybin[gdbin],ncorder,robust=True)
-    cont1 = poly(x,coef1)
+    coef1 = dln.poly_fit(xbin[gdbin],ybin[gdbin],ncorder,robust=True)
+    cont1 = dln.poly(x,coef1)
 
     # Subtract smoothed error from it to remove the effects
     #  of noise on the continuum measurement
     if (yerr is not None) & (noerrcorr is False):
-        smyerr = medfilt(yerr,151)                            # first median filter
-        smyerr = gsmooth(smyerr,100)                          # Gaussian smoothing
-        coef_err = poly_fit(x,smyerr,ncorder,robust=True)     # fit with robust poly
-        #poly_err = poly(x,coef_err)
-        #cont1 -= 2*poly_err   # is this right????
+        smyerr = dln.medfilt(yerr,151)                            # first median filter
+        smyerr = dln.gsmooth(smyerr,100)                          # Gaussian smoothing
+        coef_err = dln.poly_fit(x,smyerr,ncorder,robust=True)     # fit with robust poly
+        #poly_err = dln.poly(x,coef_err)
+        #cont1 -= 2*dln.poly_err   # is this right????
         med_yerr = np.median(smyerr)                          # median error
         cont1 -= 2*med_yerr
 
@@ -1066,8 +1084,8 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     if ngdbin2<(ncorder+1):
         raise Exception("Not enough good flux points to fit the continuum")
     # Fit with robust polynomial
-    coef2 = poly_fit(xbin2[gdbin2],ybin2[gdbin2],ncorder,robust=True)
-    cont2 = poly(x,coef2)
+    coef2 = dln.poly_fit(xbin2[gdbin2],ybin2[gdbin2],ncorder,robust=True)
+    cont2 = dln.poly(x,coef2)
 
     # Subtract smoothed error again
     if (yerr is not None) & (noerrcorr is False):    
