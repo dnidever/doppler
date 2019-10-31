@@ -31,6 +31,7 @@ import thecannon as tc
 #from utils import *
 from dlnpyutils import utils as dln, bindata
 from .rv import Spec1D
+import matplotlib.pyplot as plt
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -547,6 +548,22 @@ def model_spectrum_rvfit(models,spec,teff=None,logg=None,feh=None):
     bestind = np.argmin(chisq)
     bestrv = rv[bestind]
     bestchisq = chisq[bestind]
+
+    # Interpolate to better RV
+    rv2 = np.arange(201)*0.1-10 + bestrv
+    chisq2 = dln.interp(rv,chisq,rv2)
+    bestind2 = np.argmin(chisq2)
+    bestrv2 = rv2[bestind2]
+    bestchisq2 = chisq2[bestind2]
+    
+    print('RV = '+str(bestrv2)+' km/s')
+    #plt.plot(rv,chisq)
+
+    best_model = model_spec_interp[bestind,:]
+    #best_model = model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):    
+    plt.plot(spec.flux)
+    plt.plot(best_model)
+    
     return (bestrv,bestchisq)
 
     # SPECTRUM MUST BE NORMALIZED!!!
