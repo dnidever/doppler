@@ -153,16 +153,23 @@ class Lsf:
             self.pars = np.array([2.5 / 2.35])
             self.xtype = 'Pixels'
 
-    def wave2pix(self,w,extrapolate=True):
+    def wave2pix(self,w,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return w2p(self.wave,w,extrapolate=extrapolate)
+        if self.wave.ndim==2:
+            # Order is always the second dimension
+            return w2p(self.wave[:,order],w,extrapolate=extrapolate)            
+        else:
+            return w2p(self.wave,w,extrapolate=extrapolate)
         
-    def pix2wave(self,x,extrapolate=True):
+    def pix2wave(self,x,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return p2w(self.wave,x,extrapolate=extrapolate)
-                
+        if self.wave.ndim==2:
+             # Order is always the second dimension
+            return p2w(self.wave[:,order],x,extrapolate=extrapolate)
+        else:
+            return p2w(self.wave,x,extrapolate=extrapolate)        
         
     # Return FWHM at some positions
     def fwhm(self,x=None,xtype='pixels'):
@@ -357,16 +364,24 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
-    def wave2pix(self,w,extrapolate=True):
+    def wave2pix(self,w,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return w2p(self.wave,w,extrapolate=extrapolate)
+        if self.wave.ndim==2:
+            # Order is always the second dimension
+            return w2p(self.wave[:,order],w,extrapolate=extrapolate)            
+        else:
+            return w2p(self.wave,w,extrapolate=extrapolate)
         
-    def pix2wave(self,x,extrapolate=True):
+    def pix2wave(self,x,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        return p2w(self.wave,x,extrapolate=extrapolate)
-    
+        if self.wave.ndim==2:
+             # Order is always the second dimension
+            return p2w(self.wave[:,order],x,extrapolate=extrapolate)
+        else:
+            return p2w(self.wave,x,extrapolate=extrapolate)            
+        
     @staticmethod
     def read(filename=None):
         return rdspec(filename=filename)
