@@ -413,49 +413,6 @@ def prepare_cannon_model(model,spec,dointerp=False):
         
     return omodel
 
-def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
-    if teff is None:
-        raise Exception("Need to input TEFF")    
-    if logg is None:
-        raise Exception("Need to input LOGG")
-    if feh is None:
-        raise Exception("Need to input FEH")
-    if rv is None: rv=0.0
-    
-    pars = np.array([teff,logg,feh])
-    # Get best cannon model
-    model = get_best_cannon_model(models,pars)
-    # Create the model spectrum
-    model_spec = model(pars)
-    model_wave = model.dispersion.copy()
-    npix = len(model_spec)
-
-    # Apply doppler shift to wavelength
-    model_wave *= (1+rv/cspeed)
-    # w = synwave*(1.0d0 + par[0]/cspeed)
-    
-    # Interpolation
-    model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
-                                    fill_value=(np.nan,np.nan),assume_sorted=True)(spec.wave)
-
-    # UnivariateSpline
-    #   this is 10x faster then the interpolation
-    # scales linearly with number of points
-    spl = UnivariateSpline(model_wave,model_spec)
-    model_spec_interp = spl(spec.wave)
-    
-    
-    # Create Spec1D object
-    sigma = spec.lsf.sigma(xtype='Wave')
-    mspec = Spec1D(model_spec_interp,wave=spec.wave.copy(),lsfsigma=sigma,instrument='Model')
-    mspec.teff = teff
-    mspec.logg = logg
-    mspec.feh = feh
-    mspec.rv = rv
-    mspec.snr = np.inf
-        
-    return mspec
-
 
 def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
     if teff is None:
@@ -479,17 +436,15 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
         model_wave *= (1+rv/cspeed)
         # w = synwave*(1.0d0 + par[0]/cspeed)
     
-        # Interpolation
-        model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
-                                     fill_value=(np.nan,np.nan),assume_sorted=True)(spec.wave)
+    # Interpolation
+    model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
+                                 fill_value=(np.nan,np.nan),assume_sorted=True)(spec.wave)
 
-        # UnivariateSpline
-        #   this is 10x faster then the interpolation
-        # scales linearly with number of points
-        #spl = UnivariateSpline(model_wave,model_spec)
-        #model_spec_interp = spl(spec.wave)
-    else:
-        model_spec_interp = model_spec
+    # UnivariateSpline
+    #   this is 10x faster then the interpolation
+    # scales linearly with number of points
+    #spl = UnivariateSpline(model_wave,model_spec)
+    #model_spec_interp = spl(spec.wave)
     
     # Create Spec1D object
     sigma = spec.lsf.sigma(xtype='Wave')

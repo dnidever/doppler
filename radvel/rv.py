@@ -29,10 +29,13 @@ import thecannon as tc
 #import bindata
 #from utils import *
 from dlnpyutils import utils as dln, bindata
+from . import cannon
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+
+cspeed = 2.99792458e5  # speed of light in km/s
 
 def xcorr_dtype(nlag):
     """Return the dtype for the xcorr structure"""
@@ -132,6 +135,29 @@ def convolve_sparse(spec,lsf):
         out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
     return out
 
+
+# Make logaritmic wavelength scale
+def make_logwave_scale(wave,vel=1000.0):
+    """ Make logarithmic wavelength scale for this observed wavelength scale."""
+
+    # If the existing wavelength scale is logaritmic them use it, just extend
+    # on either side
+    n = len(wave)
+    wr = dln.minmax(wave)
+    # extend wavelength range by +/-vel km/s
+    wlo = wr[0]-vel/cspeed*wr[0]
+    whi = wr[1]+vel/cspeed*wr[1]
+    dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
+
+    nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
+    nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))
+    nf = n+nlo+nhi
+
+    fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
+                 
+    # w=10**(w0log+i*dwlog)
+    return fwave
+    
 
 # Object for representing LSF (line spread function)
 class Lsf:
@@ -347,6 +373,7 @@ class Spec1D:
         self.snr = None
         if self.err is not None:
             self.snr = np.nanmedian(flux)/np.nanmedian(err)
+        self.normalized = False
         return
 
     def __repr__(self):
@@ -408,7 +435,7 @@ class Spec1D:
 
         self.flux = self.flux/cont
         self.cont = cont
-        self.normalized = 1
+        self.normalized = True
         return
 
     def rv(self,template):
@@ -421,6 +448,70 @@ class Spec1D:
         pass
         return
 
+
+    def fit(self,models):
+        """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
+
+        # Step 1: Normalize the spectrum
+        if self.normalized is False: self.normalize()
+            
+        # Step 2: Load the Cannon models
+        models = cannon.load_all_cannon_models() 
+        
+        # Step 3: Prepare the Cannon models
+        pmodels = cannon.prepare_cannon_model(models,self) 
+        
+        # Step 4: put on logarithmic wavelength grid
+        wavelog = make_logwave_scale(self.wave,vel=0.0)
+        flux = dln.interp(self.wave,self.flux,wavelog,extrapolate=False)
+        err = dln.interp(self.wave,self.err,wavelog,extrapolate=False)
+        sigma = self.lsf.sigma(xtype='Wave')   # Is this correct??
+        obs = Spec1D(flux,wave=wavelog,err=err,lsfsigma=sigma)
+
+        # PREPARE THE SPECTRUM???
+        
+        # Step 5: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+        teff = [3500.0, 6000.0, 10000.0, 25000.0, 3500.0, 5000.0]
+        logg = [4.0, 4.0, 4.0, 4.0, 1.0, 2.0]
+        feh = -0.5
+        dtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+                          ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
+        outstr = np.zeros(len(teff),dtype=dtype)
+        for i in range(len(teff)):
+            m = cannon.model_spectrum(pmodels,obs,teff=teff[i],logg=logg[i],feh=feh,rv=0)
+            outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,50)
+            print(str(teff[i])+' '+str(logg[i])+' '+str(feh)+' '+str(outstr1['vrel'])+' '+str(outstr1['ccpeak'])+' '+str(outstr1['chisq']))
+            outstr['xshift'][i] = outstr1['xshift']
+            outstr['vrel'][i] = outstr1['vrel']
+            outstr['vrelerr'][i] = outstr1['vrelerr']            
+            outstr['ccpeak'][i] = outstr1['ccpeak']
+            outstr['ccpfwhm'][i] = outstr1['ccpfwhm']
+            outstr['chisq'][i] = outstr1['chisq']
+            outstr['teff'][i] = teff[i]
+            outstr['logg'][i] = logg[i]
+            outstr['feh'][i] = feh            
+        # Get best fit
+        bestind = np.argmax(outstr['ccpeak'])
+        beststr = outstr[bestind]
+        bestm = cannon.model_spectrum(pmodels,obs,teff=beststr['teff'],logg=beststr['logg'],
+                                      feh=beststr['feh'],rv=beststr['vrel'])
+            
+        # Step 6: Get better Cannon stellar parameters using initial RV
+        # put observed spectrum on rest wavelength scale
+        # get cannnon model for "best" teff/logg/feh values
+        # run cannon.fit() on the spectrum and variances
+        
+        
+        # Step 7: Improved RV using better Cannon template
+
+        
+        # Step 8: Final stellar parameters
+
+        
+        # Step 9: MCMC??
+
+
+    
    # maybe add an interp() method to interpolate the
    # spectrum onto a new wavelength scale, outputs a new object
 
@@ -1162,8 +1253,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     out = apxcorr(wave,tempspec,spec,err)
     
     """
-    
-    cspeed = 2.99792458e5  # speed of light in km/s
+
 
     # Not enough inputs
     if (wave is None) | (tempspec is None) | (obsspec is None) | (obserr is None):
@@ -1181,10 +1271,10 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     # Set up the cross-correlation parameters
     #  this only gives +/-450 km/s with 2048 pixels, maybe use larger range
     nlag = 2*np.round(np.abs(maxlag))+1
-    if ((nlag % 2) == 0): nlag +=1  # make sure nlag is even
+    if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
     dlag = 1
-    minlag = -nlag/2
-    lag = np.arange(nlag)*dlag+minlag
+    minlag = -np.int(np.ceil(nlag/2))
+    lag = np.arange(nlag)*dlag+minlag+1
 
     # Initialize the output structure
     outstr = np.zeros(1,dtype=xcorr_dtype(nlag))
@@ -1222,10 +1312,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     #lo = (0 if (gd[0]-nlag)<0 else gd[0]-nlag)
     #hi = ((nw-1) if (gd[ngd-1]+nlag)>(nw-1) else gd[ngd-1]+nlag)
 
-    indobs, = np.where(np.isfinite(spec) == True)  # only finite values, in case any NAN
-    nindobs = np.sum(indobs)
-    indtemp, = np.where(np.isfinite(template) == True)
-    nindtemp = np.sum(indtemp)
+    indobs,nindobs = dln.where(np.isfinite(spec) == True)  # only finite values, in case any NAN
+    indtemp,nindtemp = dln.where(np.isfinite(template) == True)
     if (nindobs>0) & (nindtemp>0):
         # Cross-Correlation
         #------------------
@@ -1238,7 +1326,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
         ngderr = np.sum((bderr==False))
         if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[(bderr==False)]])
         obserr1 = median_filter(obserr1,51)
-        ccf, ccferr = ccorrelate(template,obsspec,lag,obserr1)
+        ccf, ccferr = ccorrelate(template,spec,lag,obserr1)
 
         # Apply flat-topped Gaussian prior with unit amplitude
         #  add a broader Gaussian underneath so the rest of the
@@ -1287,53 +1375,55 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     estimates0 = [ccf_diff[best_shiftind0], best_xshift0, 4.0, 0.0]
     lbounds0 = [1e-3, np.min(lag), 0.1, -np.inf]
     ubounds0 =  [np.inf, np.max(lag), np.max(lag), np.inf]
-    pars0, cov0 = gaussfit(lag,ccf_diff,estimates0,ccferr,bounds=(lbounds0,ubounds0))
+    pars0, cov0 = dln.gaussfit(lag,ccf_diff,estimates0,ccferr,bounds=(lbounds0,ubounds0))
     perror0 = cov0[np.arange(len(pars0)),np.arange(len(pars0))]
 
     # Fit the width
     #  keep height, center and constant constrained
     estimates1 = pars0
     estimates1[1] = best_xshift
-    lbounds1 = [0.5*estimates1[0], best_xshift-4, 0.3*estimates1[2], lt(np.min(ccf_diff),lt(0,estimates1[3]-0.1)) ]
-    ubounds1 =  [1.5*estimates1[0], best_xshift+4, 1.5*estimates1[2], gt(np.max(ccf_diff)*0.5,estimates1[3]+0.1) ]
-    lo1 = np.int(gt(np.floor(best_shiftind-gt(estimates1[2]*2,5)),0))
-    hi1 = np.int(lt(np.ceil(best_shiftind+gt(estimates1[2]*2,5)),len(lag)))
-    pars1, cov1 = gaussfit(lag[lo1:hi1],ccf_diff[lo1:hi1],estimates1,ccferr[lo1:hi1],bounds=(lbounds1,ubounds1))
-    yfit1 = gaussian(lag[lo1:hi1],*pars1)
+    lbounds1 = [0.5*estimates1[0], best_xshift-4, 0.3*estimates1[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates1[3]-0.1)) ]
+    ubounds1 =  [1.5*estimates1[0], best_xshift+4, 1.5*estimates1[2], dln.gt(np.max(ccf_diff)*0.5,estimates1[3]+0.1) ]
+    lo1 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates1[2]*2,5)),0))
+    hi1 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates1[2]*2,5)),len(lag)))
+    pars1, cov1 = dln.gaussfit(lag[lo1:hi1],ccf_diff[lo1:hi1],estimates1,ccferr[lo1:hi1],bounds=(lbounds1,ubounds1))
+    yfit1 = dln.gaussian(lag[lo1:hi1],*pars1)
     perror1 = cov1[np.arange(len(pars1)),np.arange(len(pars1))]
     
     # Fefit and let constant vary more, keep width constrained
     estimates2 = pars1
+    estimates2[1] = dln.limit(estimates2[1],np.min(lag),np.max(lag))    # must be in range
     estimates2[3] = np.median(ccf_diff[lo1:hi1]-yfit1) + pars1[3]
-    lbounds2 = [0.5*estimates2[0], limit(best_xshift-gt(estimates2[2],1), np.min(lag), estimates2[1]-1),
-                0.3*estimates2[2], lt(np.min(ccf_diff),lt(0,estimates2[3]-0.1)) ]
-    ubounds2 = [1.5*estimates2[0], limit(best_xshift+gt(estimates2[2],1), estimates2[1]+1, np.max(lag)),
-                1.5*estimates2[2], gt(np.max(ccf_diff)*0.5,estimates2[3]+0.1) ]
-    lo2 = np.int(gt(np.floor( best_shiftind-gt(estimates2[2]*2,5)),0))
-    hi2 = np.int(lt(np.ceil( best_shiftind+gt(estimates2[2]*2,5)),len(lag)))
-    pars2, cov2 = gaussfit(lag[lo2:hi2],ccf_diff[lo2:hi2],estimates2,ccferr[lo2:hi2],bounds=(lbounds2,ubounds2))
-    yfit2 = gaussian(lag[lo2:hi2],*pars2)    
+    lbounds2 = [0.5*estimates2[0], dln.limit(best_xshift-dln.gt(estimates2[2],1), np.min(lag), estimates2[1]-1),
+                0.3*estimates2[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates2[3]-0.1)) ]
+    ubounds2 = [1.5*estimates2[0], dln.limit(best_xshift+dln.gt(estimates2[2],1), estimates2[1]+1, np.max(lag)),
+                1.5*estimates2[2], dln.gt(np.max(ccf_diff)*0.5,estimates2[3]+0.1) ]
+    lo2 = np.int(dln.gt(np.floor( best_shiftind-dln.gt(estimates2[2]*2,5)),0))
+    hi2 = np.int(dln.lt(np.ceil( best_shiftind+dln.gt(estimates2[2]*2,5)),len(lag)))
+    pars2, cov2 = dln.gaussfit(lag[lo2:hi2],ccf_diff[lo2:hi2],estimates2,ccferr[lo2:hi2],bounds=(lbounds2,ubounds2))
+    yfit2 = dln.gaussian(lag[lo2:hi2],*pars2)    
     perror2 = cov2[np.arange(len(pars2)),np.arange(len(pars2))]
     
     # Refit with even narrower range
     estimates3 = pars2
+    estimates3[1] = dln.limit(estimates3[1],np.min(lag),np.max(lag))    # must be in range
     estimates3[3] = np.median(ccf_diff[lo1:hi1]-yfit1) + pars1[3]
-    lbounds3 = [0.5*estimates3[0], limit(best_xshift-gt(estimates3[2],1), np.min(lag), estimates3[1]-1),
-                0.3*estimates3[2], lt(np.min(ccf_diff),lt(0,estimates3[3]-0.1)) ]
-    ubounds3 = [1.5*estimates3[0], limit(best_xshift+gt(estimates3[2],1), estimates3[1]+1, np.max(lag)),
-                1.5*estimates3[2], gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]
-    lo3 = np.int(gt(np.floor(best_shiftind-gt(estimates3[2]*2,5)),0))
-    hi3 = np.int(lt(np.ceil(best_shiftind+gt(estimates3[2]*2,5)),len(lag)))
-    pars3, cov3 = gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],estimates3,ccferr[lo3:hi3],bounds=(lbounds3,ubounds3))
-    yfit3 = gaussian(lag[lo3:hi3],*pars3)    
+    lbounds3 = [0.5*estimates3[0], dln.limit(best_xshift-dln.gt(estimates3[2],1), np.min(lag), estimates3[1]-1),
+                0.3*estimates3[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates3[3]-0.1)) ]
+    ubounds3 = [1.5*estimates3[0], dln.limit(best_xshift+dln.gt(estimates3[2],1), estimates3[1]+1, np.max(lag)),
+                1.5*estimates3[2], dln.gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]    
+    lo3 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates3[2]*2,5)),0))
+    hi3 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates3[2]*2,5)),len(lag)))
+    pars3, cov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],estimates3,ccferr[lo3:hi3],bounds=(lbounds3,ubounds3))
+    yfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
     perror3 = cov3[np.arange(len(pars3)),np.arange(len(pars3))]
 
     # This seems to fix high shift/sigma errors
     if (perror3[0]>10) | (perror3[1]>10):
-        dlbounds3 = [0.5*estimates3[0], -10+pars3[1], 0.01, lt(np.min(ccf_diff),lt(0,estimates3[3]-0.1)) ]
-        dubounds3 = [1.5*estimates3[0], 10+pars3[1], 2*pars3[2], gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]
-        dpars3, dcov3 = gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],pars3,ccferr[lo3:hi3],bounds=(dlbounds3,dubounds3))
-        dyfit3 = gaussian(lag[lo3:hi3],*pars3)    
+        dlbounds3 = [0.5*estimates3[0], -10+pars3[1], 0.01, dln.lt(np.min(ccf_diff),dln.lt(0,estimates3[3]-0.1)) ]
+        dubounds3 = [1.5*estimates3[0], 10+pars3[1], 2*pars3[2], dln.gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]
+        dpars3, dcov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],pars3,ccferr[lo3:hi3],bounds=(dlbounds3,dubounds3))
+        dyfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
         perror3 = dcov3[np.arange(len(pars3)),np.arange(len(pars3))]
         
     # Final parameters
@@ -1343,19 +1433,19 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     xshifterr = perror[1]
     ccpfwhm_pix = pars[2]*2.35482  # ccp fwhm in pixels
     # v = (10^(delta log(wave))-1)*c
-    dwlog = np.median(slope(np.log10(wave)))
+    dwlog = np.median(dln.slope(np.log10(wave)))
     ccpfwhm = ( 10**(ccpfwhm_pix*dwlog)-1 )*cspeed  # in km/s
 
     # Convert pixel shift to velocity
     #---------------------------------
     # delta log(wave) = log(v/c+1)
     # v = (10^(delta log(wave))-1)*c
-    dwlog = np.median(slope(np.log10(wave)))
+    dwlog = np.median(dln.slope(np.log10(wave)))
     vrel = ( 10**(xshift*dwlog)-1 )*cspeed
     # Vrel uncertainty
     dvreldshift = np.log(10.0)*(10**(xshift*dwlog))*dwlog*cspeed  # derivative wrt shift
     vrelerr = dvreldshift * xshifterr
-
+    
     # Make CCF structure and add to STR
     #------------------------------------
     outstr["xshift0"] = best_xshift
@@ -1576,7 +1666,7 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
         if (nofit is True): return
 
         # Remove smooth background at large scales
-        cont = gsmooth(xcorr,100)
+        cont = dln.gsmooth(xcorr,100)
         xcorr_diff = xcorr-cont
 
         # Fit Xcorr peak with a Gaussian plus a line
@@ -1586,8 +1676,8 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
         estimates0 = [xcorr_diff[best_shiftind0],best_xshift0,4.0,0.0]
         lbounds0 = [1e-3, np.min(lag), 0.1, -2*np.max(xcorr_diff)]
         ubounds0 = [np.max(xcorr_diff)*2, np.max(lag), np.max(lag), 2*np.max(xcorr_diff) ]
-        pars0, cov0 = gaussfit(lag,xcorr_diff,estimates0,xcorrerr,bounds=(lbounds0,ubounds0),binned=True)
-        yfit0 = gaussbin(lag,*pars0)
+        pars0, cov0 = dln.gaussfit(lag,xcorr_diff,estimates0,xcorrerr,bounds=(lbounds0,ubounds0),binned=True)
+        yfit0 = dln.gaussbin(lag,*pars0)
         # Find peak in the background subtracted XCOR
         best_shiftind = np.argmax(xcorr_diff)
         best_xshift = lag[best_shiftind]
@@ -1596,37 +1686,37 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
         #  keep height, center and constant constrained
         estimates = pars0
         estimates[1] = best_xshift
-        lbounds0 = [0.5*estimates[0], best_xshift-4, 0.3*pars0[2], lt(lt(np.min(xcorr_diff),0),(pars0[3]-0.1)) ]
-        ubounds0 = [1.5*estimates[0], best_xshift+4, 1.5*pars0[2],  gt(np.max(xcorr_diff)*0.5,(pars0[3]+0.1)) ]
-        lo1 = gt(np.floor( best_shiftind-gt(pars0[2]*2,5)), 0)
-        hi1 = lt(np.ceil( best_shiftind+gt(pars0[2]*2,5) ), (len(lag)-1))
-        pars1, cov1 = gaussfit(lag[lo1:hi1],xcorr_diff[lo1:hi1],estimates,xcorrerr[lo1:hi1],
-                               bounds=(lbounds1,ubounds1),binned=True)
-        yfit1 = gaussbin(lag[lo1:hi1],*pars1)
+        lbounds0 = [0.5*estimates[0], best_xshift-4, 0.3*pars0[2], dln.lt(dln.lt(np.min(xcorr_diff),0),(pars0[3]-0.1)) ]
+        ubounds0 = [1.5*estimates[0], best_xshift+4, 1.5*pars0[2],  dln.gt(np.max(xcorr_diff)*0.5,(pars0[3]+0.1)) ]
+        lo1 = dln.gt(np.floor( best_shiftind-dln.gt(pars0[2]*2,5)), 0)
+        hi1 = dln.lt(np.ceil( best_shiftind+dln.gt(pars0[2]*2,5) ), (len(lag)-1))
+        pars1, cov1 = dln.gaussfit(lag[lo1:hi1],xcorr_diff[lo1:hi1],estimates,xcorrerr[lo1:hi1],
+                                   bounds=(lbounds1,ubounds1),binned=True)
+        yfit1 = dln.gaussbin(lag[lo1:hi1],*pars1)
 
         # Refit and let constant vary more, keep width constrained
-        lo2 = gt(np.floor( best_shiftind-gt(pars1[2]*2,5)), 0)
-        hi2 = lt(np.ceil( best_shiftind+gt(pars1[2]*2,5)), (len(lag)-1))
+        lo2 = dln.gt(np.floor( best_shiftind-dln.gt(pars1[2]*2,5)), 0)
+        hi2 = dln.lt(np.ceil( best_shiftind+dln.gt(pars1[2]*2,5)), (len(lag)-1))
         est2 = pars1
         est2[3] = np.median(xcorr_diff[lo1:hi1]-yfit1) + pars1[3]
-        lbounds2 = [0.5*pars1[0], limit(np.min(lag), (best_xshift-gt(pars1[2],1)), (pars1[1]-1)),
-                    0.3*pars1[2], lt(lt(np.min(xcorr_diff),0), (est2[3]-0.1))]
-        ubounds2 = [1.5*pars1[0], limit(np.max(lag), (pars1[1]+1), (best_xshift+gt(pars1[2],1))),
-                    1.5*pars1[2], gt(np.max(xcorr_diff)*0.5, (est2[3]+0.1))]
-        pars2, cov2 = gaussfit(lag[lo2:hi2],xcorr_diff[lo2:hi2],est2,xcorrerr[lo2:hi2],
-                               bounds=(lbounds2,ubounds2),binned=True)
-        yfit2 = gaussbin(lag[lo2:hi2],*pars2)
+        lbounds2 = [0.5*pars1[0], dln.limit(np.min(lag), (best_xshift-dln.gt(pars1[2],1)), (pars1[1]-1)),
+                    0.3*pars1[2], dln.lt(dln.lt(np.min(xcorr_diff),0), (est2[3]-0.1))]
+        ubounds2 = [1.5*pars1[0], dln.limit(np.max(lag), (pars1[1]+1), (best_xshift+dln.gt(pars1[2],1))),
+                    1.5*pars1[2], dln.gt(np.max(xcorr_diff)*0.5, (est2[3]+0.1))]
+        pars2, cov2 = dln.gaussfit(lag[lo2:hi2],xcorr_diff[lo2:hi2],est2,xcorrerr[lo2:hi2],
+                                   bounds=(lbounds2,ubounds2),binned=True)
+        yfit2 = dln.gaussbin(lag[lo2:hi2],*pars2)
         
         # Refit with even narrower range
-        lo2 = gt(np.floor( best_shiftind-gt(pars2[2],5)), 0)
-        hi2 = lt(np.ceil( best_shiftind+gt(pars2[2],5)), (len(lag)-1))
-        lbounds3 = [0.5*pars2[0], limit(np.min(lag), (best_xshift-gt(pars2[2],1)), (pars2[1]-1)),
-                    0.3*pars2[2], lt(lt(np.min(xcorr_diff),0), (pars2[3]-0.1))]
-        ubounds3 = [1.5*pars2[0], limit(np.max(lag), (pars2[1]+1), (best_xshift+gt(pars2[2],1))),
-                    1.5*pars2[2], gt(np.max(xcorr_diff)*0.5, (pars2[3]+0.1))]
-        pars3, cov3 = gaussfit(lag[lo3:hi3],xcorr_diff[lo3:hi3],pars2,xcorrerr[lo3:hi3],
-                               bounds=(lbounds3,ubounds3),binned=True)
-        yfit3 = gaussbin(lag[lo3:hi3],*pars3)
+        lo2 = dln.gt(np.floor( best_shiftind-dln.gt(pars2[2],5)), 0)
+        hi2 = dln.lt(np.ceil( best_shiftind+dln.gt(pars2[2],5)), (len(lag)-1))
+        lbounds3 = [0.5*pars2[0], dln.limit(np.min(lag), (best_xshift-dln.gt(pars2[2],1)), (pars2[1]-1)),
+                    0.3*pars2[2], dln.lt(dln.lt(np.min(xcorr_diff),0), (pars2[3]-0.1))]
+        ubounds3 = [1.5*pars2[0], dln.limit(np.max(lag), (pars2[1]+1), (best_xshift+dln.gt(pars2[2],1))),
+                    1.5*pars2[2], dln.gt(np.max(xcorr_diff)*0.5, (pars2[3]+0.1))]
+        pars3, cov3 = dln.gaussfit(lag[lo3:hi3],xcorr_diff[lo3:hi3],pars2,xcorrerr[lo3:hi3],
+                                   bounds=(lbounds3,ubounds3),binned=True)
+        yfit3 = dln.gaussbin(lag[lo3:hi3],*pars3)
 
         # Final parameters
         pars = pars3
@@ -1635,14 +1725,14 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
         xshifterr = perror[1]
         ccpfwhm_pix = pars[2]*2.35482  # ccp fwhm in pixels
         # v = (10^(delta log(wave))-1)*c
-        dwlog = np.median(slope(np.log10(wave)))
+        dwlog = np.median(dln.slope(np.log10(wave)))
         ccpfwhm = ( 10**(ccpfwhm_pix*dwlog)-1 )*cspeed  # in km/s
 
         # Convert pixel shift to velocity
         #---------------------------------
         # delta log(wave) = log(v/c+1)
         # v = (10^(delta log(wave))-1)*c
-        dwlog = np.median(slope(np.log10(wave)))
+        dwlog = np.median(dln.slope(np.log10(wave)))
         vrel = ( 10**(xshift*dwlog)-1 )*cspeed
         # Vrel uncertainty
         dvreldshift = np.log10(10.0)*(10**(xshift*dwlog))*dwlog*cspeed  # derivative wrt shift
