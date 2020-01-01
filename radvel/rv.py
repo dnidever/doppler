@@ -13,23 +13,15 @@ import os
 import numpy as np
 import warnings
 from astropy.io import fits
-from astropy.table import Table, Column
-from astropy import modeling
-from glob import glob
-from scipy.signal import medfilt
-from scipy.ndimage.filters import median_filter,gaussian_filter1d,convolve
-from scipy.optimize import curve_fit, least_squares
-from scipy.special import erf
+from astropy.table import Table
+from scipy.ndimage.filters import median_filter,gaussian_filter1d
+from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
-#from numpy.polynomial import polynomial as poly
-#from lmfit import Model
-#from apogee.utils import yanny, apload
-#from sdss_access.path import path
 import thecannon as tc
-#import bindata
-#from utils import *
 from dlnpyutils import utils as dln, bindata
-from . import cannon
+from .spec1d import Spec1D
+from . import (cannon,utils)
+import copy
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -47,94 +39,6 @@ def xcorr_dtype(nlag):
     return dtype
 
 # astropy.modeling can handle errors and constraints
-
-# Convert wavelengths to pixels for a dispersion solution
-def w2p(dispersion,w,extrapolate=True):
-    """ dispersion is the wavelength array of the spectrum"""
-    x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
-    # Need to extrapolate
-    if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
-        win = dispersion
-        xin = np.arange(len(dispersion))
-        si = np.argsort(win)
-        win = win[si]
-        xin = xin[si]
-        npix = len(win)
-        # At the beginning
-        if (np.min(w)<np.min(dispersion)):
-            coef1 = dln.poly_fit(win[0:10], xin[0:10], 2)
-            bd1, nbd1 = dln.where(w < np.min(dispersion))
-            x[bd1] = dln.poly(w[bd1],coef1)
-        # At the end
-        if (np.max(w)>np.max(dispersion)):
-            coef2 = dln.poly_fit(win[npix-10:], xin[npix-10:], 2)
-            bd2, nbd2 = dln.where(w > np.max(dispersion))
-            x[bd2] = dln.poly(w[bd2],coef2)                
-    return x
-
-
-# Convert pixels to wavelength for a dispersion solution
-def p2w(dispersion,x,extrapolate=True):
-    """ dispersion is the wavelength array of the spectrum"""
-    npix = len(dispersion)
-    w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
-    # Need to extrapolate
-    if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
-        xin = np.arange(npix)
-        win = dispersion
-        # At the beginning
-        if (np.min(x)<0):
-            coef1 = dln.poly_fit(xin[0:10], win[0:10], 2)
-            bd1, nbd1 = dln.where(x < 0)
-            w[bd1] = dln.poly(x[bd1],coef1)
-        # At the end
-        if (np.max(x)>(npix-1)):
-            coef2 = dln.poly_fit(xin[npix-10:], win[npix-10:], 2)
-            bd2, nbd2 = dln.where(x > (npix-1))
-            w[bd2] = dln.poly(x[bd2],coef2)                
-    return w
-
-
-def sparsify(lsf):
-    # sparsify
-    # make a sparse matrix
-    # from J.Bovy's lsf.py APOGEE code
-    nx = lsf.shape[1]
-    diagonals = []
-    offsets = []
-    for ii in range(nx):
-        offset= nx//2-ii
-        offsets.append(offset)
-        if offset < 0:
-            diagonals.append(lsf[:offset,ii])
-        else:
-            diagonals.append(lsf[offset:,ii])
-    return sparse.diags(diagonals,offsets)
-
-def convolve_sparse(spec,lsf):
-    # convolution with matrices
-    # from J.Bovy's lsf.py APOGEE code    
-    # spec - [npix]
-    # lsf - [npix,nlsf]
-    npix,nlsf = lsf.shape
-    lsf2 = sparsify(lsf)
-    spec2 = np.reshape(spec,(1,npix))
-    spec2 = sparse.csr_matrix(spec2) 
-    out = lsf2.dot(spec2.T).T.toarray()
-    out = np.reshape(out,len(spec))
-    # The ends are messed up b/c not normalized
-    hlf = nlsf//2
-    for i in range(hlf+1):
-        lsf1 = lsf[i,hlf-i:]
-        lsf1 /= np.sum(lsf1)
-        out[i] = np.sum(spec[0:len(lsf1)]*lsf1)
-    for i in range(hlf+1):
-        ii = npix-i-1
-        lsf1 = lsf[ii,:hlf+1+i]
-        lsf1 /= np.sum(lsf1)
-        out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
-    return out
-
 
 # Make logaritmic wavelength scale
 def make_logwave_scale(wave,vel=1000.0):
@@ -159,365 +63,7 @@ def make_logwave_scale(wave,vel=1000.0):
     return fwave
     
 
-# Object for representing LSF (line spread function)
-class Lsf:
-    # Initalize the object
-    def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None):
-        # xtype is wave or pixels.  designates what units to use BOTH for the input
-        #   arrays to use with PARS and the output units
-        if wave is None and xtype=='Wave':
-            raise Exception('Need wavelength information if xtype=Wave')
-        self.wave = wave
-        self.pars = pars
-        self.type = lsftype
-        self.xtype = xtype
-        self._sigma = sigma
-        self._array = None
-        if (pars is None) & (sigma is None):
-            print('No LSF information input.  Assuming Nyquist sampling.')
-            # constant FWHM=2.5, sigma=2.5/2.35
-            self.pars = np.array([2.5 / 2.35])
-            self.xtype = 'Pixels'
 
-    def wave2pix(self,w,extrapolate=True,order=0):
-        if self.wave is None:
-            raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-            # Order is always the second dimension
-            return w2p(self.wave[:,order],w,extrapolate=extrapolate)            
-        else:
-            return w2p(self.wave,w,extrapolate=extrapolate)
-        
-    def pix2wave(self,x,extrapolate=True,order=0):
-        if self.wave is None:
-            raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-             # Order is always the second dimension
-            return p2w(self.wave[:,order],x,extrapolate=extrapolate)
-        else:
-            return p2w(self.wave,x,extrapolate=extrapolate)        
-        
-    # Return FWHM at some positions
-    def fwhm(self,x=None,xtype='pixels'):
-        #return np.polyval(pars[::-1],x)*2.35
-        return self.sigma(x,xtype=xtype)*2.35
-        
-    # Return Gaussian sigma
-    def sigma(self,x=None,xtype='pixels',extrapolate=True):
-        # The sigma will be returned in units given in lsf.xtype
-        if self._sigma is not None:
-            if x is None:
-                return self._sigma
-            else:
-                # Wavelength input
-                if xtype.lower().find('wave') > -1:
-                    x0 = np.array(x).copy()    # backup
-                    x = self.wave2pix(x0)
-                # Integer, just return the values
-                if( type(x)==int) | (np.array(x).dtype.kind=='i'):
-                    return self._sigma[x]
-                # Floats, interpolate
-                else:
-                    sig = interp1d(np.arange(len(self._sigma)),self._sigma,kind='cubic',bounds_error=False,
-                                   fill_value=(np.nan,np.nan),assume_sorted=True)(x)
-                    # Extrapolate
-                    npix = len(self._sigma)
-                    if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
-                        xin = np.arange(npix)
-                        # At the beginning
-                        if (np.min(x)<0):
-                            coef1 = dln.poly_fit(xin[0:10], self._sigma[0:10], 2)
-                            bd1, nbd1 = dln.where(x <0)
-                            sig[bd1] = dln.poly(x[bd1],coef1)
-                        # At the end
-                        if (np.max(x)>(npix-1)):
-                            coef2 = dln.poly_fit(xin[npix-10:], self._sigma[npix-10:], 2)
-                            bd2, nbd2 = dln.where(x > (npix-1))
-                            sig[bd2] = dln.poly(x[bd2],coef2)
-                    return sig
-                        
-        # Need to calculate
-        else:
-            if x is None:
-                x = len(self.wave)
-            if self.pars is None:
-                   raise Exception("No LSF parameters")
-            # Pixels input
-            if xtype.lower().find('pix') > -1:
-                # Pixel LSF parameters
-                if self.xtype.lower().find('pix') > -1:
-                    return np.polyval(self.pars[::-1],x)
-                # Wave LSF parameters
-                else:
-                    w = self.pix2wave(x)
-                    return np.polyval(self.pars[::-1],w)                    
-            # Wavelengths input
-            else:
-                # Wavelength LSF parameters
-                if self.xtype.lower().find('wave') > -1:
-                    return np.polyval(self.pars[::-1],x)
-                # Pixel LSF parameters
-                else:
-                    x0 = np.array(x).copy()
-                    x = self.wave2pix(x0)
-                    return np.polyval(self.pars[::-1],x)  
-
-    # Clean up bad LSF values
-    def clean(self):
-        if self._sigma is not None:
-            smlen = np.round(len(self._sigma) // 50).astype(int)
-            if smlen==0: smlen=3
-            smsig = dln.gsmooth(self._sigma,smlen)
-            bd,nbd = dln.where(self._sigma <= 0)
-            if nbd>0:
-                self._sigma[bd] = smsig[bd]
-                
-    # Return actual LSF values
-    def vals(self,x):
-        # x must be 2D to give x/wavelength CENTERS and the grid on
-        #  which to put them
-        # or we could have two inputs, xcenter and xgrid
-        pass
-
-        # create the LSF array using the input wavelength array input
-
-
-    # Return full LSF values for the spectrum
-    def array(self):
-        # Return what we already have
-        if self._array is not None:
-            return self._array
-        
-        ## currently this assumes the LSF parameters use type='Wave'x
-        #if self.xtype!='Wave' or self.lsftype!='Gaussian':
-        #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
-        #    return
-
-        npix = len(self.wave)
-        x = np.arange(npix)
-        xsigma = self.sigma()
-
-        # Convert sigma from wavelength to pixels, if necessary
-        if self.xtype.lower().find('wave') > -1:
-            wsigma = xsigma.copy()
-            dw = dln.slope(self.wave)
-            dw = np.hstack((dw,dw[-1]))            
-            xsigma = wsigma / dw
-
-        # Figure out nLSF pixels needed, +/-3 sigma
-        nlsf = np.int(np.round(np.max(xsigma)*6))
-        if nlsf % 2 == 0: nlsf+=1                   # must be odd
-        
-        # Make LSF array
-        lsf = np.zeros((npix,nlsf))
-        xlsf = np.arange(nlsf)-nlsf//2
-        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
-        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
-        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
-        # should I use gaussbin????
-        
-        self._array = lsf   # save for next time
-        return lsf
-
-    
-    # Return full LSF values using contiguous input array
-    def anyarray(self,x,xtype='pixels'):
-
-        ## currently this assumes the LSF parameters use type='Wave'x
-        #if self.xtype!='Wave' or self.lsftype!='Gaussian':
-        #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
-        #    return
-
-        npix = len(x)
-        xsigma = self.sigma(x,xtype=xtype)
-
-        # Get wavelength and pixel arrays
-        if xtype.lower().find('pix') > -1:
-            w = self.pix2wave(x)
-        else:
-            w = x
-            
-        # Convert sigma from wavelength to pixels, if necessary
-        if self.xtype.lower().find('wave') > -1:
-            wsigma = xsigma.copy()
-            dw = dln.slope(w)
-            dw = np.hstack((dw,dw[-1]))            
-            xsigma = wsigma / dw
-
-        # Figure out nLSF pixels needed, +/-3 sigma
-        nlsf = np.int(np.round(np.max(xsigma)*6))
-        if nlsf % 2 == 0: nlsf+=1                   # must be odd
-        
-        # Make LSF array
-        lsf = np.zeros((npix,nlsf))
-        xlsf = np.arange(nlsf)-nlsf//2
-        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
-        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
-        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
-        # should I use gaussbin????
-        return lsf
-
-    
-# Object for representing 1D spectra
-class Spec1D:
-    # Initialize the object
-    def __init__(self,flux,err=None,wave=None,mask=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None):
-        self.flux = flux
-        self.err = err
-        self.wave = wave
-        self.mask = mask
-        self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        self.instrument = instrument
-        self.filename = filename
-        self.snr = None
-        if self.err is not None:
-            self.snr = np.nanmedian(flux)/np.nanmedian(err)
-        self.normalized = False
-        return
-
-    def __repr__(self):
-        s = repr(self.__class__)+"\n"
-        if self.instrument is not None:
-            s += self.instrument+" spectrum\n"
-        if self.filename is not None:
-            s += "File = "+self.filename+"\n"
-        if self.snr is not None:
-            s += ("S/N = %7.2f" % self.snr)+"\n"
-        s += "Flux = "+str(self.flux)+"\n"
-        if self.err is not None:
-            s += "Err = "+str(self.err)+"\n"
-        if self.wave is not None:
-            s += "Wave = "+str(self.wave)
-        return s
-
-    def wave2pix(self,w,extrapolate=True,order=0):
-        if self.wave is None:
-            raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-            # Order is always the second dimension
-            return w2p(self.wave[:,order],w,extrapolate=extrapolate)            
-        else:
-            return w2p(self.wave,w,extrapolate=extrapolate)
-        
-    def pix2wave(self,x,extrapolate=True,order=0):
-        if self.wave is None:
-            raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-             # Order is always the second dimension
-            return p2w(self.wave[:,order],x,extrapolate=extrapolate)
-        else:
-            return p2w(self.wave,x,extrapolate=extrapolate)            
-        
-    @staticmethod
-    def read(filename=None):
-        return rdspec(filename=filename)
-    
-    def normalize(self,ncorder=6,perclevel=0.95):
-        self._flux = self.flux  # Save the original
-        #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
-
-        binsize = 0.05
-        perclevel = 90.0
-        w = self.wave.copy()
-        x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
-        y = self.flux.copy()
-        gdmask = (y>0)        # need positive fluxes
-        ytemp = y.copy()
-        # Bin the data points
-        xr = [np.nanmin(x),np.nanmax(x)]
-        bins = np.ceil((xr[1]-xr[0])/binsize)+1
-        ybin, bin_edges, binnumber = bindata.binned_statistic(x,ytemp,statistic='percentile',
-                                                              percentile=perclevel,bins=bins,range=None)
-        xbin = bin_edges[0:-1]+0.5*binsize
-        # Interpolate to full grid
-        cont = dln.interp(xbin,ybin,x,extrapolate=True)
-
-        self.flux = self.flux/cont
-        self.cont = cont
-        self.normalized = True
-        return
-
-    def rv(self,template):
-        """Calculate the RV with respect to a template spectrum"""
-        pass
-        return
-        
-    def solve(self):
-        """Find the RV and stellar parameters of this spectrum"""
-        pass
-        return
-
-
-    def fit(self,models):
-        """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
-
-        # Step 1: Normalize the spectrum
-        if self.normalized is False: self.normalize()
-            
-        # Step 2: Load the Cannon models
-        models = cannon.load_all_cannon_models() 
-        
-        # Step 3: Prepare the Cannon models
-        pmodels = cannon.prepare_cannon_model(models,self) 
-        
-        # Step 4: put on logarithmic wavelength grid
-        wavelog = make_logwave_scale(self.wave,vel=0.0)
-        flux = dln.interp(self.wave,self.flux,wavelog,extrapolate=False)
-        err = dln.interp(self.wave,self.err,wavelog,extrapolate=False)
-        sigma = self.lsf.sigma(xtype='Wave')   # Is this correct??
-        obs = Spec1D(flux,wave=wavelog,err=err,lsfsigma=sigma)
-
-        # PREPARE THE SPECTRUM???
-        
-        # Step 5: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
-        teff = [3500.0, 6000.0, 10000.0, 25000.0, 3500.0, 5000.0]
-        logg = [4.0, 4.0, 4.0, 4.0, 1.0, 2.0]
-        feh = -0.5
-        dtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
-                          ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
-        outstr = np.zeros(len(teff),dtype=dtype)
-        for i in range(len(teff)):
-            m = cannon.model_spectrum(pmodels,obs,teff=teff[i],logg=logg[i],feh=feh,rv=0)
-            outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,50)
-            print(str(teff[i])+' '+str(logg[i])+' '+str(feh)+' '+str(outstr1['vrel'])+' '+str(outstr1['ccpeak'])+' '+str(outstr1['chisq']))
-            outstr['xshift'][i] = outstr1['xshift']
-            outstr['vrel'][i] = outstr1['vrel']
-            outstr['vrelerr'][i] = outstr1['vrelerr']            
-            outstr['ccpeak'][i] = outstr1['ccpeak']
-            outstr['ccpfwhm'][i] = outstr1['ccpfwhm']
-            outstr['chisq'][i] = outstr1['chisq']
-            outstr['teff'][i] = teff[i]
-            outstr['logg'][i] = logg[i]
-            outstr['feh'][i] = feh            
-        # Get best fit
-        bestind = np.argmax(outstr['ccpeak'])
-        beststr = outstr[bestind]
-        bestm = cannon.model_spectrum(pmodels,obs,teff=beststr['teff'],logg=beststr['logg'],
-                                      feh=beststr['feh'],rv=beststr['vrel'])
-            
-        # Step 6: Get better Cannon stellar parameters using initial RV
-        # put observed spectrum on rest wavelength scale
-        # get cannnon model for "best" teff/logg/feh values
-        # run cannon.fit() on the spectrum and variances
-        
-        
-        # Step 7: Improved RV using better Cannon template
-
-        
-        # Step 8: Final stellar parameters
-
-        
-        # Step 9: MCMC??
-
-
-    
-   # maybe add an interp() method to interpolate the
-   # spectrum onto a new wavelength scale, outputs a new object
-
-   # a load() or read() method that you can use to read in a spectrum
-   # from a file, basically just calls the rdspec() function.
-    
 # Load a spectrum
 def rdspec(filename=None):
     '''
@@ -1612,7 +1158,7 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
                     gderr, = np.where(~bdcondition)
                     ngderr = np.sum(gderr)
                     if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[gderr]])
-                    obserr1 = medfilt(obserr1,51)
+                    obserr1 = dln.medfilt(obserr1,51)
                     ccferr = ccorrelate(template[lo:hi],spec[lo:hi],lag,obserr1)
 
                 nsumgood += 1
@@ -1766,3 +1312,77 @@ def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=Tr
     # Auto-correlation
     auto = ccorrelate(template,template,lag)
 
+
+       
+def fit(spec,models):
+    """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
+
+    # Step 1: Normalize the spectrum
+    if spec.normalized is False: spec.normalize()
+            
+    # Step 2: Load the Cannon models
+    models = cannon.load_all_cannon_models() 
+        
+    # Step 3: Prepare the Cannon models
+    pmodels = cannon.prepare_cannon_model(models,spec) 
+        
+    # Step 4: put on logarithmic wavelength grid
+    wavelog = make_logwave_scale(spec.wave,vel=0.0)
+    flux = dln.interp(spec.wave,spec.flux,wavelog,extrapolate=False)
+    err = dln.interp(spec.wave,spec.err,wavelog,extrapolate=False)
+    sigma = spec.lsf.sigma(xtype='Wave')   # Is this correct??
+    obs = Spec1D(flux,wave=wavelog,err=err,lsfsigma=sigma)
+
+    # PREPARE THE SPECTRUM???
+        
+    # Step 5: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+    teff = [3500.0, 6000.0, 10000.0, 25000.0, 3500.0, 5000.0]
+    logg = [4.0, 4.0, 4.0, 4.0, 1.0, 2.0]
+    feh = -0.5
+    dtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+                      ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
+    outstr = np.zeros(len(teff),dtype=dtype)
+    for i in range(len(teff)):
+        m = cannon.model_spectrum(pmodels,obs,teff=teff[i],logg=logg[i],feh=feh,rv=0)
+        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,50)
+        print(str(teff[i])+' '+str(logg[i])+' '+str(feh)+' '+str(outstr1['vrel'])+' '+str(outstr1['ccpeak'])+' '+str(outstr1['chisq']))
+        outstr['xshift'][i] = outstr1['xshift']
+        outstr['vrel'][i] = outstr1['vrel']
+        outstr['vrelerr'][i] = outstr1['vrelerr']            
+        outstr['ccpeak'][i] = outstr1['ccpeak']
+        outstr['ccpfwhm'][i] = outstr1['ccpfwhm']
+        outstr['chisq'][i] = outstr1['chisq']
+        outstr['teff'][i] = teff[i]
+        outstr['logg'][i] = logg[i]
+        outstr['feh'][i] = feh            
+    # Get best fit
+    bestind = np.argmax(outstr['ccpeak'])
+    beststr = outstr[bestind]
+    bestm = cannon.model_spectrum(pmodels,obs,teff=beststr['teff'],logg=beststr['logg'],
+                                      feh=beststr['feh'],rv=beststr['vrel'])
+            
+    # Step 6: Get better Cannon stellar parameters using initial RV
+    # put observed spectrum on rest wavelength scale
+    # get cannnon model for "best" teff/logg/feh values
+    # run cannon.fit() on the spectrum and variances
+    # just shift the observed wavelengths to rest, do NOT interpolate the spectrum
+    restwave = obs.wave*(1-beststr['vrel']/cspeed)
+    
+    # Tweak the continuum normalization
+        
+        
+    # Step 7: Improved RV using better Cannon template
+
+        
+    # Step 8: Final stellar parameters
+
+        
+    # Step 9: MCMC??
+
+
+    
+   # maybe add an interp() method to interpolate the
+   # spectrum onto a new wavelength scale, outputs a new object
+
+   # a load() or read() method that you can use to read in a spectrum
+   # from a file, basically just calls the rdspec() function.

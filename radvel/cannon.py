@@ -12,26 +12,11 @@ __version__ = '20190922'  # yyyymmdd
 import os
 import numpy as np
 import warnings
-from astropy.io import fits
-from astropy.table import Table, Column
-from astropy import modeling
 from glob import glob
-from scipy.signal import medfilt
-from scipy.ndimage.filters import median_filter,gaussian_filter1d,convolve
-from scipy.optimize import curve_fit, least_squares
-from scipy.special import erf
-from scipy.interpolate import interp1d
-from scipy import sparse
-#from numpy.polynomial import polynomial as poly
-#from lmfit import Model
-#from apogee.utils import yanny, apload
-#from sdss_access.path import path
 import thecannon as tc
-#import bindata
-#from utils import *
 from dlnpyutils import utils as dln, bindata
-from .rv import Spec1D
-import matplotlib.pyplot as plt
+from .spec1d import Spec1D
+from . import utils
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -41,46 +26,7 @@ cspeed = 2.99792458e5  # speed of light in km/s
 
 # astropy.modeling can handle errors and constraints
 
-def sparsify(lsf):
-    # sparsify
-    # make a sparse matrix
-    # from J.Bovy's lsf.py APOGEE code
-    nx = lsf.shape[1]
-    diagonals = []
-    offsets = []
-    for ii in range(nx):
-        offset= nx//2-ii
-        offsets.append(offset)
-        if offset < 0:
-            diagonals.append(lsf[:offset,ii])
-        else:
-            diagonals.append(lsf[offset:,ii])
-    return sparse.diags(diagonals,offsets)
 
-def convolve_sparse(spec,lsf):
-    # convolution with matrices
-    # from J.Bovy's lsf.py APOGEE code    
-    # spec - [npix]
-    # lsf - [npix,nlsf]
-    npix,nlsf = lsf.shape
-    lsf2 = sparsify(lsf)
-    spec2 = np.reshape(spec,(1,npix))
-    spec2 = sparse.csr_matrix(spec2) 
-    out = lsf2.dot(spec2.T).T.toarray()
-    out = np.reshape(out,len(spec))
-    # The ends are messed up b/c not normalized
-    hlf = nlsf//2
-    for i in range(hlf+1):
-        lsf1 = lsf[i,hlf-i:]
-        lsf1 /= np.sum(lsf1)
-        out[i] = np.sum(spec[0:len(lsf1)]*lsf1)
-    for i in range(hlf+1):
-        ii = npix-i-1
-        lsf1 = lsf[ii,:hlf+1+i]
-        lsf1 /= np.sum(lsf1)
-        out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
-    return out
-        
 # Load the cannon model
 def load_all_cannon_models():
     fil = os.path.abspath(__file__)
@@ -252,9 +198,9 @@ def convolve_cannon_model(model,lsf):
             for i in range(npars):
                 omodel._theta[:,i] = convolve(model._theta[:,i],lsf,mode="reflect")
         else:
-            omodel._s2 = convolve_sparse(model._s2,lsf)
+            omodel._s2 = utils.convolve_sparse(model._s2,lsf)
             for i in range(npars):
-                omodel._theta[:,i] = convolve_sparse(model._theta[:,i],lsf)
+                omodel._theta[:,i] = utils.convolve_sparse(model._theta[:,i],lsf)
         omodel._scales = model._scales
         omodel._design_matrix = model._design_matrix
         omodel._fiducials = model._fiducials
@@ -323,11 +269,11 @@ def gconvolve_cannon_model(model,xgcoef=None,wgcoef=None):
         normalized_flux = np.zeros([2,npix])
         normalized_ivar = normalized_flux.copy()*0
         omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
-        omodel._s2 = convolve_sparse(model._s2,lsf)
+        omodel._s2 = utils.convolve_sparse(model._s2,lsf)
         omodel._scales = model._scales
         omodel._theta = np.zeros((npix,npars),np.float64)
         for i in range(npars):
-            omodel._theta[:,i] = convolve_sparse(model._theta[:,i],lsf)
+            omodel._theta[:,i] = utils.convolve_sparse(model._theta[:,i],lsf)
         omodel._design_matrix = model._design_matrix
         omodel._fiducials = model._fiducials
         if model.dispersion is not None:

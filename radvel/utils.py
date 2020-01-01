@@ -9,195 +9,103 @@ from __future__ import print_function
 __authors__ = 'David Nidever <dnidever@noao.edu>'
 __version__ = '20180922'  # yyyymmdd                                                                                                                           
 
-import os
+#import os
 import numpy as np
 import warnings
-from astropy.io import fits
-from astropy.table import Table, Column
-from astropy import modeling
-from glob import glob
-from scipy.signal import medfilt
-from scipy.ndimage.filters import median_filter,gaussian_filter1d
-from scipy.optimize import curve_fit, least_squares
-from scipy.special import erf
+from scipy import sparse
 from scipy.interpolate import interp1d
-#from numpy.polynomial import polynomial as poly
-#from lmfit import Model
-#from apogee.utils import yanny, apload
-#from sdss_access.path import path
-import bindata
+from dlnpyutils import utils as dln
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
-def lt(x,limit):
-    """Takes the lesser of x or limit"""
-    if np.array(x).size>1:
-        out = [i if (i<limit) else limit for i in x]
-    else:
-        out = x if (x<limit) else limit
-    if type(x) is np.ndarray: return np.array(out)
+
+# Convert wavelengths to pixels for a dispersion solution
+def w2p(dispersion,w,extrapolate=True):
+    """ dispersion is the wavelength array of the spectrum"""
+    x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+    # Need to extrapolate
+    if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
+        win = dispersion
+        xin = np.arange(len(dispersion))
+        si = np.argsort(win)
+        win = win[si]
+        xin = xin[si]
+        npix = len(win)
+        # At the beginning
+        if (np.min(w)<np.min(dispersion)):
+            coef1 = dln.poly_fit(win[0:10], xin[0:10], 2)
+            bd1, nbd1 = dln.where(w < np.min(dispersion))
+            x[bd1] = dln.poly(w[bd1],coef1)
+        # At the end
+        if (np.max(w)>np.max(dispersion)):
+            coef2 = dln.poly_fit(win[npix-10:], xin[npix-10:], 2)
+            bd2, nbd2 = dln.where(w > np.max(dispersion))
+            x[bd2] = dln.poly(w[bd2],coef2)                
+    return x
+
+
+# Convert pixels to wavelength for a dispersion solution
+def p2w(dispersion,x,extrapolate=True):
+    """ dispersion is the wavelength array of the spectrum"""
+    npix = len(dispersion)
+    w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
+    # Need to extrapolate
+    if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
+        xin = np.arange(npix)
+        win = dispersion
+        # At the beginning
+        if (np.min(x)<0):
+            coef1 = dln.poly_fit(xin[0:10], win[0:10], 2)
+            bd1, nbd1 = dln.where(x < 0)
+            w[bd1] = dln.poly(x[bd1],coef1)
+        # At the end
+        if (np.max(x)>(npix-1)):
+            coef2 = dln.poly_fit(xin[npix-10:], win[npix-10:], 2)
+            bd2, nbd2 = dln.where(x > (npix-1))
+            w[bd2] = dln.poly(x[bd2],coef2)                
+    return w
+
+
+def sparsify(lsf):
+    # sparsify
+    # make a sparse matrix
+    # from J.Bovy's lsf.py APOGEE code
+    nx = lsf.shape[1]
+    diagonals = []
+    offsets = []
+    for ii in range(nx):
+        offset= nx//2-ii
+        offsets.append(offset)
+        if offset < 0:
+            diagonals.append(lsf[:offset,ii])
+        else:
+            diagonals.append(lsf[offset:,ii])
+    return sparse.diags(diagonals,offsets)
+
+def convolve_sparse(spec,lsf):
+    # convolution with matrices
+    # from J.Bovy's lsf.py APOGEE code    
+    # spec - [npix]
+    # lsf - [npix,nlsf]
+    npix,nlsf = lsf.shape
+    lsf2 = sparsify(lsf)
+    spec2 = np.reshape(spec,(1,npix))
+    spec2 = sparse.csr_matrix(spec2) 
+    out = lsf2.dot(spec2.T).T.toarray()
+    out = np.reshape(out,len(spec))
+    # The ends are messed up b/c not normalized
+    hlf = nlsf//2
+    for i in range(hlf+1):
+        lsf1 = lsf[i,hlf-i:]
+        lsf1 /= np.sum(lsf1)
+        out[i] = np.sum(spec[0:len(lsf1)]*lsf1)
+    for i in range(hlf+1):
+        ii = npix-i-1
+        lsf1 = lsf[ii,:hlf+1+i]
+        lsf1 /= np.sum(lsf1)
+        out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
     return out
-    
-def gt(x,limit):
-    """Takes the greater of x or limit"""
-    if np.array(x).size>1:
-        out = [i if (i>limit) else limit for i in x]
-    else:
-        out = x if (x>limit) else limit
-    if type(x) is np.ndarray: return np.array(out)
-    return out        
 
-def minmax(arr):
-    """Return the minimum and maximum"""
-    return np.array([np.min(arr),np.max(arr)])
 
-def limit(x,llimit,ulimit):
-    """Require x to be within upper and lower limits"""
-    return lt(gt(x,llimit),ulimit)
-    
-def gaussian(x, amp, cen, sig, const=0):
-    """1-D gaussian: gaussian(x, amp, cen, sig)"""
-    return (amp / (np.sqrt(2*np.pi) * sig)) * np.exp(-(x-cen)**2 / (2*sig**2)) + const
-
-def gaussbin(x, amp, cen, sig, const=0, dx=1.0):
-    """1-D gaussian with pixel binning
-    
-    This function returns a binned Gaussian
-    par = [height, center, sigma]
-    
-    Parameters
-    ----------
-    x : array
-       The array of X-values.
-    amp : float
-       The Gaussian height/amplitude.
-    cen : float
-       The central position of the Gaussian.
-    sig : float
-       The Gaussian sigma.
-    const : float, optional, default=0.0
-       A constant offset.
-    dx : float, optional, default=1.0
-      The width of each "pixel" (scalar).
-    
-    Returns
-    -------
-    geval : array
-          The binned Gaussian in the pixel
-
-    """
-
-    xcen = np.array(x)-cen             # relative to the center
-    x1cen = xcen - 0.5*dx  # left side of bin
-    x2cen = xcen + 0.5*dx  # right side of bin
-
-    t1cen = x1cen/(np.sqrt(2.0)*sig)  # scale to a unitless Gaussian
-    t2cen = x2cen/(np.sqrt(2.0)*sig)
-
-    # For each value we need to calculate two integrals
-    #  one on the left side and one on the right side
-
-    # Evaluate each point
-    #   ERF = 2/sqrt(pi) * Integral(t=0-z) exp(-t^2) dt
-    #   negative for negative z
-    geval_lower = erf(t1cen)
-    geval_upper = erf(t2cen)
-
-    geval = amp*np.sqrt(2.0)*sig * np.sqrt(np.pi)/2.0 * ( geval_upper - geval_lower )
-    geval += const   # add constant offset
-
-    return geval
-
-def gaussfit(x,y,initpar,sigma=None, bounds=None, binned=False):
-    """Fit 1-D Gaussian to X/Y data"""
-    #gmodel = Model(gaussian)
-    #result = gmodel.fit(y, x=x, amp=initpar[0], cen=initpar[1], sig=initpar[2], const=initpar[3])
-    #return result
-    func = gaussian
-    if binned is True: func=gaussbin
-    return curve_fit(func, x, y, p0=initpar, sigma=sigma, bounds=bounds)
-
-def poly(x,coef):
-    y = np.array(x).copy()*0.0
-    for i in range(len(np.array(coef))):
-        y += np.array(coef)[i]*np.array(x)**i
-    return y
-
-def poly_resid(coef,x,y,sigma=1.0):
-    sig = sigma
-    if sigma is None: sig=1.0
-    return (poly(x,coef)-y)/sig
-
-def poly_fit(x,y,nord,robust=False,sigma=None,bounds=(-np.inf,np.inf)):
-    initpar = np.zeros(nord+1)
-    # Normal polynomial fitting
-    if robust is False:
-        #coef = curve_fit(poly, x, y, p0=initpar, sigma=sigma, bounds=bounds)
-        weights = None
-        if sigma is not None: weights=1/sigma
-        coef = np.polyfit(x,y,nord,w=weights)
-    # Fit with robust polynomial
-    else:
-        res_robust = least_squares(poly_resid, initpar, loss='soft_l1', f_scale=0.1, args=(x,y,sigma))
-        if res_robust.success is False:
-            raise Exception("Problem with least squares polynomial fitting. Status="+str(res_robust.status))
-        coef = res_robust.x
-    return coef
-    
-# Derivate of slope of an array
-def slope(array):
-    """Derivate of slope of an array: slp = slope(array)"""
-    n = len(array)
-    return array[1:n]-array[0:n-1]
-
-# Median Absolute Deviation
-def mad(data, axis=None, func=None, ignore_nan=False):
-    """ Calculate the median absolute deviation."""
-    if type(data) is not np.ndarray: raise ValueError("data must be a numpy array")    
-    return 1.4826 * astropy.stats.median_absolute_deviation(data,axis=axis,func=func,ignore_nan=ignore_nan)
-
-# Gaussian filter
-def gsmooth(data,fwhm,axis=-1,mode='reflect',cval=0.0,truncate=4.0):
-    return gaussian_filter1d(data,fwhm/2.35,axis=axis,mode=mode,cval=cval,truncate=truncate)
-
-# NUMPY HAS PERCENTILE AND NANPERCENTILE FUNCTIONS!!
-# Calculate a percentile value from a given 1D array
-#def percentile(arr,percfrac=0.50):
-#    '''
-#    This calculates a percentile from a 1D array.
-#
-#    Parameters
-#    ----------
-#    array : float or int array
-#          The array of values.
-#    percfrac: float, 0-1
-#          The percentage fraction from 0 to 1.
-#
-#    Returns
-#    -------
-#    value : float or int
-#          The calculated percentile value.
-#
-#    '''
-#    if len(arr)==0: return np.nan
-#    si = np.sort(arr)
-#    ind = np.int(np.round(percfrac*len(arr)))
-#    if ind>(len(arr)-1):ind=len(arr)-1
-#    return arr[ind]
-
-# astropy.modeling can handle errors and constraints
-
-def rebin(arr, new_shape):
-    if arr.ndim>2:
-        raise Exception("Maximum 2D arrays")
-    if arr.ndim==0:
-        raise Exception("Must be an array")
-    if arr.ndim==2:
-        shape = (new_shape[0], arr.shape[0] // new_shape[0],
-                 new_shape[1], arr.shape[1] // new_shape[1])
-        return arr.reshape(shape).mean(-1).mean(1)
-    if arr.ndim==1:
-        shape = (np.array(new_shape,ndmin=1)[0], arr.shape[0] // np.array(new_shape,ndmin=1)[0])
-        return arr.reshape(shape).mean(-1)
