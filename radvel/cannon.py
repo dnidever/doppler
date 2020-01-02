@@ -13,10 +13,12 @@ import os
 import numpy as np
 import warnings
 from glob import glob
+from scipy.interpolate import interp1d
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 from .spec1d import Spec1D
 from . import utils
+import copy
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -26,6 +28,20 @@ cspeed = 2.99792458e5  # speed of light in km/s
 
 # astropy.modeling can handle errors and constraints
 
+def cannon_copy(model):
+    """ Make a new copy of a Cannon model."""
+    npix, ntheta = model._theta.shape
+    nlabels = len(model.vectorizer.label_names)
+    labelled_set = np.zeros([2,nlabels])
+    normalized_flux = np.zeros([2,npix])
+    normalized_ivar = normalized_flux.copy()*0
+    omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
+    # Copy over all of the attributes
+    for name, value in vars(model).items():
+        if name not in ['_vectorizer']:
+            setattr(omodel,name,copy.deepcopy(value))
+    return omodel
+    
 
 # Load the cannon model
 def load_all_cannon_models():
@@ -54,9 +70,14 @@ def get_best_cannon_model(models,pars):
     for m in models:
         #inside.append(m.in_convex_hull(pars))        
         # in_convex_hull() is very slow
+        # Another list for multiple orders
+        if dln.size(m)>1:
+            ranges = m[0].ranges  # just take the first one
+        else:
+            ranges = m.ranges
         inside = True
         for i in range(3):
-            inside &= (pars[i]>=m.ranges[i,0]) & (pars[i]<=m.ranges[i,1])
+            inside &= (pars[i]>=ranges[i,0]) & (pars[i]<=ranges[i,1])
         if inside:
             return m
     
@@ -297,67 +318,89 @@ def prepare_cannon_model(model,spec,dointerp=False):
 
     
     if type(model) is list:
-        omodel = []
+        outmodel = []
         for i in range(len(model)):
             model1 = model[i]
             omodel1 = prepare_cannon_model(model1,spec,dointerp=dointerp)
-            omodel.append(omodel1)
+            outmodel.append(omodel1)
     else:
         # Observed spectrum values
-        w = spec.wave
-        w0 = np.min(w)
-        w1 = np.max(w)
-        dw = dln.slope(w)
-        dw = np.hstack((dw,dw[-1]))
-        npix = len(spec.wave)
+        wave = spec.wave
+        ndim = wave.ndim
+        if ndim==2:
+            npix,norder = wave.shape
+        if ndim==1:
+            norder = 1
+            npix = len(wave)
+            wave = wave.reshape(npix,norder)
+        # Loop over the orders
+        outmodel = []
+        for o in range(norder):
+            w = wave[:,o]
+            w0 = np.min(w)
+            w1 = np.max(w)
+            dw = dln.slope(w)
+            dw = np.hstack((dw,dw[-1]))
+            npix = len(w)
 
-        if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
-            raise Exception('Model does not cover the observed wavelength range')
+            if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
+                raise Exception('Model does not cover the observed wavelength range')
 
-        # Trim
-        if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
-            tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
-            tmodel.trim = True
-        else:
-            tmodel = model
-            tmodel.trim = False
+            # Trim
+            if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
+                tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
+                tmodel.trim = True
+            else:
+                tmodel = cannon_copy(model)
+                tmodel.trim = False
 
-        # Rebin
-        #  get LSF FWHM (A) for a handful of positions across the spectrum
-        xp = np.arange(npix//20)*20
-        fwhm = spec.lsf.fwhm(w[xp],xtype='Wave')
-        #  convert FWHM (A) in number of model pixels at those positions
-        dwmod = dln.slope(tmodel.dispersion)
-        dwmod = np.hstack((dwmod,dwmod[-1]))
-        xpmod = interp1d(tmodel.dispersion,np.arange(len(tmodel.dispersion)),kind='cubic',bounds_error=False,
-                                    fill_value=(np.nan,np.nan),assume_sorted=False)(w[xp])
-        xpmod = np.round(xpmod).astype(int)
-        fwhmpix = fwhm/dwmod[xpmod]
-        # need at least ~3 pixels per LSF FWHM across the spectrum
-        nbin = np.round(np.min(fwhmpix)//3).astype(int)
-        if nbin==0:
-            raise Exception('Model has lower resolution than the observed spectrum')
-        if nbin>1:
-            rmodel = rebin_cannon_model(tmodel,nbin)
-            rmodel.rebin = True
-        else:
-            rmodel = tmodel
-            rmodel.rebin = False
+            # Rebin
+            #  get LSF FWHM (A) for a handful of positions across the spectrum
+            xp = np.arange(npix//20)*20
+            fwhm = spec.lsf.fwhm(w[xp],xtype='Wave',order=o)
+            #  convert FWHM (A) in number of model pixels at those positions
+            dwmod = dln.slope(tmodel.dispersion)
+            dwmod = np.hstack((dwmod,dwmod[-1]))
+            xpmod = interp1d(tmodel.dispersion,np.arange(len(tmodel.dispersion)),kind='cubic',bounds_error=False,
+                             fill_value=(np.nan,np.nan),assume_sorted=False)(w[xp])
+            xpmod = np.round(xpmod).astype(int)
+            fwhmpix = fwhm/dwmod[xpmod]
+            # need at least ~3 pixels per LSF FWHM across the spectrum
+            nbin = np.round(np.min(fwhmpix)//3).astype(int)
+            if nbin==0:
+                raise Exception('Model has lower resolution than the observed spectrum')
+            if nbin>1:
+                rmodel = rebin_cannon_model(tmodel,nbin)
+                rmodel.rebin = True
+            else:
+                rmodel = cannon_copy(tmodel)
+                rmodel.rebin = False
             
-        # Convolve
-        lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave')
-        cmodel = convolve_cannon_model(rmodel,lsf)
-        cmodel.convolve = True
+            # Convolve
+            lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=0)
+            cmodel = convolve_cannon_model(rmodel,lsf)
+            cmodel.convolve = True
         
-        # Interpolate
-        if dointerp is True:
-            omodel = interp_cannon_model(cmodel,wout=spec.wave)
-            omodel.interp = True
-        else:
-            omodel = cmodel
-            omodel.interp = False
-        
-    return omodel
+            # Interpolate
+            if dointerp is True:
+                omodel = interp_cannon_model(cmodel,wout=spec.wave)
+                omodel.interp = True
+            else:
+                omodel = cannon_copy(cmodel)
+                omodel.interp = False
+
+            # Order information
+            omodel.norder = norder
+            omodel.order = o
+                
+            # Append to final output
+            outmodel.append(omodel)
+
+    # Single-element list
+    if (type(outmodel) is list) & (len(outmodel)==1):
+        outmodel = outmodel[0] 
+            
+    return outmodel
 
 
 def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
@@ -370,31 +413,50 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
     if rv is None: rv=0.0
     
     pars = np.array([teff,logg,feh])
+    pars = pars.flatten()
     # Get best cannon model
     model = get_best_cannon_model(models,pars)
+    if model is None: return None
     # Create the model spectrum
-    model_spec = model(pars)
-    model_wave = model.dispersion.copy()
-    npix = len(model_spec)
 
-    # Apply doppler shift to wavelength
-    if rv!=0.0:
-        model_wave *= (1+rv/cspeed)
-        # w = synwave*(1.0d0 + par[0]/cspeed)
-    
-    # Interpolation
-    model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
-                                 fill_value=(np.nan,np.nan),assume_sorted=True)(spec.wave)
+    # Loop over the orders
+    model_spec = np.zeros(spec.wave.shape,dtype=np.float32)
+    model_wave = np.zeros(spec.wave.shape,dtype=np.float64)
+    sigma = np.zeros(spec.wave.shape,dtype=np.float32)
+    for o in range(spec.norder):
+        if spec.ndim==1:
+            model1 = model
+            spwave1 = spec.wave
+            sigma1 = spec.lsf.sigma(xtype='Wave')
+        else:
+            model1 = model[o]
+            spwave1 = spec.wave[:,o]
+            sigma1 = spec.lsf.sigma(xtype='Wave',order=o)            
+        model_spec1 = model1(pars)
+        model_wave1 = model1.dispersion.copy()
 
-    # UnivariateSpline
-    #   this is 10x faster then the interpolation
-    # scales linearly with number of points
-    #spl = UnivariateSpline(model_wave,model_spec)
-    #model_spec_interp = spl(spec.wave)
+        # Apply doppler shift to wavelength
+        if rv!=0.0:
+            model_wave *= (1+rv/cspeed)
+            # w = synwave*(1.0d0 + par[0]/cspeed)
     
+        # Interpolation
+        model_spec_interp = interp1d(model_wave1,model_spec1,kind='cubic',bounds_error=False,
+                                     fill_value=(np.nan,np.nan),assume_sorted=True)(spwave1)
+
+        # UnivariateSpline
+        #   this is 10x faster then the interpolation
+        # scales linearly with number of points
+        #spl = UnivariateSpline(model_wave,model_spec)
+        #model_spec_interp = spl(spec.wave)
+
+        # Stuff in the information for this order
+        model_spec[...] = model_spec_interp
+        model_wave[...] = spwave1
+        sigma[...] = sigma1
+        
     # Create Spec1D object
-    sigma = spec.lsf.sigma(xtype='Wave')
-    mspec = Spec1D(model_spec_interp,wave=spec.wave.copy(),lsfsigma=sigma,instrument='Model')
+    mspec = Spec1D(model_spec,wave=model_wave,lsfsigma=sigma,instrument='Model')
     mspec.teff = teff
     mspec.logg = logg
     mspec.feh = feh

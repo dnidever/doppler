@@ -12,6 +12,9 @@ __version__ = '20180922'  # yyyymmdd
 import numpy as np
 import warnings
 from scipy.interpolate import interp1d
+import astropy.units as u
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, EarthLocation
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 import copy
@@ -25,28 +28,6 @@ cspeed = 2.99792458e5  # speed of light in km/s
 
 # astropy.modeling can handle errors and constraints
 
-# Make logaritmic wavelength scale
-def make_logwave_scale(wave,vel=1000.0):
-    """ Make logarithmic wavelength scale for this observed wavelength scale."""
-
-    # If the existing wavelength scale is logaritmic them use it, just extend
-    # on either side
-    n = len(wave)
-    wr = dln.minmax(wave)
-    # extend wavelength range by +/-vel km/s
-    wlo = wr[0]-vel/cspeed*wr[0]
-    whi = wr[1]+vel/cspeed*wr[1]
-    dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
-
-    nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
-    nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))
-    nf = n+nlo+nhi
-
-    fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
-                 
-    # w=10**(w0log+i*dwlog)
-    return fwave
-    
 
 # Object for representing LSF (line spread function)
 class Lsf:
@@ -60,6 +41,14 @@ class Lsf:
         self.pars = pars
         self.type = lsftype
         self.xtype = xtype
+        if wave.ndim==1:
+            npix = len(wave)
+            norder = 1
+        else:
+            npix,norder = wave.shape
+        self.ndim = wave.ndim
+        self.npix = npix
+        self.norder = norder
         self._sigma = sigma
         self._array = None
         if (pars is None) & (sigma is None):
@@ -71,7 +60,7 @@ class Lsf:
     def wave2pix(self,w,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        if self.wave.ndim==2:
+        if self.ndim==2:
             # Order is always the second dimension
             return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
         else:
@@ -80,47 +69,49 @@ class Lsf:
     def pix2wave(self,x,extrapolate=True,order=0):
         if self.wave is None:
             raise Exception("No wavelength information")
-        if self.wave.ndim==2:
+        if self.ndim==2:
              # Order is always the second dimension
             return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
         else:
             return utils.p2w(self.wave,x,extrapolate=extrapolate)        
         
     # Return FWHM at some positions
-    def fwhm(self,x=None,xtype='pixels'):
+    def fwhm(self,x=None,xtype='pixels',order=0):
         #return np.polyval(pars[::-1],x)*2.35
-        return self.sigma(x,xtype=xtype)*2.35
+        return self.sigma(x,xtype=xtype,order=order)*2.35
         
     # Return Gaussian sigma
-    def sigma(self,x=None,xtype='pixels',extrapolate=True):
+    def sigma(self,x=None,xtype='pixels',order=0,extrapolate=True):
         # The sigma will be returned in units given in lsf.xtype
         if self._sigma is not None:
+            _sigma = self._sigma
+            if self.ndim==2: _sigma = self._sigma[:,order]
             if x is None:
-                return self._sigma
+                return _sigma
             else:
                 # Wavelength input
                 if xtype.lower().find('wave') > -1:
-                    x0 = np.array(x).copy()    # backup
-                    x = self.wave2pix(x0)
+                    x0 = np.array(x).copy()            # backup
+                    x = self.wave2pix(x0,order=order)  # convert to pixels
                 # Integer, just return the values
                 if( type(x)==int) | (np.array(x).dtype.kind=='i'):
-                    return self._sigma[x]
+                    return _sigma[x]
                 # Floats, interpolate
                 else:
-                    sig = interp1d(np.arange(len(self._sigma)),self._sigma,kind='cubic',bounds_error=False,
+                    sig = interp1d(np.arange(len(_sigma)),_sigma,kind='cubic',bounds_error=False,
                                    fill_value=(np.nan,np.nan),assume_sorted=True)(x)
                     # Extrapolate
-                    npix = len(self._sigma)
+                    npix = self.npix
                     if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
                         xin = np.arange(npix)
                         # At the beginning
                         if (np.min(x)<0):
-                            coef1 = dln.poly_fit(xin[0:10], self._sigma[0:10], 2)
+                            coef1 = dln.poly_fit(xin[0:10], _sigma[0:10], 2)
                             bd1, nbd1 = dln.where(x <0)
                             sig[bd1] = dln.poly(x[bd1],coef1)
                         # At the end
                         if (np.max(x)>(npix-1)):
-                            coef2 = dln.poly_fit(xin[npix-10:], self._sigma[npix-10:], 2)
+                            coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 2)
                             bd2, nbd2 = dln.where(x > (npix-1))
                             sig[bd2] = dln.poly(x[bd2],coef2)
                     return sig
@@ -128,38 +119,48 @@ class Lsf:
         # Need to calculate
         else:
             if x is None:
-                x = len(self.wave)
+                x = np.arange(self.npix)
             if self.pars is None:
                    raise Exception("No LSF parameters")
+            # Get parameters
+            pars = self.pars
+            if self.ndim==2: pars=self.pars[:,order]
             # Pixels input
             if xtype.lower().find('pix') > -1:
                 # Pixel LSF parameters
                 if self.xtype.lower().find('pix') > -1:
-                    return np.polyval(self.pars[::-1],x)
+                    return np.polyval(pars[::-1],x)
                 # Wave LSF parameters
                 else:
-                    w = self.pix2wave(x)
-                    return np.polyval(self.pars[::-1],w)                    
+                    w = self.pix2wave(x,order=order)
+                    return np.polyval(pars[::-1],w)                    
             # Wavelengths input
             else:
                 # Wavelength LSF parameters
                 if self.xtype.lower().find('wave') > -1:
-                    return np.polyval(self.pars[::-1],x)
+                    return np.polyval(pars[::-1],x)
                 # Pixel LSF parameters
                 else:
                     x0 = np.array(x).copy()
-                    x = self.wave2pix(x0)
-                    return np.polyval(self.pars[::-1],x)  
+                    x = self.wave2pix(x0,order=order)
+                    return np.polyval(pars[::-1],x)  
 
     # Clean up bad LSF values
     def clean(self):
         if self._sigma is not None:
-            smlen = np.round(len(self._sigma) // 50).astype(int)
+            smlen = np.round(self.npix // 50).astype(int)
             if smlen==0: smlen=3
-            smsig = dln.gsmooth(self._sigma,smlen)
-            bd,nbd = dln.where(self._sigma <= 0)
-            if nbd>0:
-                self._sigma[bd] = smsig[bd]
+            _sigma = self._sigma.reshape(self.npix,self.norder)   # make 2D
+            for o in range(self.norder):
+                sig = _sigma[:,o]
+                smsig = dln.gsmooth(sig,smlen)
+                bd,nbd = dln.where(sig <= 0)
+                if nbd>0:
+                    sig[bd] = smsig[bd]
+                if self.ndim==2:
+                    self._sigma[:,o] = sig
+                else:
+                    self._sigma = sig
                 
     # Return actual LSF values
     def vals(self,x):
@@ -172,57 +173,76 @@ class Lsf:
 
 
     # Return full LSF values for the spectrum
-    def array(self):
+    def array(self,order=None):
         # Return what we already have
         if self._array is not None:
-            return self._array
+            if (self.ndim==2) & (order is not None):
+                # [Npix,Nlsf,Norder]
+                return self._array[:,:,order]
+            else:
+                return self._array
         
-        ## currently this assumes the LSF parameters use type='Wave'x
+        ## currently this assumes the LSF parameters use type='Wave'
         #if self.xtype!='Wave' or self.lsftype!='Gaussian':
         #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
         #    return
 
-        npix = len(self.wave)
-        x = np.arange(npix)
-        xsigma = self.sigma()
+        # Loop over orders and figure out how many Nlsf pixels we need
+        #  must be same across all orders
+        wave = self.wave.reshape(self.npix,self.norder)
+        nlsfarr = np.zeros(norder,dtype=int)
+        xsigma = np.zeros((self.npix,norder),dtype=np.float64)
+        for o in range(self.norder):
+            x = np.arange(self.npix)
+            xsig = self.sigma(order=o)
+            w = wave[:,o]
 
-        # Convert sigma from wavelength to pixels, if necessary
-        if self.xtype.lower().find('wave') > -1:
-            wsigma = xsigma.copy()
-            dw = dln.slope(self.wave)
-            dw = np.hstack((dw,dw[-1]))            
-            xsigma = wsigma / dw
-
-        # Figure out nLSF pixels needed, +/-3 sigma
-        nlsf = np.int(np.round(np.max(xsigma)*6))
-        if nlsf % 2 == 0: nlsf+=1                   # must be odd
-        
+            # Convert sigma from wavelength to pixels, if necessary
+            if self.xtype.lower().find('wave') > -1:
+                wsigma = xsigma.copy()
+                dw = dln.slope(w)
+                dw = np.hstack((dw,dw[-1]))            
+                xsig = wsigma / dw
+            xsigma[:,o] = xsig
+                
+            # Figure out nLSF pixels needed, +/-3 sigma
+            nlsf = np.int(np.round(np.max(xsigma)*6))
+            if nlsf % 2 == 0: nlsf+=1                   # must be odd
+            nlsfarr.append(nlsf)
+        nlsf = np.max(np.array(nsflarr))
+            
         # Make LSF array
-        lsf = np.zeros((npix,nlsf))
-        xlsf = np.arange(nlsf)-nlsf//2
-        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
-        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
-        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
-        # should I use gaussbin????
-        
+        lsf = np.zeros((self.npix,nlsf,self.norder))
+        for o in range(self.norder):
+            xsig = xsigma[:,o]
+            xlsf = np.arange(nlsf)-nlsf//2
+            xlsf2 = np.repeat(xlsf,self.npix).reshape((nlsf,self.npix)).T
+            xsigma2 = np.repeat(xsig,nlsf).reshape((self.npix,nlsf))
+            lsf[:,:,o] = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
+            # should I use gaussbin????
+
+        # if only one order then reshape
+        if self.ndim==1: lsf=lsf.reshape(self.npix,nlsf)
+            
         self._array = lsf   # save for next time
+
         return lsf
 
     
     # Return full LSF values using contiguous input array
-    def anyarray(self,x,xtype='pixels'):
+    def anyarray(self,x,xtype='pixels',order=0):
 
-        ## currently this assumes the LSF parameters use type='Wave'x
+        ## currently this assumes the LSF parameters use type='Wave'
         #if self.xtype!='Wave' or self.lsftype!='Gaussian':
         #    print('Currently only implemented for xtype=Wave and lsftype=Gaussian')
         #    return
 
-        npix = len(x)
-        xsigma = self.sigma(x,xtype=xtype)
+        nx = len(x)
+        xsigma = self.sigma(x,xtype=xtype,order=order)
 
         # Get wavelength and pixel arrays
         if xtype.lower().find('pix') > -1:
-            w = self.pix2wave(x)
+            w = self.pix2wave(x,order=order)
         else:
             w = x
             
@@ -238,10 +258,10 @@ class Lsf:
         if nlsf % 2 == 0: nlsf+=1                   # must be odd
         
         # Make LSF array
-        lsf = np.zeros((npix,nlsf))
+        lsf = np.zeros((nx,nlsf))
         xlsf = np.arange(nlsf)-nlsf//2
-        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
-        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
+        xlsf2 = np.repeat(xlsf,nx).reshape((nlsf,nx)).T
+        xsigma2 = np.repeat(xsigma,nlsf).reshape((nx,nlsf))
         lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
         # should I use gaussbin????
         return lsf
@@ -269,6 +289,14 @@ class Spec1D:
         if self.err is not None:
             self.snr = np.nanmedian(flux)/np.nanmedian(err)
         self.normalized = False
+        if flux.ndim==1:
+            npix = len(flux)
+            norder = 1
+        else:
+            npix,norder = flux.shape
+        self.ndim = flux.ndim
+        self.npix = npix
+        self.norder = norder
         return
 
     def __repr__(self):
@@ -328,7 +356,8 @@ class Spec1D:
         # Interpolate to full grid
         cont = dln.interp(xbin,ybin,x,extrapolate=True)
 
-        self.flux = self.flux/cont
+        self.flux /= cont
+        self.err /= cont
         self.cont = cont
         self.normalized = True
         return
@@ -353,14 +382,38 @@ class Spec1D:
         new = Spec1D(self.flux,err=self.err,wave=self.wave,mask=self.mask,lsfpars=self.lsf.pars,lsftype=self.lsf.type,
                      lsfxtype=self.lsf.xtype,lsfsigma=self.lsf.sigma,instrument=self.instrument,filename=self.filename)
         new.lsf = copy.deepcopy(self.lsf)  # make sure all parts of Lsf are copied over
-        props = vars(self)
         for name, value in vars(self).items():
             if name not in ['flux','wave','err','mask','lsf','instrument','filename']:
                 setattr(new,name,copy.deepcopy(value))           
 
         return new
 
-
+    def barycorr(self):
+        """ calculate the barycentric correction."""
+        # keck = EarthLocation.of_site('Keck')  # the easiest way... but requires internet
+        #keck = EarthLocation.from_geodetic(lat=19.8283*u.deg, lon=-155.4783*u.deg, height=4160*u.m)
+        # Calculate the barycentric correction
+        if hasattr(self,'bc') is False:
+            if hasattr(self,'observatory') is False:
+                print('No observatory information.  Cannot calculate barycentric correction.')
+                return None
+            obs = EarthLocation.of_site(self.observatory)
+            ra = self.head.get('ra')
+            dec = self.head.get('dec')  
+            if (ra is None) | (dec is None):
+                print('No RA/DEC information in header.  Cannot calculate barycentric correction.')
+                return None                
+            sc = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
+            dateobs = self.head.get('date-obs')
+            if (dateobs is None):
+                print('No DATE information in header.  Cannot calculate barycentric correction.')
+                return None
+            t = Time(dateobs, format='isot', scale='utc')
+            barycorr = sc.radial_velocity_correction(kind='barycentric',obstime=t, location=obs)  
+            bc = barycorr.to(u.km/u.s)  
+            self.bc = bc
+        return self.bc
+        
     
    # maybe add an interp() method to interpolate the
    # spectrum onto a new wavelength scale, outputs a new object

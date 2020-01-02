@@ -20,6 +20,7 @@ from dlnpyutils import utils as dln
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
+cspeed = 2.99792458e5  # speed of light in km/s
 
 # Convert wavelengths to pixels for a dispersion solution
 def w2p(dispersion,w,extrapolate=True):
@@ -109,3 +110,34 @@ def convolve_sparse(spec,lsf):
     return out
 
 
+# Make logaritmic wavelength scale
+def make_logwave_scale(wave,vel=1000.0):
+    """ Make logarithmic wavelength scale for this observed wavelength scale."""
+
+    # If the existing wavelength scale is logaritmic them use it, just extend
+    # on either side
+    vel = np.abs(vel)
+    wave = np.float64(wave)
+    nw = len(wave)
+    wr = dln.minmax(wave)
+    # extend wavelength range by +/-vel km/s
+    wlo = wr[0]-vel/cspeed*wr[0]
+    whi = wr[1]+vel/cspeed*wr[1]
+    dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
+    
+    nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
+    nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))
+    if vel==0.0:
+        n = np.int((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog)
+    else:
+        n = np.int(np.ceil((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog))        
+    nf = n+nlo+nhi
+
+    fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
+
+    # Make sure the element that's associated with the first input wavelength is identical
+    fwave -= fwave[nlo]-wave[0]
+    
+    # w=10**(w0log+i*dwlog)
+    return fwave
+    
