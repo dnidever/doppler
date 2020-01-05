@@ -344,14 +344,20 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     Parameters
     ----------
     x : array
-      The first array to cross correlate.
+      The first array to cross correlate (e.g., the template).  If y is 2D
+      (e.g., [Npix,Norder]), then x can be either 2D or 1D.  If x is 1D, then
+      the cross-correlation is performed between x and each order of y and
+      a 2D array will be output.  If x is 2D, then the cross-correlation
+      of each order of x and y is performed and the results combined.
     y : array
-      The second array to cross correlate.  Must be same length as x.
+      The second array to cross correlate.  Must be the same lenght as x.
+      Can be 2D (e.g., [Npix, Norder]), but the shifting is always done
+      on the 1st dimension.
     lag : array
       Vector that specifies the absolute distance(s) between
-             indexed elements of X in the interval [-(n-2), (n-2)].
+             indexed elements of x in the interval [-(n-2), (n-2)].
     yerr : array, optional
-       Array of uncertainties in Y
+       Array of uncertainties in y.  Must be the same shape as y.
     covariange : bool
         If true, then the sample cross covariance is computed.
 
@@ -391,83 +397,142 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     # Compute the sample cross correlation or cross covariance of
     # (Xt, Xt+l) and (Yt, Yt+l) as a function of the lag (l).
 
-    nx = len(x)
+    xshape = x.shape
+    yshape = y.shape
+    nx = xshape[0]
+    if x.ndim==1:
+        nxorder = 1
+    else:
+        nxorder = xshape[1]
+    ny = yshape[0]
+    if y.ndim==1:
+        nyorder = 1
+    else:
+        nyorder = yshape[1]
+    npix = nx
+    norder = np.maximum(nxorder,nyorder)
 
+    # Check the inputs
     if (nx != len(y)):
-        raise ValueError("X and Y arrays must have the same number of elements.")
+        raise ValueError("X and Y arrays must have the same number of pixels in 1st dimension.")
 
-    # Check length.
+    if (x.ndim>2) | (y.ndim>2):
+        raise ValueError("X and Y must be 1D or 2D.")
+
+    if (x.ndim==2) & (y.ndim==1):
+        raise ValueError("If X is 2D then Y must be as well.")
+
+    # If X and Y are 2D then their Norders must be the same
+    if (x.ndim==2) & (y.ndim==2) & (nxorder!=nyorder):
+        raise ValueError("If X and Y are 2D then their length in the 2nd dimension must be the same.")
+
+    # Check that Y and Yerr have the same length
+    if (y.shape is not yerr.shape):
+        raise ValueError("Y and Yerr must have the same shape.")
+    
     if (nx<2):
         raise ValueError("X and Y arrays must contain 2 or more elements.")
 
-    # Remove the mean
-    if nomean is False:
-        xmn = np.nanmean(x)
-        ymn = np.nanmean(y)
-        xd = x.copy()-xmn
-        yd = y.copy()-ymn
+    # Reshape arrays to [Npix,Norder], even if both are 1D
+    xd = x.copy()
+    yd = y.copy()
+    if yerr is not None: yderr=yerr.copy()
+    if (norder>1):
+        if (x.ndim==1):
+            # make multiple copies of X
+            xd = yd.copy()*0.0
+            for i in range(norder):
+                xd[:,i] = x.copy()
     else:
-        xd = x.copy()
-        yd = y.copy()
-    if yerr is not None: yerr2=yerr.copy()
+        xd = xd.reshape(npix,1)
+        yd = yd.reshape(npix,1)        
+        yderr = yderr.reshape(npix,1)
         
-    fx = np.isfinite(x)
+    # Remove the means
+    if nomean is False:
+        for i in range(norder):
+            xd[:,i] -= np.nanmean(xd[:,i])
+            yd[:,i] -= np.nanmean(yd[:,i])
+
+    # Set NaNs or Infs to 0.0
+    fx = np.isfinite(xd)
     ngdx = np.sum(fx)
     nbdx = np.sum((fx==False))
     if nbdx>0: xd[(fx==False)]=0.0
-    fy = np.isfinite(y)
+    fy = np.isfinite(yd)
     ngdy = np.sum(fy)
     nbdy = np.sum((fy==False))
     if nbdy>0:
         yd[(fy==False)]=0.0
-        if yerr is not None: yerr2[(fy==False)]=0.0
+        if yerr is not None: yderr[(fy==False)]=0.0
     nlag = len(lag)
 
-    cross = np.zeros(nlag,dtype=float)
-    cross_error = np.zeros(nlag,dtype=float)
-    num = np.zeros(nlag,dtype=int)  # number of "good" points at this lag
-    for k in range(nlag):
-        # Note the reversal of the variables for negative lags.
-        if lag[k]>0:
-             cross[k] = np.sum(xd[0:nx - lag[k]] * yd[lag[k]:])
-             num[k] = np.sum(fx[0:nx - lag[k]] * fy[lag[k]:]) 
-             if yerr is not None:
-                 cross_error[k] = np.sum( (xd[0:nx - lag[k]] * yerr2[lag[k]:])**2 )
-        else:
-             cross[k] =  np.sum(yd[0:nx + lag[k]] * xd[-lag[k]:])
-             num[k] = np.sum(fy[0:nx + lag[k]] * fx[-lag[k]:])
-             if yerr is not None:
-                 cross_error[k] = np.sum( (yerr2[0:nx + lag[k]] * xd[-lag[k]:])**2 )
-    # Normalize by number of "good" points
-    cross *= np.max(num)
-    pnum = (num>0)
-    cross[pnum] /= num[pnum]  # normalize by number of "good" points
-    # Take sqrt to finish adding errors in quadrature
-    cross_error = np.sqrt(cross_error)
-    # normalize
-    cross_error *= np.max(num)
-    cross_error[pnum] /= num[pnum]
+    # Initialize the output arrays
+    cross = np.zeros((nlag,norder),dtype=float)
+    cross_error = np.zeros((nlag,norder),dtype=float)
+    num = np.zeros((nlag,norder),dtype=int)  # number of "good" points at this lag        
+    rmsx = np.zeros(norder,dtype=float)
+    rmsy = np.zeros(norder,dtype=float)    
     
-    # Divide by N for covariance, or divide by variance for correlation.
-    if ngdx>2:
-        rmsx = np.sqrt(np.sum(xd[fx]**2))
+    # Loop over orders
+    for i in range(norder):
+        # Loop over lag points
+        for k in range(nlag):
+            # Note the reversal of the variables for negative lags.
+            if lag[k]>0:
+                cross[k,i] = np.sum(xd1[0:nx-lag[k],i] * yd1[lag[k]:,i])
+                num[k,i] = np.sum(fx1[0:nx-lag[k],i] * fy1[lag[k]:,i]) 
+                if yerr is not None:
+                    cross_error[k,i] = np.sum( (xd1[0:nx-lag[k],i] * yderr1[lag[k]:,i])**2 )
+            else:
+                cross[k,i] =  np.sum(yd1[0:nx+lag[k],i] * xd1[-lag[k]:,i])
+                num[k,i] = np.sum(fy1[0:nx+lag[k],i] * fx1[-lag[k]:,i])
+                if yerr is not None:
+                    cross_error[k,i] = np.sum( (yderr1[0:nx+lag[k],i] * xd1[-lag[k]:,i])**2 )
+        if (npix>2):
+            rmsx[i] = np.sum(xd[fx[:,i],i]**2))
+            if (rmsx[i]==0): rmsx[i]=1.0
+            rmsy[i] = np.sum(yd[fy[:,i],i]**2))
+            if (rmsy[i]==0): rmsy[i]=1.0
+        else:
+            rmsx[i] = 1.0
+            rmsy[i] = 1.0
+            
+    # Both X and Y are 2D, sum data from multiple orders
+    if (nxorder>1) & (nyorder>1):
+        cross = np.sum(cross,axis=1).reshape(npix,1)
+        cross_error= np.sum(cross_error,axis=1).reshape(npix,1)
+        num = np.sum(num,axis=1).reshape(npix,1)
+        rmsx = np.sqrt(np.sum(rmsx,axis=0))
+        rmsy = np.sqrt(np.sum(rmsy,axis=1))
+        norder = 1
+        nelements = npix*norder
     else:
-        rmsx=1.0
-    if rmsx==0.0: rmsx=1.0
-    if ngdy>2:
-        rmsy = np.sqrt(np.sum(yd[fy]**2))
-    else:
-        rmsy=1.0
-    if rmsy==0.0: rmsy=1.0
-    if covariance is True:
-        cross /= nx
-        cross_error /= nx
-    else:
-        cross /= rmsx*rmsy
-        cross_error /= rmsx*rmsy
+        nelements = npix
+                    
+    # Normalizations
+    for i in range(norder):
+        # Normalize by number of "good" points
+        cross[:,i] *= np.max(num[:,i])
+        pnum = (num[:,i]>0)
+        cross[pnum,i] /= num[pnum,i]  # normalize by number of "good" points
+        # Take sqrt to finish adding errors in quadrature
+        cross_error[:,i] = np.sqrt(cross_error[:,i])
+        # normalize
+        cross_error[:,i] *= np.max(num[:,i])
+        cross_error[pnum,i] /= num[pnum,i]
+
+        # Divide by N for covariance, or divide by variance for correlation.
+        if covariance is True:
+            cross[:,i] /= nelements
+            cross_error[:,i] /= nelements
+        else:
+            cross[:,i] /= rmsx[i]*rmsy[i]
+            cross_error[:,i] /= rmsx[i]*rmsy[i]
 
     if yerr is not None: return cross, cross_error
     return cross
+
 
 def robust_correlate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
     """This function computes the cross correlation of two samples.
