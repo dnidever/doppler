@@ -460,13 +460,15 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     nbdx = np.sum((fx==False))
     if nbdx>0: xd[(fx==False)]=0.0
     fy = np.isfinite(yd)
+    if yerr is not None:
+        fy &= (yderr<1e20)   # mask out high errors as well
     ngdy = np.sum(fy)
     nbdy = np.sum((fy==False))
     if nbdy>0:
         yd[(fy==False)]=0.0
         if yerr is not None: yderr[(fy==False)]=0.0
     nlag = len(lag)
-
+    
     # Initialize the output arrays
     cross = np.zeros((nlag,norder),dtype=float)
     cross_error = np.zeros((nlag,norder),dtype=float)
