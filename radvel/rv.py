@@ -427,7 +427,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
         raise ValueError("If X and Y are 2D then their length in the 2nd dimension must be the same.")
 
     # Check that Y and Yerr have the same length
-    if (y.shape is not yerr.shape):
+    if (y.shape != yerr.shape):
         raise ValueError("Y and Yerr must have the same shape.")
     
     if (nx<2):
@@ -480,19 +480,20 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
         for k in range(nlag):
             # Note the reversal of the variables for negative lags.
             if lag[k]>0:
-                cross[k,i] = np.sum(xd1[0:nx-lag[k],i] * yd1[lag[k]:,i])
-                num[k,i] = np.sum(fx1[0:nx-lag[k],i] * fy1[lag[k]:,i]) 
+                cross[k,i] = np.sum(xd[0:nx-lag[k],i] * yd[lag[k]:,i])
+                num[k,i] = np.sum(fx[0:nx-lag[k],i] * fy[lag[k]:,i]) 
                 if yerr is not None:
-                    cross_error[k,i] = np.sum( (xd1[0:nx-lag[k],i] * yderr1[lag[k]:,i])**2 )
+                    cross_error[k,i] = np.sum( (xd[0:nx-lag[k],i] * yderr[lag[k]:,i])**2 )
             else:
-                cross[k,i] =  np.sum(yd1[0:nx+lag[k],i] * xd1[-lag[k]:,i])
-                num[k,i] = np.sum(fy1[0:nx+lag[k],i] * fx1[-lag[k]:,i])
+                cross[k,i] =  np.sum(yd[0:nx+lag[k],i] * xd[-lag[k]:,i])
+                num[k,i] = np.sum(fy[0:nx+lag[k],i] * fx[-lag[k]:,i])
                 if yerr is not None:
-                    cross_error[k,i] = np.sum( (yderr1[0:nx+lag[k],i] * xd1[-lag[k]:,i])**2 )
+                    cross_error[k,i] = np.sum( (yderr[0:nx+lag[k],i] * xd[-lag[k]:,i])**2 )
+                    
         if (npix>2):
-            rmsx[i] = np.sum(xd[fx[:,i],i]**2))
+            rmsx[i] = np.sum(xd[fx[:,i],i]**2)
             if (rmsx[i]==0): rmsx[i]=1.0
-            rmsy[i] = np.sum(yd[fy[:,i],i]**2))
+            rmsy[i] = np.sum(yd[fy[:,i],i]**2)
             if (rmsy[i]==0): rmsy[i]=1.0
         else:
             rmsx[i] = 1.0
@@ -500,16 +501,18 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
             
     # Both X and Y are 2D, sum data from multiple orders
     if (nxorder>1) & (nyorder>1):
-        cross = np.sum(cross,axis=1).reshape(npix,1)
-        cross_error= np.sum(cross_error,axis=1).reshape(npix,1)
-        num = np.sum(num,axis=1).reshape(npix,1)
-        rmsx = np.sqrt(np.sum(rmsx,axis=0))
-        rmsy = np.sqrt(np.sum(rmsy,axis=1))
+        cross = np.sum(cross,axis=1).reshape(nlag,1)
+        cross_error= np.sum(cross_error,axis=1).reshape(nlag,1)
+        num = np.sum(num,axis=1).reshape(nlag,1)
+        rmsx = np.sqrt(np.sum(rmsx,axis=0)).reshape(1)
+        rmsy = np.sqrt(np.sum(rmsy,axis=0)).reshape(1)
         norder = 1
         nelements = npix*norder
     else:
+        rmsx = np.sqrt(rmsx)
+        rmsy = np.sqrt(rmsy)        
         nelements = npix
-                    
+        
     # Normalizations
     for i in range(norder):
         # Normalize by number of "good" points
@@ -530,6 +533,12 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
             cross[:,i] /= rmsx[i]*rmsy[i]
             cross_error[:,i] /= rmsx[i]*rmsy[i]
 
+
+    # Flatten to 1D if norder=1
+    if norder==1:
+        cross = cross.flatten()
+        cross_error = cross_error.flatten()
+    
     if yerr is not None: return cross, cross_error
     return cross
 

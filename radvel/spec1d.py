@@ -342,22 +342,37 @@ class Spec1D:
 
         binsize = 0.05
         perclevel = 90.0
-        w = self.wave.copy()
-        x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
-        y = self.flux.copy()
-        gdmask = (y>0)        # need positive fluxes
-        ytemp = y.copy()
-        # Bin the data points
-        xr = [np.nanmin(x),np.nanmax(x)]
-        bins = np.ceil((xr[1]-xr[0])/binsize)+1
-        ybin, bin_edges, binnumber = bindata.binned_statistic(x,ytemp,statistic='percentile',
-                                                              percentile=perclevel,bins=bins,range=None)
-        xbin = bin_edges[0:-1]+0.5*binsize
-        # Interpolate to full grid
-        cont = dln.interp(xbin,ybin,x,extrapolate=True)
+        wave = self.wave.copy().reshape(self.npix,self.norder)   # make 2D
+        flux = self.flux.copy().reshape(self.npix,self.norder)   # make 2D
+        err = self.err.copy().reshape(self.npix,self.norder)   # make 2D
+        cont = err.copy()*0.0
+        for o in range(self.norder):
+            w = wave[:,o]
+            x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
+            y = flux[:,o]
+            gdmask = (y>0)        # need positive fluxes
+            # Bin the data points
+            xr = [np.nanmin(x),np.nanmax(x)]
+            bins = np.ceil((xr[1]-xr[0])/binsize)+1
+            ybin, bin_edges, binnumber = bindata.binned_statistic(x,y,statistic='percentile',
+                                                                  percentile=perclevel,bins=bins,range=None)
+            xbin = bin_edges[0:-1]+0.5*binsize
+            # Interpolate to full grid
+            cont1 = dln.interp(xbin,ybin,x,extrapolate=True)
 
-        self.flux /= cont
-        self.err /= cont
+            flux[:,o] /= cont1
+            err[:,o] /= cont1
+            cont[:,o] = cont1
+
+        # Flatten to 1D if norder=1
+        if self.norder==1:
+            flux = flux.flatten()
+            err = err.flatten()
+            cont = cont.flatten()            
+
+        # Stuff back in
+        self.flux = flux
+        self.err = err
         self.cont = cont
         self.normalized = True
         return
