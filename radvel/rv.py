@@ -454,7 +454,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
             xd[:,i] -= np.nanmean(xd[:,i])
             yd[:,i] -= np.nanmean(yd[:,i])
 
-    # Set NaNs or Infs to 0.0
+    # Set NaNs or Infs to 0.0, mask bad pixels
     fx = np.isfinite(xd)
     ngdx = np.sum(fx)
     nbdx = np.sum((fx==False))
@@ -1472,7 +1472,7 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit(spec,models=None,verbose=True,mcmc=False):
+def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
     """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
 
     # Turn off the Cannon's info messages
@@ -1502,7 +1502,7 @@ def fit(spec,models=None,verbose=True,mcmc=False):
     wavelog = utils.make_logwave_scale(spec.wave,vel=0.0)
     flux = dln.interp(spec.wave,spec.flux,wavelog,extrapolate=False)
     err = dln.interp(spec.wave,spec.err,wavelog,extrapolate=False)
-    sigma = spec.lsf.sigma(xtype='Wave')   # Is this correct??
+    sigma = spec.lsf.sigma(wavelog,xtype='Wave')
     obs = Spec1D(flux,wave=wavelog,err=err,lsfsigma=sigma)
         
     # Step 4: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
@@ -1698,6 +1698,7 @@ def fit(spec,models=None,verbose=True,mcmc=False):
     fperror = lsperror
     fpars[3] = finerv
     fchisq = finechisq
+    fmodel = cannon.model_spectrum(models,spec,teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=finerv) 
 
     
     # Step 9: MCMC
@@ -1750,6 +1751,7 @@ def fit(spec,models=None,verbose=True,mcmc=False):
         fpars = pars
         fperror = parerr
         fchisq = mcchisq
+        fmodel = mcmodel
         
 
     # Construct the output
@@ -1775,8 +1777,29 @@ def fit(spec,models=None,verbose=True,mcmc=False):
     out['tefferr'] = fperror[2]    
     out['chisq'] = fchisq
     out['bc'] = bc
+
+
+    # Make diagnostic figue
+    if figname is not None:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        if os.path.exists(figname): os.remove(figname)
+        fig,ax = plt.subplots()
+        plt.plot(spec.wave,spec.flux,'b',label='Data')
+        plt.plot(fmodel.wave,fmodel.flux,'--r',label='Model')
+        ax.axis('equal')
+        leg = ax.legend(loc='upper left', frameon=False)
+        plt.xlabel('Wavelength (Angstroms)')
+        plt.ylabel('Normalized Flux')
+        plt.ylim([-0.1,1.1])
+        # legend
+        # best-fit pars: Teff, logg, [Fe/H], RV with uncertainties and Chisq
+        plt.savefig(figname)
+        plt.close(fig)
+        print('Figure saved to '+figname)
     
-    return out
+    return out, fmodel
 
     
     # for multiple orders, have models be a list of lists.
