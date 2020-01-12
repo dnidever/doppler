@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""RV.PY - Generic Radial Velocity Software
+"""CANNON.PY - Routines to work with Cannon models.
 
 """
 

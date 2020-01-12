@@ -1,6 +1,5 @@
-__all__ = ["reader","spec1d","lsf","rv","cannon","utils"]
+__all__ = ["spec1d","lsf","rv","cannon","utils","reader"]
 
-#from .rv import SpecID
 from .spec1d import Spec1D
 from . import (rv, cannon)
 

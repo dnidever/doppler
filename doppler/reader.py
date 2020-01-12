@@ -66,13 +66,13 @@ def read(filename=None):
         return None
 
     # Readers dictionary
-    specdict = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'manga':manga, 'iraf':iraf}
+    specdict = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf}
     # Loop over all readers until we get a spectrum out
     for k in specdict.keys():
         try:
             out = specdist[k](filename)
         except:
-            pass
+            out = None
         if out is not None: return out
     # None found
     print('No reader recognized '+filename)
