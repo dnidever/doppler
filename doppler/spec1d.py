@@ -32,7 +32,69 @@ cspeed = 2.99792458e5  # speed of light in km/s
 
 # LSF class dictionary
 lsfclass = {'gaussian': GaussianLsf, 'gauss-hermite': GaussHermiteLsf}
+
+# Combine multiple spectra
+def combine(speclist,wave=None,sum=False):
+    if type(speclist) is list:
+        nspec = len(speclist)
+        spec1 = speclist[0]
+    else:
+        nspec = 1
+        spec1 = speclist
+
+    # Only one spectrum input but no wavelength, just return the spectrum
+    if (nspec==1) & (wave is None):
+        return speclist
     
+    # Final wavelength scale, if not input then use wavelengths of first spectrum
+    if wave is None:
+        wave = spec1.wave
+
+    # How many orders in output wavelength
+    if (wave.ndim==1):
+        nwpix = len(wave)
+        nworder = 1
+    else:
+        nwpix,nworder = wave.shape
+            
+    # Loop over the spectra
+    flux = np.empty((nwpix,nworder,nspec),float)
+    err = np.empty((nwpix,nworder,nspec),float)
+    mask = np.empty((nwpix,nworder,nspec),bool)
+    for i in range(nspec):
+        if (nspec==1):
+            spec = speclist
+        else:
+            spec = speclist[i]
+        # Interpolate onto final wavelength scale
+        spec2 = spec.interp(wave)
+        flux[:,:,i] = spec1.flux
+        err[:,:,i] = spec1.err
+        mask[:,:,i] = spec1.mask
+    # Weighted average
+    wt = 1.0 / np.maximum(err,0.0001)**2
+    aflux = np.sum(flux*wt,axis=2)/ np.sum(wt,axis=2)
+    # uncertainty in weighted mean is 1/sqrt(sum(wt))
+    # https://physics.stackexchange.com/questions/15197/how-do-you-find-the-uncertainty-of-a-weighted-average
+    aerr = 1.0 / np.sqrt(np.sum(wt,axis=2))
+    # mask is set only if all mask values are set
+    #  and combine
+    amask = np.empty((nwpix,nworder),bool)
+    for i in range(nspec):
+        amask = np.logical_and(amask,mask[:,:,i])
+
+    # Sum or average?
+    if sum is True:
+        aflux *= nspec
+        aerr *= nspec
+
+    # Create output spectrum object
+    ospec = Spec1D(aflux,err=aerr)
+    # cannot handle LSF yet
+
+    return ospec
+
+
 # Object for representing 1D spectra
 class Spec1D:
     # Initialize the object
@@ -152,9 +214,107 @@ class Spec1D:
         return
 
 
-    def interp(self,wave=None,vel=None):
+    def interp(self,x=None,xtype='wave',order=None):
         """ Interpolate onto a new wavelength scale and/or shift by a velocity."""
-        pass
+        # if x is 2D and has multiple dimensions and the spectrum does as well
+        # (with the same number of dimensions), and order=None, then it is assumed
+        # that the input and output orders are "matched".
+        
+        # Check input xtype
+        if (xtype.lower().find('wave')==-1) & (xtype.lower().find('pix')==-1):
+            raise ValueError(xtype+' not supported.  Must be wave or pixel')
+
+        # Convert pixels to wavelength
+        if (xtype.lower().find('pix')>-1):
+            wave = self.pix2wave(x,order=order)
+        else:
+            wave = x.copy()
+        
+        # How many orders in output wavelength
+        if (wave.ndim==1):
+            nwpix = len(wave)
+            nworder = 1
+        else:
+            nwpix,nworder = wave.shape
+        wave = wave.reshape(nwpix,nworder)  # make 2D for order indexing
+            
+        # Loop over orders in final wavelength
+        oflux = np.empty((nwpix,nworder),float)
+        oerr = np.empty((nwpix,nworder),float)
+        omask = np.empty((nwpix,nworder),bool)
+        osigma = np.empty((nwpix,nworder),float)        
+        for i in range(nworder):
+            # Interpolate onto the final wavelength scale
+            wave1 = wave[:,i]
+            wr1 = dln.minmax(wave1)
+            
+            # Make spectrum arrays 2D for order indexing, [Npix,Norder]
+            swave = self.wave.reshape(self.npix,self.norder)
+            sflux = self.flux.reshape(self.npix,self.norder)            
+            serr = self.err.reshape(self.npix,self.norder)
+            # convert mask to integer 0 or 1
+            if hasattr(self,'mask'):
+                smask = np.zeros((self.npix,self.norder),int)                
+                smask_bool = self.err.reshape(self.npix,self.norder)            
+                smask[smask_bool==True] = 1
+            else:
+                smask = np.zeros((self.npix,self.norder),int)
+
+            # The orders are "matched", one input for one output order
+            if (nworder==self.norder) & (order is None):
+                swave1 = swave[:,i]                
+                sflux1 = sflux[:,i]
+                serr1 = serr[:,i]
+                ssigma1 = self.lsf.sigma(order=i)                
+                smask1 = smask[:,i]
+                # Some overlap
+                if (np.min(swave1)<wr1[1]) & (np.max(swave1)>wr1[0]):
+                    ind,nind = dln.where( (wave1>np.min(swave1)) & (wave1<np.max(swave1)) )
+                    oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
+                    oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False)
+                    osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
+                    mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
+                    mask_interp_bool = np.empty(nind,bool)
+                    mask_interp_bool[mask_interp>0.4] = True
+                    omask[ind,i] = mask_interp_bool
+                    
+            # Loop over all spectrum orders
+            else:
+                # Loop over spectrum orders
+                for j in range(self.norder):
+                    swave1 = swave[:,j]
+                    sflux1 = sflux[:,j]
+                    serr1 = serr[:,j]
+                    ssigma1 = self.lsf.sigma(order=j)                    
+                    smask1 = smask[:,j]
+                    # Some overlap
+                    if (np.min(swave1)<wr1[1]) & (np.max(swave1)>wr1[0]):
+                        ind,nind = dln.where( (wave1>np.min(swave1)) & (wave1<np.max(swave1)) )
+                        oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
+                        oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False)
+                        osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
+                        mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
+                        mask_interp_bool = np.empty(nind,bool)
+                        mask_interp_bool[mask_interp>0.4] = True
+                        omask[ind,i] = mask_interp_bool
+                    # Currently this does NOT deal with the overlap of multiple orders (e.g. averaging)
+        # Flatten if 1D
+        if (x.ndim==1):
+            wave = wave.flatten()
+            oflux = oflux.flatten()
+            oerr = oerr.flatten()
+            osigma = osigma.flatten()            
+            omask = omask.flatten()
+        # Create output spectrum object
+        if self.lsf.lsftype=='GaussHermite':
+            print('Cannon interpolate Gauss-Hermite LSF yet')
+            ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask)            
+        else:
+            ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask,lsftype=self.lsf.lsftype,
+                           lsfxtype=self.lsf.xtype,lsfsigma=osigma)
+
+        return ospec
+                
 
     def copy(self):
         """ Create a new copy."""
@@ -193,9 +353,3 @@ class Spec1D:
             self.bc = bc
         return self.bc
         
-    
-   # maybe add an interp() method to interpolate the
-   # spectrum onto a new wavelength scale, outputs a new object
-
-   # a load() or read() method that you can use to read in a spectrum
-   # from a file, basically just calls the rdspec() function.

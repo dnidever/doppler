@@ -3,14 +3,13 @@
 #from distutils.core import setup
 from setuptools import setup, find_packages
 
-setup(name='radvel',
+setup(name='Doppler',
       version='1.0',
       description='Generic Radial Velocity Software',
       author='David Nidever',
       author_email='dnidever@montana.edu',
-      url='https://github.com/dnidever/radvel',
-#      packages=['radvel'],
+      url='https://github.com/dnidever/doppler',
       packages=find_packages(exclude=["tests"]),
-#      scripts=['bin/job_daemon'],
-      requires=['numpy','astropy','scipy','thecannon','dlnpyutils']
+      requires=['numpy','astropy','scipy','thecannon','dlnpyutils'],
+      include_package_data=True,
 )

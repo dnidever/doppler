@@ -101,8 +101,26 @@ def apvisit(filename):
     
     # APOGEE apVisit, visit-level spectrum
     if (base.find("apVisit") > -1) | (base.find("asVisit") > -1):
-        flux = fits.getdata(filename,1).T    # [Npix,Norder]
-        wave = fits.getdata(filename,3).T
+        # HISTORY AP1DVISIT:  HDU0 = Header only                                          
+        # HISTORY AP1DVISIT:  HDU1 - Flux (10^-17 ergs/s/cm^2/Ang)                        
+        # HISTORY AP1DVISIT:  HDU2 - Error (10^-17 ergs/s/cm^2/Ang)                       
+        # HISTORY AP1DVISIT:  HDU3 - Flag mask (bitwise OR combined)                      
+        # HISTORY AP1DVISIT:  HDU4 - Wavelength (Ang)                                     
+        # HISTORY AP1DVISIT:  HDU5 - Sky (10^-17 ergs/s/cm^2/Ang)                         
+        # HISTORY AP1DVISIT:  HDU6 - Sky Error (10^-17 ergs/s/cm^2/Ang)                   
+        # HISTORY AP1DVISIT:  HDU7 - Telluric                                             
+        # HISTORY AP1DVISIT:  HDU8 - Telluric Error                                       
+        # HISTORY AP1DVISIT:  HDU9 - Wavelength coefficients                              
+        # HISTORY AP1DVISIT:  HDU10 - LSF coefficients
+        # HISTORY AP1DVISIT:  HDU11 - RV catalog
+        # Get number of extensions
+        hdulist = fits.open(filename)
+        nhdu = len(hdulist)
+        hdulist.close()
+
+        # flux, err, sky, skyerr are in units of 1e-17
+        flux = fits.getdata(filename,1).T * 1e-17   # [Npix,Norder]
+        wave = fits.getdata(filename,4).T
         lsfcoef = fits.getdata(filename,10).T
         spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
         spec.filename = filename
@@ -110,19 +128,20 @@ def apvisit(filename):
         spec.waveregime = "NIR"
         spec.instrument = "APOGEE"        
         spec.head = fits.getheader(filename,0)
-        spec.err = fits.getdata(filename,2).T  # [Npix,Norder]
+        spec.err = fits.getdata(filename,2).T * 1e-17  # [Npix,Norder]
         bad = (spec.err<=0)   # fix bad error values
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3).T
         # What pixels are we masking out
         spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
-        spec.sky = fits.getdata(filename,5).T
-        spec.skyerr = fits.getdata(filename,6).T
+        spec.sky = fits.getdata(filename,5).T * 1e-17
+        spec.skyerr = fits.getdata(filename,6).T * 1e-17
         spec.telluric = fits.getdata(filename,7).T
         spec.telerr = fits.getdata(filename,8).T
         spec.wcoef = fits.getdata(filename,9).T
-        spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
+        if (nhdu>=11):
+            spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
         # Spectrum, error, sky, skyerr are in units of 1e-17
         spec.snr = spec.head["SNR"]
         if base.find("apVisit") > -1:
@@ -157,35 +176,45 @@ def apstar(filename):
         # HISTORY APSTAR:  HDU6 - Telluric                                                
         # HISTORY APSTAR:  HDU7 - Telluric Error                                          
         # HISTORY APSTAR:  HDU8 - LSF coefficients                                        
-        # HISTORY APSTAR:  HDU9 - RV and CCF structure  
-        flux = fits.getdata(filename,1)
-        spec = Spec1D(flux)
+        # HISTORY APSTAR:  HDU9 - RV and CCF structure
+        # Get number of extensions
+        hdulist = fits.open(filename)
+        nhdu = len(hdulist)
+        hdulist.close()
+
+        # Spectrum, error, sky, skyerr are in units of 1e-17
+        #  these are 2D arrays with [Nvisit+2,Npix]
+        #  the first two are combined and the rest are the individual spectra
+
+        head1 = fits.getheader(filename,1)
+        w0 = np.float64(head1["CRVAL1"])
+        dw = np.float64(head1["CDELT1"])
+        nw = head1["NAXIS1"]
+        wave = 10**(np.arange(nw)*dw+w0)
+        
+        # flux, err, sky, skyerr are in units of 1e-17
+        flux = fits.getdata(filename,1).T * 1e-17
+        lsfcoef = fits.getdata(filename,8).T
+        spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
         spec.filename = filename
         spec.sptype = "apStar"
         spec.waveregime = "NIR"
         spec.instrument = "APOGEE"
         spec.head = fits.getheader(filename,0)
-        spec.err = fits.getdata(filename,2)
+        spec.err = fits.getdata(filename,2).T * 1e-17
         bad = (spec.err<=0)   # fix bad error values
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3)
         # What pixels to mask
         spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
-        spec.sky = fits.getdata(filename,4)
-        spec.skyerr = fits.getdata(filename,5)
-        spec.telluric = fits.getdata(filename,6)
-        spec.telerr = fits.getdata(filename,7)
-        spec.lsf = fits.getdata(filename,8)
-        spec.meta = fits.getdata(filename,9)    # meta-data
-        # Spectrum, error, sky, skyerr are in units of 1e-17
-        #  these are 2D arrays with [Nvisit+2,Npix]
-        #  the first two are combined and the rest are the individual spectra
-        head1 = fits.getheader(filename,1)
-        w0 = np.float64(head1["CRVAL1"])
-        dw = np.float64(head1["CDELT1"])
-        nw = head1["NAXIS1"]
-        spec.wave = 10**(np.arange(nw)*dw+w0)
+        spec.sky = fits.getdata(filename,4).T * 1e-17
+        spec.skyerr = fits.getdata(filename,5).T * 1e-17
+        spec.telluric = fits.getdata(filename,6).T
+        spec.telerr = fits.getdata(filename,7).T
+        spec.lsf = fits.getdata(filename,8).T
+        if nhdu>=9:
+            spec.meta = fits.getdata(filename,9)    # meta-data
         spec.snr = spec.head["SNR"]
         if base.find("apStar") > -1:
             spec.observatory = 'apo'
