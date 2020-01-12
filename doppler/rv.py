@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20180922'  # yyyymmdd                                                                                                                           
+__version__ = '20190622'  # yyyymmdd                                                                                                                           
 
 import os
 #import sys, traceback
@@ -19,6 +19,7 @@ from astropy.table import Table
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.wcs import WCS
 from scipy.ndimage.filters import median_filter,gaussian_filter1d
 from scipy.optimize import curve_fit, least_squares
 from scipy.interpolate import interp1d
@@ -30,6 +31,11 @@ import copy
 import emcee
 import corner
 import logging
+import time
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.legend import Legend
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -138,25 +144,27 @@ def rdspec(filename=None):
     
     # APOGEE apVisit, visit-level spectrum
     if (base.find("apVisit") > -1) | (base.find("asVisit") > -1):
-        flux = fits.getdata(filename,1)
-        wave = fits.getdata(filename,3)
-        spec = Spec1D(flux,wave=wave)
+        flux = fits.getdata(filename,1).T    # [Npix,Norder]
+        wave = fits.getdata(filename,3).T
+        lsfcoef = fits.getdata(filename,10).T
+        spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
         spec.filename = filename
         spec.sptype = "Visit"
         spec.waveregime = "NIR"
         spec.instrument = "APOGEE"        
         spec.head = fits.getheader(filename,0)
-        spec.err = fits.getdata(filename,2)
+        spec.err = fits.getdata(filename,2).T  # [Npix,Norder]
         bad = (spec.err<=0)   # fix bad error values
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
-        spec.mask = fits.getdata(filename,3)
-        spec.sky = fits.getdata(filename,5)
-        spec.skyerr = fits.getdata(filename,6)
-        spec.telluric = fits.getdata(filename,7)
-        spec.telerr = fits.getdata(filename,8)
-        spec.wcoef = fits.getdata(filename,9)
-        spec.lsf = fits.getdata(filename,10)
+        spec.bitmask = fits.getdata(filename,3).T
+        # What pixels are we masking out
+        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
+        spec.sky = fits.getdata(filename,5).T
+        spec.skyerr = fits.getdata(filename,6).T
+        spec.telluric = fits.getdata(filename,7).T
+        spec.telerr = fits.getdata(filename,8).T
+        spec.wcoef = fits.getdata(filename,9).T
         spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
         # Spectrum, error, sky, skyerr are in units of 1e-17
         spec.snr = spec.head["SNR"]
@@ -199,7 +207,9 @@ def rdspec(filename=None):
         bad = (spec.err<=0)   # fix bad error values
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
-        spec.mask = fits.getdata(filename,3)
+        spec.bitmask = fits.getdata(filename,3)
+        # What pixels to mask
+        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.sky = fits.getdata(filename,4)
         spec.skyerr = fits.getdata(filename,5)
         spec.telluric = fits.getdata(filename,6)
@@ -210,8 +220,8 @@ def rdspec(filename=None):
         #  these are 2D arrays with [Nvisit+2,Npix]
         #  the first two are combined and the rest are the individual spectra
         head1 = fits.getheader(filename,1)
-        w0 = head1["CRVAL1"]
-        dw = head1["CDELT1"]
+        w0 = np.float64(head1["CRVAL1"])
+        dw = np.float64(head1["CDELT1"])
         nw = head1["NAXIS1"]
         spec.wave = 10**(np.arange(nw)*dw+w0)
         spec.snr = spec.head["SNR"]
@@ -250,7 +260,8 @@ def rdspec(filename=None):
         spec.instrument = "BOSS"
         spec.head = head
         spec.ivar = tab1["ivar"].data
-        spec.mask = tab1["or_mask"].data
+        spec.bitmask = tab1["or_mask"].data
+        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.and_mask = tab1["and_mask"].data
         spec.or_mask = tab1["or_mask"].data
         spec.sky = tab1["sky"].data
@@ -284,51 +295,63 @@ def rdspec(filename=None):
         spec.err = err
         spec.ivar = tab["IVAR"].data[0]
         spec.wave = tab["WAVE"].data[0]
-        spec.mask = tab["MASK"].data[0]
+        spec.bitmask = tab["MASK"].data[0]
+        # What pixels to mask
+        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.disp = tab["DISP"].data[0]
         spec.presdisp = tab["PREDISP"].data[0]
         meta = {'DRPVER':tab["DRPVER"].data,'MPROCVER':tab["MPROCVER"].data,'MANGAID':tab["MANGAID"].data,'PLATE':tab["PLATE"].data,
-                'IFUDESIGN':tab["IFUDESIGN"].data,'MJD':tab["MJD"].data,'IFURA':tab["IFURA"].data,'IFUDEC':tab["IFUDEC"].data,'OBJRA':tab["OBJRA"].data,
-                'OBJDEC':tab["OBJDEC"].data,'PSFMAG':tab["PSFMAG"].data,'MNGTARG2':tab["MNGTARG2"].data,'NEXP':tab["NEXP"].data,'HELIOV':tab["HELIOV"].data,
-                'VERR':tab["VERR"].data,'V_ERRCODE':tab["V_ERRCODE"].data,'MJDQUAL':tab["MJDQUAL"].data,'SNR':tab["SNR"].data,'PARS':tab["PARS"].data,
-                'PARERR':tab["PARERR"].data}
+                'IFUDESIGN':tab["IFUDESIGN"].data,'MJD':tab["MJD"].data,'IFURA':tab["IFURA"].data,'IFUDEC':tab["IFUDEC"].data,
+                'OBJRA':tab["OBJRA"].data,'OBJDEC':tab["OBJDEC"].data,'PSFMAG':tab["PSFMAG"].data,'MNGTARG2':tab["MNGTARG2"].data,
+                'NEXP':tab["NEXP"].data,'HELIOV':tab["HELIOV"].data,'VERR':tab["VERR"].data,'V_ERRCODE':tab["V_ERRCODE"].data,
+                'MJDQUAL':tab["MJDQUAL"].data,'SNR':tab["SNR"].data,'PARS':tab["PARS"].data,'PARERR':tab["PARERR"].data}
         spec.meta = meta
         # What are the units?
         spec.snr = tab["SNR"].data
         spec.observatory = 'apo'
         spec.wavevac = True        
         return spec        
-
-    # lp*fits, synthetic spectra
-    if base.find("lp") > -1:
-        tab = Table.read(filename,format='fits')
-        spec = Spec1D(tab["FLUX"].data)
-        spec.filename = filename
-        spec.sptype = "synthetic"
-        spec.wave = tab["WAVE"].data
-        spec.mask = np.zeros(len(spec.wave))
-        if np.min(spec.wave) < 1e4:
-            spec.waveregime = "Optical"
-        else:
-            spec.waveregime = "NIR"
-        spec.instrument = "synthetic"
-        # Parse the filename
-        # lp0000_XXXXX_YYYY_MMMM_NNNN_Vsini_ZZZZ_SNRKKKK.asc where
-        # XXXX gives Teff in K, YYYY is logg in dex (i4.4 format,
-        # YYYY*0.01 will give logg in dex),
-        # MMMM stands for microturbulent velocity (i4.4 format, fixed at 2.0 km/s),
-        # NNNN is macroturbulent velocity (i4.4 format, fixed at 0 km/s),
-        # ZZZZ gives projected rotational velocity in km/s (i4.4 format),
-        # KKKK refers to SNR (i4.4 format). lp0000 stands for the solar metallicity.
-        dum = base.split("_")
-        spec.meta = {'Teff':np.float(dum[1]), 'logg':np.float(dum[2])*0.01, 'micro':np.float(dum[3]),
-                     'macro':np.float(dum[4]), 'vsini':np.float(dum[6]), 'SNR':np.float(dum[7][3:])}
-        spec.snr = spec.meta['SNR']
-        spec.err = spec.flux*0.0+1.0/spec.snr
-        return spec      
+   
     
-
-    # Add a generic IRAF spectrum loader
+    # Generic IRAF spectrum
+    #BANDID1 = 'spectrum: background fit, weights variance, clean no'                
+    #BANDID2 = 'spectrum: background fit, weights none, clean no'                    
+    #BANDID3 = 'background: background fit'                                          
+    #BANDID4 = 'sigma - background fit, weights variance, clean no'  
+    data,head = fits.getdata(filename,0,header=True)
+    ndim = data.ndim
+    if ndim==2: 
+        npix,norder = data.shape
+        flux = data[:,0]
+    else:
+        flux = data
+        norder = 1
+        npix = len(flux)
+    # Get wavelength
+    crval1 = head.get('crval1')
+    crpix1 = head.get('crpix1')
+    cdelt1 = head.get('cdelt1')
+    if cdelt1 is None: cdelt1=head.get('cd1_1')
+    if (crval1 is not None) & (crpix1 is not None) & (cdelt is not None):
+        wave = (np.arange(npix,int)+1-crpix1) * np.float64(cdelt1) + np.float64(crval1)
+        wlogflag = head.get('DC-FLAG')
+        if (wlogflag is not None):
+            if wlogflag==1: wave = 10**wave
+    else:
+        print('No wavelength information')
+        wave = None
+    spec = Spec1D(flux,wave=wave)
+    spec.filename = filename
+    spec.sptype = "IRAF"
+    spec.head = head
+    # Error/sigma array
+    bandid = head.get('BANDID*')
+    if bandid is not None:
+        for i,key in enumerate(bandid):
+            val = bandid[key]
+            if 'sigma' in val:
+                if (i<=norder):
+                    spec.err = data[:,k]
     
     
 def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
@@ -1472,13 +1495,14 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
+def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
     """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
 
     # Turn off the Cannon's info messages
     tclogger = logging.getLogger('thecannon.utils')
     tclogger.disabled = True
 
+    t0 = time.time()
     
     # Step 1: Prepare the spectrum
     #-----------------------------
@@ -1703,7 +1727,7 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
     
     # Step 9: MCMC
     #--------------
-    if mcmc is True:
+    if (mcmc is True) | (cornername is not None):
         ndim, nwalkers = 4, 20
         delta = [fpars[0]*0.1, 0.1, 0.1, 3*beststr['vrelerr']]
         pos = [fpars + delta*np.random.randn(ndim) for i in range(nwalkers)]
@@ -1711,6 +1735,7 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
         sampler = emcee.EnsembleSampler(nwalkers, ndim, emcee_lnprob, args=(spec.wave, spec.flux, spec.err, pmodels, spec))
 
         steps = 100
+        if cornername is not None: steps=500
         #%timeit out = sampler.run_mcmc(pos, 500)
         out = sampler.run_mcmc(pos, steps)
 
@@ -1719,13 +1744,13 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
         
         pars = np.zeros(ndim,float)
         parerr = np.zeros(ndim,float)
-        print('Final MCMC values:')
+        if verbose is True: print('Final MCMC values:')
         names = ['Teff','logg','[Fe/H]','Vrel']
         for i in range(ndim):
             t=np.percentile(samples[:,i],[16,50,84])
             pars[i] = t[1]
             parerr[i] = (t[2]-t[0])*0.5
-            print(names[i]+' = %5.2f +/- %5.2f' % (pars[i],parerr[i]))
+            if verbose is True: print(names[i]+' = %5.2f +/- %5.2f' % (pars[i],parerr[i]))
 
         #fig, axes = plt.subplots(4, figsize=(10, 7), sharex=True)
         #samples = sampler.get_chain()
@@ -1741,8 +1766,6 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
         # The maximum likelihood parameters
         bestind = np.unravel_index(np.argmax(sampler.lnprobability),sampler.lnprobability.shape)
         pars_ml = sampler.chain[bestind[0],bestind[1],:]
-            
-        #fig = corner.corner(samples, labels=["T$_eff$", "$\log{g}$", "[Fe/H]", "Vrel"], truths=pars)
 
         mcmodel = cannon.model_spectrum(models,spec,teff=pars[0],logg=pars[1],feh=pars[2],rv=pars[3])
         mcchisq = np.sqrt(np.sum(((spec.flux-mcmodel.flux)/spec.err)**2)/len(spec.flux))
@@ -1752,6 +1775,15 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
         fperror = parerr
         fchisq = mcchisq
         fmodel = mcmodel
+        
+        # Corner plot
+        if cornername is not None:
+            matplotlib.use('Agg')
+            fig = corner.corner(samples, labels=["T$_eff$", "$\log{g}$", "[Fe/H]", "Vrel"], truths=fpars)        
+            plt.savefig(cornername)
+            plt.close(fig)
+            print('Corner plot saved to '+cornername)
+        
         
 
     # Construct the output
@@ -1781,24 +1813,41 @@ def fit(spec,models=None,verbose=True,mcmc=False,figname=None):
 
     # Make diagnostic figue
     if figname is not None:
-        import matplotlib
+        #import matplotlib
         matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
+        #import matplotlib.pyplot as plt
         if os.path.exists(figname): os.remove(figname)
         fig,ax = plt.subplots()
         plt.plot(spec.wave,spec.flux,'b',label='Data')
         plt.plot(fmodel.wave,fmodel.flux,'--r',label='Model')
-        ax.axis('equal')
+        #ax.axis('equal')
         leg = ax.legend(loc='upper left', frameon=False)
         plt.xlabel('Wavelength (Angstroms)')
         plt.ylabel('Normalized Flux')
-        plt.ylim([-0.1,1.1])
+        xr = dln.minmax(spec.wave)
+        yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
+        yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
+        yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+        plt.xlim(xr)
+        plt.ylim(yr)
         # legend
         # best-fit pars: Teff, logg, [Fe/H], RV with uncertainties and Chisq
+        #leg = Legend(ax, lines[2:], ['line C', 'line D'],
+        #             loc='lower right', frameon=False)
+        #ax.add_artist(leg)
+        wr = dln.minmax(spec.wave)
+        #plt.legend(('Teff', 'logg', '[Fe/H]','Vrel'),
+        #           loc='upper left', handlelength=1.5, fontsize=16)
+        ax.annotate(r'Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f ' %
+                    (out['teff'], out['tefferr'], out['logg'], out['loggerr'], out['feh'], out['feherr'], out['vrel'], out['vrelerr']),
+                    xy=(xr[0]+dln.valrange(xr)*0.05, yr[0]+dln.valrange(yr)*0.05))
         plt.savefig(figname)
         plt.close(fig)
         print('Figure saved to '+figname)
-    
+
+    # How long did this take
+    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
+        
     return out, fmodel
 
     

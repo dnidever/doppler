@@ -22,8 +22,9 @@ warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 
+
 # Load a spectrum
-def read(filename=None):
+def read(filename=None,format=None):
     '''
     This reads in a SDSS-IV MWM training set spectrum and returns an
     object that is guaranteed to have certain information.
@@ -32,6 +33,8 @@ def read(filename=None):
     ----------
     filename : str
           The filename of the spectrum.
+    format : str, optional
+          The format string, or name of the reader to use.
 
     Returns
     -------
@@ -64,22 +67,37 @@ def read(filename=None):
     if os.path.exists(filename) is False:
         print(filename+" NOT FOUND")
         return None
-
+    
     # Readers dictionary
-    specdict = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf}
+    try:
+        nreaders = len(_readers)
+    except:
+        # _readers is defined in __init__.py
+        raise ValueError("No readers defined")
+    # Format input
+    if format is not None:
+        # check that we have this reader
+        if format.lower() not in _readers.keys():
+            raise ValueError('reader '+format+' not found')
+        # Use the requested reader/format
+        out = globals()[format](filename)
+        if out is not None: return out
+        
     # Loop over all readers until we get a spectrum out
-    for k in specdict.keys():
+    for k in _readers.keys():
         try:
-            out = specdist[k](filename)
+            out = _readers[k](filename)
         except:
             out = None
         if out is not None: return out
     # None found
     print('No reader recognized '+filename)
+    print('Current list of readers: '+', '.join(_readers.keys()))
     return
     
 def apvisit(filename):
     # Load APOGEE apVisit/asVisit spectra
+    base, ext = os.path.splitext(os.path.basename(filename))
     
     # APOGEE apVisit, visit-level spectrum
     if (base.find("apVisit") > -1) | (base.find("asVisit") > -1):
@@ -114,8 +132,10 @@ def apvisit(filename):
         spec.wavevac = True
         return spec
 
+    
 def apstar(filename):
     # Load APOGEE apStar/asStar spectra
+    base, ext = os.path.splitext(os.path.basename(filename))
     
     # APOGEE apStar, combined spectrum
     if (base.find("apStar") > -1)  | (base.find("asStar") > -1):
@@ -176,6 +196,7 @@ def apstar(filename):
 
 def boss(filename):
     # Load SDSS BOSS spectra
+    base, ext = os.path.splitext(os.path.basename(filename))
     
     # BOSS spec
     if (base.find("spec-") > -1) | (base.find("SDSS") > -1):
@@ -220,7 +241,8 @@ def boss(filename):
 
 def mastar(filename):
     # Load SDSS MaStar spectra
-
+    base, ext = os.path.splitext(os.path.basename(filename))
+    
     # MaStar spec
     if (base.find("mastar-") > -1):
         # HDU1 - table with spectrum and metadata
@@ -261,6 +283,7 @@ def mastar(filename):
    
 def iraf(filename):
     # Load IRAF-style spectra
+    base, ext = os.path.splitext(os.path.basename(filename))
     
     # Generic IRAF spectrum
     #BANDID1 = 'spectrum: background fit, weights variance, clean no'                
@@ -303,4 +326,6 @@ def iraf(filename):
                     spec.err = data[:,k]
 
     return spec
- 
+
+# List of readers
+_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf}
