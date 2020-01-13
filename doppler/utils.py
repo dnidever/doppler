@@ -223,29 +223,103 @@ def make_logwave_scale(wave,vel=1000.0):
 
     """
 
-    # If the existing wavelength scale is logarithmic them use it, just extend
+    # If the existing wavelength scale is logarithmic then use it, just extend
     # on either side
     vel = np.abs(vel)
     wave = np.float64(wave)
     nw = len(wave)
     wr = dln.minmax(wave)
-    # extend wavelength range by +/-vel km/s
-    wlo = wr[0]-vel/cspeed*wr[0]
-    whi = wr[1]+vel/cspeed*wr[1]
-    dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
-    
-    nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
-    nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))
-    if vel==0.0:
-        n = np.int((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog)
+
+    # Multi-order wavelength array
+    if wave.ndim==2:
+        norder = wave.shape[1]
+
+        # Ranges
+        wr = np.empty((2,norder),np.float64)
+        wlo = np.empty(norder,np.float64)
+        whi = np.empty(norder,np.float64)
+        for i in range(norder):
+            wr[:,i] = dln.minmax(wave[:,i])
+            wlo[i] = wr[0,i]-vel/cspeed*wr[0,i]
+            whi[i] = wr[1,i]+vel/cspeed*wr[1,i]
+            
+        # For multi-order wavelengths, the final wavelength solution will extend
+        # beyond the boundary of the original wavelength solution (at the end).
+        # The extra pixels will have to be "padded" with masked out values.
+        
+        # We want the same logarithmic step for all order
+        dw = np.log10(np.float64(wave[1:,:])) - np.log10(np.float64(wave[0:-1,:]))
+        dwlog = np.median(np.abs(dw))   # positive
+
+        # Extend at the ends
+        if vel>0:
+            nlo = np.empty(norder,int)
+            nhi = np.empty(norder,int)
+            for i in range(norder):
+                nlo[i] = np.int(np.ceil((np.log10(np.float64(wr[0,i]))-np.log10(np.float64(wlo[i])))/dwlog))
+                nhi[i] = np.int(np.ceil((np.log10(np.float64(whi[i]))-np.log10(np.float64(wr[1,i])))/dwlog))
+            # Use the maximum over all orders
+            nlo = np.max(nlo)
+            nhi = np.max(nhi)
+        else:
+            nlo = 0
+            nhi = 0
+
+        # Number of pixels for the input wavelength range
+        n = np.empty(norder,int)
+        for i in range(norder):
+            if vel==0:
+                n[i] = np.int((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog)
+            else:
+                n[i] = np.int(np.ceil((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog))        
+        # maximum over all orders
+        n = np.max(n)
+
+        # Final number of pixels
+        nf = n+nlo+nhi
+
+        # Final wavelength array
+        fwave = np.empty((nf,norder),np.float64)
+        for i in range(norder):
+            fwave[:,i] = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0,i])) )
+
+        # Make sure the element that's associated with the first input wavelength is identical
+        for i in range(norder):
+            # Increasing input wavelength arrays
+            if np.median(dw[:,i])>0:
+                fwave[:,i] -= fwave[nlo,i]-wave[0,i]
+            # Decreasing input wavelength arrays
+            else:
+                fwave[:,i] -= fwave[nlo,i]-wave[-1,i]
+        
+    # Single-order wavelength array
     else:
-        n = np.int(np.ceil((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog))        
-    nf = n+nlo+nhi
+        # extend wavelength range by +/-vel km/s
+        wlo = wr[0]-vel/cspeed*wr[0]
+        whi = wr[1]+vel/cspeed*wr[1]
 
-    fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
+        # logarithmic step
+        dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
+        
+        # extend at the ends
+        if vel>0:
+            nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
+            nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))        
+        else:
+            nlo = 0
+            nhi = 0
 
-    # Make sure the element that's associated with the first input wavelength is identical
-    fwave -= fwave[nlo]-wave[0]
+        # Number of pixels
+        if vel==0.0:
+            n = np.int((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog)
+        else:
+            n = np.int(np.ceil((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog))        
+        nf = n+nlo+nhi
+
+        fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
+
+        # Make sure the element that's associated with the first input wavelength is identical
+        fwave -= fwave[nlo]-wave[0]
     
     # w=10**(w0log+i*dwlog)
     return fwave
