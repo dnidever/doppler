@@ -14,6 +14,7 @@ import numpy as np
 import warnings
 from astropy.io import fits
 from astropy.table import Table
+from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
 from .spec1d import Spec1D
 
@@ -133,13 +134,29 @@ def apvisit(filename):
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3).T
-        # What pixels are we masking out
-        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.sky = fits.getdata(filename,5).T * 1e-17
         spec.skyerr = fits.getdata(filename,6).T * 1e-17
         spec.telluric = fits.getdata(filename,7).T
         spec.telerr = fits.getdata(filename,8).T
-        spec.wcoef = fits.getdata(filename,9).T
+        spec.wcoef = fits.getdata(filename,9).T        
+        # Create the bad pixel mask
+        # "bad" pixels:
+        #   flag = ['BADPIX','CRPIX','SATPIX','UNFIXABLE','BADDARK','BADFLAT','BADERR','NOSKY',
+        #           'LITTROW_GHOST','PERSIST_HIGH','PERSIST_MED','PERSIST_LOW','SIG_SKYLINE','SIG_TELLURIC','NOT_ENOUGH_PSF','']
+        #   badflag = [1,1,1,1,1,1,1,1,
+        #              0,0,0,0,0,0,1,0]
+        mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
+        # Extra masking for bright skylines
+        x = np.arange(spec.npix)
+        nsky = 4
+        for i in range(spec.norder):
+            sky = spec.sky[:,i]
+            medsky = median_filter(sky,201,mode='reflect')
+            medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
+            medsky2 = dln.poly(x,medcoef)*np.median(medsky)
+            skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
+            mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+        spec.mask = mask
         if (nhdu>=11):
             spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
         # Spectrum, error, sky, skyerr are in units of 1e-17
@@ -206,13 +223,27 @@ def apstar(filename):
         if np.sum(bad) > 0:
             spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3)
-        # What pixels to mask
-        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.sky = fits.getdata(filename,4).T * 1e-17
         spec.skyerr = fits.getdata(filename,5).T * 1e-17
         spec.telluric = fits.getdata(filename,6).T
         spec.telerr = fits.getdata(filename,7).T
         spec.lsf = fits.getdata(filename,8).T
+        # Create the bad pixel mask
+        # "bad" pixels:
+        #   flag = ['BADPIX','CRPIX','SATPIX','UNFIXABLE','BADDARK','BADFLAT','BADERR','NOSKY',
+        #           'LITTROW_GHOST','PERSIST_HIGH','PERSIST_MED','PERSIST_LOW','SIG_SKYLINE','SIG_TELLURIC','NOT_ENOUGH_PSF','']
+        #   badflag = [1,1,1,1,1,1,1,1,
+        #              0,0,0,0,0,0,1,0]
+        mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
+        # Extra masking for bright skylines
+        x = np.arange(spec.npix)
+        nsky = 4
+        medsky = median_filter(spec.sky,201,mode='reflect')
+        medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
+        medsky2 = dln.poly(x,medcoef)*np.median(medsky)
+        skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
+        mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+        spec.mask = mask
         if nhdu>=9:
             spec.meta = fits.getdata(filename,9)    # meta-data
         spec.snr = spec.head["SNR"]
@@ -245,9 +276,12 @@ def boss(filename):
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
             err[bad] = 1e30  #np.nan
+            mask = np.zeros(flux.shape)
+            mask[bad] = True
         else:
             err = 1.0/np.sqrt(ivar)
-        spec = Spec1D(flux,err=err,wave=wave,lsfsigma=wdisp,lsfxtype='Wave')
+            mask = np.zeros(flux.shape)
+        spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Wave')
         spec.lsf.clean()   # clean up some bad LSF values
         spec.filename = filename
         spec.sptype = "spec"
@@ -256,7 +290,6 @@ def boss(filename):
         spec.head = head
         spec.ivar = tab1["ivar"].data
         spec.bitmask = tab1["or_mask"].data
-        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.and_mask = tab1["and_mask"].data
         spec.or_mask = tab1["or_mask"].data
         spec.sky = tab1["sky"].data
@@ -276,11 +309,7 @@ def mastar(filename):
     if (base.find("mastar-") > -1):
         # HDU1 - table with spectrum and metadata
         tab = Table.read(filename,1)
-        spec = Spec1D(tab["FLUX"].data[0])
-        spec.filename = filename
-        spec.sptype = "MaStar"
-        spec.waveregime = "Optical"
-        spec.instrument = "BOSS"
+        flux = tab["FLUX"].data[0]
         # checking for zeros in IVAR
         ivar = tab["IVAR"].data[0].copy()
         bad = (ivar<=0)
@@ -288,14 +317,19 @@ def mastar(filename):
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
             err[bad] = 1e30 #np.nan
+            mask = np.zeros(flux.shape)
+            mask[bad] = True
         else:
             err = 1.0/np.sqrt(ivar)
-        spec.err = err
+            mask = np.zeros(flux.shape)
+        spec = Spec1D(flux,wave=wave,err=err,mask=mask)
+        spec.filename = filename
+        spec.sptype = "MaStar"
+        spec.waveregime = "Optical"
+        spec.instrument = "BOSS"        
         spec.ivar = tab["IVAR"].data[0]
         spec.wave = tab["WAVE"].data[0]
         spec.bitmask = tab["MASK"].data[0]
-        # What pixels to mask
-        spec.mask = np.zeros(spec.bitmask.shape,dtype=bool)
         spec.disp = tab["DISP"].data[0]
         spec.presdisp = tab["PREDISP"].data[0]
         meta = {'DRPVER':tab["DRPVER"].data,'MPROCVER':tab["MPROCVER"].data,'MANGAID':tab["MANGAID"].data,'PLATE':tab["PLATE"].data,

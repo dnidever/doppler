@@ -99,6 +99,7 @@ Normally spectra come with bitmasks which give specific information for each pix
 But this information is survey or instrument-specific.  Therefore, it is best for each reader to specify the good and bad pixels in ```mask```.
 It is also good to save the bitmask information (if it exists) in ```bitmask```.
 
+
 ## Spectral Orders
 
 The Doppler Spec1D objects can represent spectra with multiple "orders".  For example, an APOGEE visit spectrum has components from three
@@ -109,6 +110,13 @@ Doppler can handle multi-order spectra, but the order dimension must always be t
 of [4096,3] is okay, but [3,4096] is not. 
 
 Most Doppler functions and methods have a ```order=X``` keyword if a specific order is desired.
+
+
+## Vacuum or Air Wavelengths
+
+In the past it was the norm to use "air" wavelengths (standard temperature and pressure), but more recently "vacuum" wavelengths are
+becoming more common.  Doppler can handle wavelengths in both vacuum or air and will properly convert between them as long as it knows
+what the observed spectrum uses.  Make sure to set the ```wavevac``` property is properly set.
 
 ## Normalization
 
@@ -148,6 +156,9 @@ If you want to input an array of sigmas instead, then use LSFSIGMA.
 There is also a 'Gauss-Hermite' LSF type, but currently this is only used for APOGEE spectra.
 
 It's useful to check at the beginning of your reader that the file/spectrum is of the right type.  If it's not then just return ```None```.
+
+Doppler can handle wavelengths in both vacuum or air and will properly convert between them as long as it knows what the
+observed spectrum uses.  Make sure to set ```wavevac = True``` for vacuum wavelengths or ```False``` for air wavelengths.
 
 #### To add your new custom reader to the list of readers:
 ```

@@ -99,7 +99,7 @@ def combine(speclist,wave=None,sum=False):
 class Spec1D:
     # Initialize the object
     def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None):
+                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
         self.flux = flux
         self.err = err
         self.wave = wave
@@ -111,6 +111,7 @@ class Spec1D:
         #self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
         self.instrument = instrument
         self.filename = filename
+        self.wavevac = wavevac
         self.snr = None
         if self.err is not None:
             self.snr = np.nanmedian(flux)/np.nanmedian(err)
