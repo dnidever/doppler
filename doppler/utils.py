@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20180922'  # yyyymmdd                                                                                                                           
+__version__ = '20200112'  # yyyymmdd                                                                                                                           
 
 import os
 import numpy as np
@@ -22,9 +22,34 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
+
 # Convert wavelengths to pixels for a dispersion solution
 def w2p(dispersion,w,extrapolate=True):
-    """ dispersion is the wavelength array of the spectrum"""
+    """
+    Convert wavelength values to pixels for a "dispersion solution".
+
+    Parameters
+    ----------
+    dispersion : 1D array
+         The dispersion solution.  This is basically just a 1D array of
+         monotonically increasing (or decreasing) wavelengths.
+    w : array
+      Array of wavelength values to convert to pixels.
+    extrapolate : bool, optional
+       Extrapolate beyond the dispersion solution, if necessary.
+       This is True by default.
+
+    Returns
+    -------
+    x : array
+      Array of converted pixel values.
+
+    Examples
+    --------
+    x = w2p(disp,w)
+
+    """
+
     x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
     # Need to extrapolate
     if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
@@ -49,7 +74,31 @@ def w2p(dispersion,w,extrapolate=True):
 
 # Convert pixels to wavelength for a dispersion solution
 def p2w(dispersion,x,extrapolate=True):
-    """ dispersion is the wavelength array of the spectrum"""
+    """
+    Convert pixel values to wavelengths for a "dispersion solution".
+
+    Parameters
+    ----------
+    dispersion : 1D array
+         The dispersion solution.  This is basically just a 1D array of
+         monotonically increasing (or decreasing) wavelengths.
+    x : array
+      Array of pixel values to convert to wavelengths.
+    extrapolate : bool, optional
+       Extrapolate beyond the dispersion solution, if necessary.
+       This is True by default.
+
+    Returns
+    -------
+    w : array
+      Array of converted wavelengths.
+
+    Examples
+    --------
+    w = p2w(disp,x)
+
+    """
+
     npix = len(dispersion)
     w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
     # Need to extrapolate
@@ -70,9 +119,27 @@ def p2w(dispersion,x,extrapolate=True):
 
 
 def sparsify(lsf):
-    # sparsify
-    # make a sparse matrix
-    # from J.Bovy's lsf.py APOGEE code
+    """
+    This is a helper function for convolve_sparse() that takes a 
+    2D LSF array and returns a sparse matrix.
+
+    Parameters
+    ----------
+    lsf : 2D array
+         A 2D Line Spread Function (LSF) to sparsify.
+
+    Returns
+    -------
+    out : sparse matrix
+         The sparse matrix version of lsf.
+
+    Usage
+    -----
+    slsf = sparsify(lsf)
+
+    From J.Bovy's lsf.py APOGEE code.
+    """
+
     nx = lsf.shape[1]
     diagonals = []
     offsets = []
@@ -85,11 +152,31 @@ def sparsify(lsf):
             diagonals.append(lsf[offset:,ii])
     return sparse.diags(diagonals,offsets)
 
+
 def convolve_sparse(spec,lsf):
-    # convolution with matrices
-    # from J.Bovy's lsf.py APOGEE code    
-    # spec - [npix]
-    # lsf - [npix,nlsf]
+    """
+    Convolve a flux array (1D) with an LSF (2D) using sparse matrices.
+
+    Parameters
+    ----------
+    spec : 1D array
+         The 1D flux array [Npix].
+    lsf : 2D array
+         The Line Spread Function (LSF) to convolve the spectrum with.  This must
+         have shape of [Npix,Nlsf].
+
+    Returns
+    -------
+    out : array
+         The new flux array convolved with LSF.
+
+    Usage
+    -----
+    >>>out = convolve_sparse(spec,lsf)
+
+    From J.Bovy's lsf.py APOGEE code.
+    """
+
     npix,nlsf = lsf.shape
     lsf2 = sparsify(lsf)
     spec2 = np.reshape(spec,(1,npix))
@@ -112,9 +199,31 @@ def convolve_sparse(spec,lsf):
 
 # Make logaritmic wavelength scale
 def make_logwave_scale(wave,vel=1000.0):
-    """ Make logarithmic wavelength scale for this observed wavelength scale."""
+    """
+    Create a logarithmic wavelength scale for a given wavelength array.
 
-    # If the existing wavelength scale is logaritmic them use it, just extend
+    This is used by rv.fit() to create a logarithmic wavelength scale for
+    cross-correlation.
+
+    Parameters
+    ----------
+    wave : array
+         Input wavelength array.
+    vel : float, optional
+         Maximum velocity shift to allow for.  Default is 1000.
+
+    Returns
+    -------
+    fwave : array
+         New logarithmic wavelength array.
+
+    Usage
+    -----
+    >>>fwave = make_logwave_scale(wave)
+
+    """
+
+    # If the existing wavelength scale is logarithmic them use it, just extend
     # on either side
     vel = np.abs(vel)
     wave = np.float64(wave)
@@ -140,9 +249,11 @@ def make_logwave_scale(wave,vel=1000.0):
     
     # w=10**(w0log+i*dwlog)
     return fwave
-    
+
+
 # The doppler data directory
 def datadir():
+    """ Return the doppler data/ directory."""
     fil = os.path.abspath(__file__)
     codedir = os.path.dirname(fil)
     datadir = codedir+'/data/'
