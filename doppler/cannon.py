@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@montana.edu>'
-__version__ = '20190922'  # yyyymmdd
+__version__ = '20200112'  # yyyymmdd
 
 import os
 import numpy as np
@@ -45,6 +45,20 @@ def cannon_copy(model):
 
 # Load the cannon model
 def load_all_cannon_models():
+    """
+    Load all Cannon models from the Doppler data/ directory.
+
+    Returns
+    -------
+    models : list of Cannon models
+       List of all Cannon models in the Doppler data/ directory.
+
+    Examples
+    --------
+    models = load_all_cannnon_models()
+
+    """
+    
     datadir = utils.datadir()
     files = glob(datadir+'cannongrid*.pkl')
     nfiles = len(files)
@@ -62,6 +76,29 @@ def load_all_cannon_models():
 
 # Get correct cannon model for a given set of inputs
 def get_best_cannon_model(models,pars):
+    """
+    Return the Cannon model that covers the input parameters.
+    It returns the first one that matches.
+
+    Parameters
+    ----------
+    models : list of Cannon models
+       List of Cannon models to check.
+    pars : array
+       Array of parameters/labels to check the Cannon models for.
+
+    Returns
+    -------
+    m : Cannon model
+      The Cannon model that covers the input parameters.
+
+    Examples
+    --------
+
+    m = get_best_cannon_models(models,pars)
+
+    """
+    
     n = dln.size(models)
     if n==1:
         return models
@@ -83,7 +120,35 @@ def get_best_cannon_model(models,pars):
 
 # Create a "wavelength-trimmed" version of a CannonModel model (or multiple models)
 def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
+    """
+    Trim a Cannon model (or list of Cannon models) to a smaller
+    wavelength range.  Either x0 and x1 must be input or w0 and w1.
 
+    Parameters
+    ----------
+    model : Cannon model or list
+       Cannon model or list of Cannon models.
+    x0 : int, optional
+      The starting pixel to trim to.
+    x1 : int, optional
+      The ending pixel to trim to.  Must be input with x0.
+    w0 : float, optional
+      The starting wavelength to trim to.
+    w1 : float, optional
+      The ending wavelength to trim to.  Must be input with w0.
+
+    Returns
+    -------
+    omodel : Cannon model(s)
+       The trimmed Cannon model(s).
+
+    Examples
+    --------
+
+    omodel = trim_cannon_model(model,100,1000)
+
+    """
+    
     if type(model) is list:
         omodel = []
         for i in range(len(model)):
@@ -112,9 +177,31 @@ def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
         
     return omodel
 
+
 # Rebin a CannonModel model
 def rebin_cannon_model(model,binsize):
+    """
+    Rebin a Cannon model (or list of models) by an integer amount.
 
+    Parameters
+    ----------
+    model : Cannon model or list
+       The Cannon model or list of them to rebin.
+    binsize : int
+       The number of pixels to bin together.
+
+    Returns
+    -------
+    omodel : Cannon model or list
+       The rebinned Cannon model or list of Cannon models.
+
+    Examples
+    --------
+
+    omodel = rebin_cannon_model(model,4
+
+    """
+    
     if type(model) is list:
         omodel = []
         for i in range(len(model)):
@@ -143,8 +230,34 @@ def rebin_cannon_model(model,binsize):
         
     return omodel
 
+
 # Interpolate a CannonModel model
 def interp_cannon_model(model,xout=None,wout=None):
+    """
+    Interpolate a Cannon model or list of models onto a new wavelength
+    (or pixel) scale.  Either xout or wout must be input.
+
+    Parameters
+    ----------
+    model : Cannon model or list
+      Cannon model or list of Cannon models to interpolate.
+    xout : array, optional
+      The desired output pixel array.
+    wout : array, optional
+      The desired output wavelength aray.
+
+    Returns
+    -------
+    omodel : Cannon model or list
+      The interpolated Cannon model or list of models.
+
+    Examples
+    --------
+
+    omodel = interp_cannon_model(model,wout)
+
+    """
+
     if (xout is None) & (wout is None):
         raise Exception('xout or wout must be input')
     
@@ -190,9 +303,33 @@ def interp_cannon_model(model,xout=None,wout=None):
         
     return omodel
 
+
 # Convolve a CannonModel model
 def convolve_cannon_model(model,lsf):
+    """
+    Convolve a Cannon model or list of models with an input LSF.
 
+    Parameters
+    ----------
+    model : Cannon model or list
+      Input Cannon model or list of Cannon models to convolve, with Npix pixels.
+    lsf : array
+      2D line spread function (LSF) to convolve with the Cannon model.
+      The shape must be [Npix,Nlsf], where Npix is the same as the number of
+      pixels in the Cannon model.
+
+    Return
+    ------
+    omodel : Cannon model or list
+      The convolved Cannon model or list of models.
+
+    Examples
+    --------
+
+    omodel = convolve_cannon_model(model,lsf)
+
+    """
+    
     #  Need to allow this to be vary with wavelength
     # lsf can be a 1D kernel, or a 2D LSF array that gives
     #  the kernel for each pixel separately
@@ -230,82 +367,41 @@ def convolve_cannon_model(model,lsf):
         
     return omodel
 
-# Convolve a CannonModel model with a wavelength-dependent Gaussian
-def gconvolve_cannon_model(model,xgcoef=None,wgcoef=None):
-    # gcoef - array of coefficients that returns Gaussian sigma (pixels)
-    #           input is pixels.  values in ascending order
-    #           e.g. gcoef = [c0, c1, c2, ...]
-    # wgcoef - array of coefficients that returns Gaussian sigma (A)
-    #           input is wavelength (A).  values in ascending order
-    #           e.g. gcoef = [c0, c1, c2, ...]    
-    
-    #  Need to allow this to be vary with wavelength
-
-    if (xgcoef is None) & (wgcoef is None):
-        raise Exception('xgcoef or wgcoef must be input')
-    
-    if type(model) is list:
-        omodel = []
-        for i in range(len(model)):
-            model1 = model[i]
-            omodel1 = gconvolve_cannon_model(model1,xgcoef=xgcoef,wgcoef=wgoef)
-            omodel.append(omodel1)
-    else:
-
-        if (wgcoef is not None) & (model.dispersion is None):
-            raise Exception('wgcoef input but no dispersion information in model')
-
-        npix, npars = model.theta.shape
-        x = np.arange(npix)
-        
-        # Calculate xsigma from wgcoef
-        if (xgcoef is None) & (wgcoef is not None):
-            dw = dln.slope(model.dispersion)
-            dw = np.hstack((dw,dw[-1]))
-            wsigma = np.polyval(wgcoef[::-1],model.dispersion)
-            xsigma = wsigma / dw
-
-        # Calculate xsigma from xgcoef
-        if (wgcoef is None) & (xgcoef is not None):
-            xsigma = np.polyval(xgcoef[::-1],x)
-
-        # Figure out nLSF pixels needed, +/-3 sigma
-        nlsf = np.int(np.round(np.max(xsigma)*6))
-        if nlsf % 2 == 0: nlsf+=1                   # must be even
-        
-        # Make LSF array
-        lsf = np.zeros((npix,nlsf))
-        xlsf = np.arange(nlsf)-nlsf//2
-        #for i in range(npix):
-        #    lsf[i,:] = np.exp(-0.5*xlsf**2 / xsigma[i]**2)
-        #    lsf[i,:] /= np.sum(lsf[i,:])             # normalize
-        xlsf2 = np.repeat(xlsf,npix).reshape((nlsf,npix)).T
-        xsigma2 = np.repeat(xsigma,nlsf).reshape((npix,nlsf))
-        lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
-
-        nlabels = len(model.vectorizer.label_names)
-        labelled_set = np.zeros([2,nlabels])
-        normalized_flux = np.zeros([2,npix])
-        normalized_ivar = normalized_flux.copy()*0
-        omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
-        omodel._s2 = utils.convolve_sparse(model._s2,lsf)
-        omodel._scales = model._scales
-        omodel._theta = np.zeros((npix,npars),np.float64)
-        for i in range(npars):
-            omodel._theta[:,i] = utils.convolve_sparse(model._theta[:,i],lsf)
-        omodel._design_matrix = model._design_matrix
-        omodel._fiducials = model._fiducials
-        if model.dispersion is not None:
-            omodel.dispersion = model.dispersion
-        omodel.regularization = model.regularization
-        if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
-        
-    return omodel
-
 
 # Prepare the cannon model for a specific observed spectrum
 def prepare_cannon_model(model,spec,dointerp=False):
+    """
+    This prepares a Cannon model or list of models for an observed spectrum.
+    The models are trimmed, rebinned, convolved to the spectrum LSF's and
+    finally interpolated onto the spectrum's wavelength scale.
 
+    The final interpolation can be omitted by setting dointerp=False (the default).
+    This can be useful if the model is to interpolated multiple times on differen
+    wavelength scales (e.g. for multiple velocities or logarithmic wavelength
+    scales for cross-correlation).
+
+    Parameters
+    ----------
+    model : Cannon model or list
+       The Cannon model(s) to prepare for "spec".
+    spec : Spec1D object
+       The observed spectrum for which to prepare the Cannon model(s).
+    dointerp : bool, optional
+       Do the interpolation onto the observed wavelength scale.
+       The default is Fal.se
+
+    Returns
+    -------
+    omodel : Cannon model or list
+        The Cannon model or list of models prepared for "spec".
+
+    Examples
+    --------
+
+    omodel = prepare_cannon_model(model,spec)
+
+    """
+    
     if spec.wave is None:
         raise Exception('No wavelength in observed spectrum')
     if spec.lsf is None:
@@ -402,6 +498,40 @@ def prepare_cannon_model(model,spec,dointerp=False):
 
 
 def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
+    """
+    Create a Cannon model spectrum matches to an input observed spectrum
+    and for given stellar parameters (teff, logg, feh) and radial velocity
+    (rv).
+
+    Parameters
+    ----------
+    models : Cannon model or list
+       The Cannon models or list of models to use.
+    spec : Spec1D object
+       The observed spectrum for which to create the model spectrum.
+    teff : float
+       The desired effective temperature.
+    logg : float
+       The desired surface gravity.
+    feh : float
+       The desired metallicity, [Fe/H].
+    rv : float
+       The desired radial velocity (km/s).
+
+    Returns
+    -------
+    mspec : Spec1D object
+      The final Cannon model spectrum (as Spec1D object) with the
+      specified stellar parameters and RV prepared for the input "spec"
+      observed spectrum.
+
+    Examples
+    --------
+
+    mspec = model_spectrum(models,spec,teff=4500.0,logg=4.0,feh=-1.2,rv=55.0)
+
+    """
+    
     if teff is None:
         raise Exception("Need to input TEFF")    
     if logg is None:
@@ -463,77 +593,3 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
         
     return mspec
 
-def model_spectrum_rvfit(models,spec,teff=None,logg=None,feh=None):
-    if teff is None:
-        raise Exception("Need to input TEFF")    
-    if logg is None:
-        raise Exception("Need to input LOGG")
-    if feh is None:
-        raise Exception("Need to input FEH")
-    
-    pars = np.array([teff,logg,feh])
-    # Get best cannon model
-    model = get_best_cannon_model(models,pars)
-    if model is None:
-        print('Outside the parameter range')
-        return
-    # Create the model spectrum
-    model_spec = model(pars)
-    model_wave = model.dispersion.copy()
-    npix = len(model_spec)
-
-    # Sample +/-800 km/s in 10 km/s steps
-    #  interpolate all of the wavelengths at once to increase speed
-    #model_wave *= (1+rv/cspeed)
-
-    nrv = 161
-    rvstep = 10.0
-    rv0 = -800.0
-    nopix = len(spec.wave)
-    wave1 = spec.wave.copy()
-    wave2 = np.repeat(wave1,nrv).reshape((nopix,nrv)).T
-    rv = np.arange(nrv)*rvstep+rv0
-    dop = (1+rv/cspeed)
-    dop2 = np.repeat(dop,nopix).reshape((nrv,nopix))
-    dopwave = wave2*dop2
-
-    # Interpolation
-    model_spec_interp = interp1d(model_wave,model_spec,kind='cubic',bounds_error=False,
-                                 fill_value=(np.nan,np.nan),assume_sorted=True)(dopwave)
-
-    # Calculate chisq
-    flux = np.repeat(spec.flux.copy(),nrv).reshape((nopix,nrv)).T
-    err = np.repeat(spec.err.copy(),nrv).reshape((nopix,nrv)).T    
-
-    chisq = np.sum((flux-model_spec_interp)**2/err**2,axis=1)
-    bestind = np.argmin(chisq)
-    bestrv = rv[bestind]
-    bestchisq = chisq[bestind]
-
-    # Interpolate to better RV
-    rv2 = np.arange(201)*0.1-10 + bestrv
-    chisq2 = dln.interp(rv,chisq,rv2)
-    bestind2 = np.argmin(chisq2)
-    bestrv2 = rv2[bestind2]
-    bestchisq2 = chisq2[bestind2]
-    
-    print('RV = '+str(bestrv2)+' km/s')
-    #plt.plot(rv,chisq)
-
-    best_model = model_spec_interp[bestind,:]
-    #best_model = model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):    
-    plt.plot(spec.flux)
-    plt.plot(best_model)
-    
-    return (bestrv,bestchisq)
-
-    # SPECTRUM MUST BE NORMALIZED!!!
-
-    # UnivariateSpline
-    #   this is 10x faster then the interpolation
-    # scales linearly with number of points
-    #spl = UnivariateSpline(model_wave,model_spec)
-    #model_spec_interp = spl(spec.wave)
-
-
-    
