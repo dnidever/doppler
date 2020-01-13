@@ -80,7 +80,7 @@ def read(filename=None,format=None):
         if format.lower() not in _readers.keys():
             raise ValueError('reader '+format+' not found')
         # Use the requested reader/format
-        out = globals()[format](filename)
+        out = _readers[format](filename)
         if out is not None: return out
         
     # Loop over all readers until we get a spectrum out

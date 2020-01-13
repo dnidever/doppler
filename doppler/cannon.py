@@ -45,9 +45,7 @@ def cannon_copy(model):
 
 # Load the cannon model
 def load_all_cannon_models():
-    fil = os.path.abspath(__file__)
-    codedir = os.path.dirname(fil)
-    datadir = codedir+'/data/'
+    datadir = utils.datadir()
     files = glob(datadir+'cannongrid*.pkl')
     nfiles = len(files)
     if nfiles==0:

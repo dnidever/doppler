@@ -9,7 +9,7 @@ from __future__ import print_function
 __authors__ = 'David Nidever <dnidever@noao.edu>'
 __version__ = '20180922'  # yyyymmdd                                                                                                                           
 
-#import os
+import os
 import numpy as np
 import warnings
 from scipy import sparse
@@ -141,3 +141,9 @@ def make_logwave_scale(wave,vel=1000.0):
     # w=10**(w0log+i*dwlog)
     return fwave
     
+# The doppler data directory
+def datadir():
+    fil = os.path.abspath(__file__)
+    codedir = os.path.dirname(fil)
+    datadir = codedir+'/data/'
+    return datadir

@@ -157,11 +157,7 @@ class Spec1D:
             return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
         else:
             return utils.p2w(self.wave,x,extrapolate=extrapolate)            
-        
-    @staticmethod
-    def read(filename=None):
-        return rdspec(filename=filename)
-    
+
     def normalize(self,ncorder=6,perclevel=0.95):
         self._flux = self.flux  # Save the original
         #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
@@ -202,17 +198,6 @@ class Spec1D:
         self.cont = cont
         self.normalized = True
         return
-
-    def rv(self,template):
-        """Calculate the RV with respect to a template spectrum"""
-        pass
-        return
-        
-    def solve(self):
-        """Find the RV and stellar parameters of this spectrum"""
-        pass
-        return
-
 
     def interp(self,x=None,xtype='wave',order=None):
         """ Interpolate onto a new wavelength scale and/or shift by a velocity."""
