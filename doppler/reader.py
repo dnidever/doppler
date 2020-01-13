@@ -23,7 +23,6 @@ warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 
-
 # Load a spectrum
 def read(filename=None,format=None):
     '''
@@ -42,14 +41,14 @@ def read(filename=None,format=None):
     spec : Spec1D object
         A Spec1D object that always has FLUX, ERR, WAVE, MASK, FILENAME, SPTYPE, WAVEREGIME and INSTRUMENT.
 
-    Example
-    -------
+    Examples
+    --------
 
     Load an APOGEE apStar spectrum.
 
     .. code-block:: python
 
-        spec = rdspec("apStar-r8-2M00050083+6349330.fits")
+        spec = read("apStar-r8-2M00050083+6349330.fits")
 
     '''
     if filename is None:
@@ -95,9 +94,30 @@ def read(filename=None,format=None):
     print('No reader recognized '+filename)
     print('Current list of readers: '+', '.join(_readers.keys()))
     return
-    
+
+
+# Load APOGEE apVisit/asVisit spectra
 def apvisit(filename):
-    # Load APOGEE apVisit/asVisit spectra
+    """
+    Read a SDSS APOGEE apVisit spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = apvisit('spec.fits')
+
+    """
+
     base, ext = os.path.splitext(os.path.basename(filename))
     
     # APOGEE apVisit, visit-level spectrum
@@ -168,9 +188,29 @@ def apvisit(filename):
         spec.wavevac = True
         return spec
 
-    
+
+# Load APOGEE apStar/asStar spectra    
 def apstar(filename):
-    # Load APOGEE apStar/asStar spectra
+    """
+    Read an SDSS APOGEE apStar spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = apstar('spec.fits')
+
+    """
+
     base, ext = os.path.splitext(os.path.basename(filename))
     
     # APOGEE apStar, combined spectrum
@@ -254,8 +294,29 @@ def apstar(filename):
         spec.wavevac = True            
         return spec
 
+
+# Load SDSS BOSS spectra    
 def boss(filename):
-    # Load SDSS BOSS spectra
+    """
+    Read a SDSS BOSS spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = boss('spec.fits')
+
+    """
+
     base, ext = os.path.splitext(os.path.basename(filename))
     
     # BOSS spec
@@ -301,8 +362,29 @@ def boss(filename):
         spec.wavevac = True
         return spec        
 
+    
+# Load SDSS MaStar spectra
 def mastar(filename):
-    # Load SDSS MaStar spectra
+    """
+    Read a SDSS MaStar spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = mastar('spec.fits')
+
+    """
+
     base, ext = os.path.splitext(os.path.basename(filename))
     
     # MaStar spec
@@ -343,9 +425,30 @@ def mastar(filename):
         spec.observatory = 'apo'
         spec.wavevac = True        
         return spec        
-   
+
+    
+# Load IRAF-style spectra
 def iraf(filename):
-    # Load IRAF-style spectra
+    """
+    Read an IRAF-style spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = iraf('spec.fits')
+
+    """
+
     base, ext = os.path.splitext(os.path.basename(filename))
     
     # Generic IRAF spectrum
