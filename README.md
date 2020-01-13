@@ -76,12 +76,20 @@ lsf = spec.lsf.array()
 ```
 The output will be a 2D array [Npix,Nlsf] if there is only one order, otherwise 3D [Npix,Nlsf,Norder].
 
-You can obtain the LSF for specific pixels or wavelengths with the ```anyarray()``` meethod:
+You can obtain the LSF for specific pixels or wavelengths with the ```anyarray()``` method:
 ```python
 lsf = spec.lsf.anyarray([100,200],xtype='pixels')
 ```
 
 The output will be [Npix,Nlsf].
+
+The default of ```anyarray()``` is to put the LSF on the original wavelength scale.  If you want your own new wavelength scale,
+then set ```original=True```.
+
+You can use ```utils.convolve_sparse()``` to convolve a flux array with an LSF.
+```python
+convflux = utils.convolve_sparse(flux,lsf)
+```
 
 
 ## The Mask

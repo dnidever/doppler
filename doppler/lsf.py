@@ -819,10 +819,11 @@ class GaussianLsf(Lsf):
 
     
     # Return full LSF values using contiguous input array
-    def anyarray(self,x,xtype='pixels',order=0):
+    def anyarray(self,x,xtype='pixels',order=0,original=True):
         nx = len(x)
+        # returns xsigma in units of self.xtype not necessarily xtype
         xsigma = self.sigma(x,xtype=xtype,order=order)
-
+        
         # Get wavelength and pixel arrays
         if xtype.lower().find('pix') > -1:
             w = self.pix2wave(x,order=order)
@@ -833,8 +834,14 @@ class GaussianLsf(Lsf):
         # Convert sigma from wavelength to pixels, if necessary
         if self.xtype.lower().find('wave') > -1:
             wsigma = xsigma.copy()
-            dw = dln.slope(w)
-            dw = np.hstack((dw,dw[-1]))            
+            # On original wavelength scale
+            if original is True:
+                w1 = self.pix2wave(np.array(x)+1,order=order)
+                dw = w1-w
+            # New wavelength/pixel scale
+            else:
+                dw = dln.slope(w)
+                dw = np.hstack((dw,dw[-1]))            
             xsigma = wsigma / dw
 
         # Figure out nLSF pixels needed, +/-3 sigma
