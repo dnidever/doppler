@@ -869,12 +869,12 @@ class GaussianLsf(Lsf):
     """
 
     # Initalize the object
-    def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None,silent=True):
+    def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None,verbose=False):
         # xtype is wave or pixels.  designates what units to use BOTH for the input
         #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
-        super().__init__(wave=wave,pars=pars,xtype=xtype,lsftype='Gaussian',sigma=sigma,silent=True)        
+        super().__init__(wave=wave,pars=pars,xtype=xtype,lsftype='Gaussian',sigma=sigma,verbose=False)        
 
         
     # Return Gaussian sigma
@@ -1163,12 +1163,12 @@ class GaussHermiteLsf(Lsf):
     """
     
     # Initalize the object
-    def __init__(self,wave=None,pars=None,xtype='pixel',lsftype='Gauss-Hermite',sigma=None,silent=False):
+    def __init__(self,wave=None,pars=None,xtype='pixel',lsftype='Gauss-Hermite',sigma=None,verbose=False):
         # xtype is wave or pixels.  designates what units to use BOTH for the input
         #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
-        super().__init__(wave=wave,pars=pars,xtype='pixel',lsftype='Gauss-Hermite',sigma=sigma,silent=True)
+        super().__init__(wave=wave,pars=pars,xtype='pixel',lsftype='Gauss-Hermite',sigma=sigma,verbose=False)
 
         
     # Return Gaussian sigma
