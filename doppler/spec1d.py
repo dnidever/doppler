@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-"""SPEC1D.PY - Create spectrum 1D class and methods
+"""SPEC1D.PY - The spectrum 1D class and methods
 
 """
 
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20180922'  # yyyymmdd                                                                                                                           
+__version__ = '20200112'  # yyyymmdd                                                                                                                           
 
 import numpy as np
 import math
@@ -33,8 +33,34 @@ cspeed = 2.99792458e5  # speed of light in km/s
 # LSF class dictionary
 lsfclass = {'gaussian': GaussianLsf, 'gauss-hermite': GaussHermiteLsf}
 
+
 # Combine multiple spectra
 def combine(speclist,wave=None,sum=False):
+    """
+    This function combines/stacks multiple spectra.
+
+    Parameters
+    ----------
+    speclist : list of Spec1D objects
+         The list of spectra to combine.
+    wave : array, optional
+        The output wavelength array.  By default, the wavelength array of
+        the first spectrum is used.
+    sum : bool, optional
+        Sum the spectra instead of averaging them.  The default is to average.
+
+    Returns
+    -------
+    spec : Spec1D object
+        The final combined/stacked spectrum.
+
+    Examples
+    --------
+    
+    spec = combine([spec1,spec2,spec3])
+
+    """
+    
     if type(speclist) is list:
         nspec = len(speclist)
         spec1 = speclist[0]
@@ -97,6 +123,43 @@ def combine(speclist,wave=None,sum=False):
 
 # Object for representing 1D spectra
 class Spec1D:
+    """
+    A class to represent 1D spectra.
+
+    Parameters
+    ----------
+    flux : array
+        Array of flux values.  Can 2D if there are multiple orders, e.g. [Npix,Norder].
+        The order dimension must always be the last/trailing dimension.
+    err : array, optional
+        Array of uncertainties in the flux array.  Same shape as flux.
+    wave : array, optional
+        Array of wavelengths for the flux array.  Same shape as flux.
+    mask : boolean array, optional
+        Boolean bad pixel mask array (good=False, bad=True) for flux.  Same shape as flux.
+    bitmask : array, optional
+        Bit mask giving specific information for each flux pixel.  Same shape as flux.
+    lsfpars : array, optional
+        The Line Spread Profile (LSF) coefficients as a function of wavelength or pixel
+        (that is specified in lsfxtype).
+    lsftype : string, optional
+       The type of LSF: 'Gaussian' or 'Gauss-Hermite'.
+    lsfxtype: string, optional
+       If lsfpars is input, then this specifies whether the coeficients depend on wavelength
+       ('wave') or pixels ('pixel').  The output LSF parameters (e.g. Gaussian sigma), must
+       also use the same units.
+    lsfsigma : array, optional
+        Array of Gaussian sigma values for each pixel.  Same shape as flux.
+    instrument : string, optional
+        Name of the instrument on which the spectrum was observed.
+    filename : string, optional
+        File name of the spectrum.
+    wavevac: bool, optional
+        Whether the spectrum wavelengths are vacuum wavelengths (wavevac=True) or air wavelengths (wavevac=False).
+
+    """
+
+    
     # Initialize the object
     def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,lsfpars=None,lsftype='Gaussian',
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
@@ -126,7 +189,9 @@ class Spec1D:
         self.norder = norder
         return
 
+    
     def __repr__(self):
+        """ Print out the string representation of the Spec1D object."""
         s = repr(self.__class__)+"\n"
         if self.instrument is not None:
             s += self.instrument+" spectrum\n"
@@ -141,7 +206,35 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    
     def wave2pix(self,w,extrapolate=True,order=0):
+        """
+        Convert wavelength values to pixels using the spectrum dispersion
+        solution.
+
+        Parameters
+        ----------
+        w : array
+          Array of wavelength values to convert.
+        extrapolate : bool, optional
+           Extrapolate beyond the boundaries of the dispersion solution,
+           if necessary.  True by default.
+        order : int, optional
+            The order to use if there are multiple orders.
+            The default is 0.
+              
+        Returns
+        -------
+        x : array
+          The array of converted pixels.
+
+        Examples
+        --------
+
+        x = spec.wave2pix(w)
+
+        """
+        
         if self.wave is None:
             raise Exception("No wavelength information")
         if self.wave.ndim==2:
@@ -149,8 +242,36 @@ class Spec1D:
             return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
         else:
             return utils.w2p(self.wave,w,extrapolate=extrapolate)
+
         
     def pix2wave(self,x,extrapolate=True,order=0):
+        """
+        Convert pixel values to wavelengths using the spectrum dispersion
+        solution.
+
+        Parameters
+        ----------
+        x : array
+          Array of pixel values to convert.
+        extrapolate : bool, optional
+           Extrapolate beyond the boundaries of the dispersion solution,
+           if necessary.  True by default.
+        order : int, optional
+            The order to use if there are multiple orders.
+            The default is 0.
+              
+        Returns
+        -------
+        w : array
+          The array of converted wavelengths.
+
+        Examples
+        --------
+
+        w = spec.pix2wave(x)
+
+        """
+        
         if self.wave is None:
             raise Exception("No wavelength information")
         if self.wave.ndim==2:
@@ -159,7 +280,33 @@ class Spec1D:
         else:
             return utils.p2w(self.wave,x,extrapolate=extrapolate)            
 
+        
     def normalize(self,ncorder=6,perclevel=0.95):
+        """
+        Normalize the spectrum.
+
+        Parameters
+        ----------
+        ncorder : float, optional
+              Polynomial order to use for the continuum fitting.
+              The default is 6.
+        perclevel : float, optional
+              Percent level (1.0 for 100%) to use for the continuum value
+              in large bins.  Default is 0.95.
+              
+        Returns
+        -------
+        The flux and err arrays will normalized (divided) by the continuum
+        and the continuum saved in cont.  The normalized property is set to
+        True.
+
+        Examples
+        --------
+
+        spec.normalize()
+
+        """
+
         self._flux = self.flux  # Save the original
         #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
 
