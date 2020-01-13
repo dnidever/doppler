@@ -54,23 +54,6 @@ def xcorr_dtype(nlag):
 
 # astropy.modeling can handle errors and constraints
 
-## This suppresses stdout output
-## usage:
-## with Suppressor():
-##    DoMyFunction(*args,**kwargs)
-#class Suppressor(object):
-#
-#    def __enter__(self):
-#        self.stdout = sys.stdout
-#        sys.stdout = self
-#
-#    def __exit__(self, type, value, traceback):
-#        sys.stdout = self.stdout
-#        if type is not None:
-#            # Do normal exception handling
-#            pass
-#
-#    def write(self, x): pass
 
 # https://stackoverflow.com/questions/2828953/silence-the-stdout-of-a-function-in-python-without-trashing-sys-stdout-and-resto
 # usage:
@@ -313,175 +296,10 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     return cross
 
 
-def robust_correlate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
-    """This function computes the cross correlation of two samples.
-
-    This function computes the cross correlation Pxy(L) or cross
-    covariance Rxy(L) of two sample populations X and Y as a function
-    of the lag (L).
-
-    This was translated from APC_CORRELATE.PRO which was itself a
-    modification to the IDL C_CORRELATE.PRO function.
-
-    Parameters
-    ----------
-    x : array
-      The first array to cross correlate.
-    y : array
-      The second array to cross correlate.  Must be same length as x.
-    lag : array
-      Vector that specifies the absolute distance(s) between
-             indexed elements of X in the interval [-(n-2), (n-2)].
-    yerr : array, optional
-       Array of uncertainties in Y
-    covariange : bool
-        If true, then the sample cross covariance is computed.
-
-    Returns
-    -------
-    cross : array
-         The cross correlation or cross covariance.
-    cerror : array
-         The uncertainty in "cross".  Only if "yerr" is input.
-
-    Example
-    -------
-
-    Define two n-element sample populations.
-
-    .. code-block:: python
-
-         x = [3.73, 3.67, 3.77, 3.83, 4.67, 5.87, 6.70, 6.97, 6.40, 5.57]
-         y = [2.31, 2.76, 3.02, 3.13, 3.72, 3.88, 3.97, 4.39, 4.34, 3.95]
-
-    Compute the cross correlation of X and Y for LAG = -5, 0, 1, 5, 6, 7
-
-    .. code-block:: python
-
-         lag = [-5, 0, 1, 5, 6, 7]
-         result = ccorrelate(x, y, lag)
-
-    The result should be:
-
-    .. code-block:: python
-
-         [-0.428246, 0.914755, 0.674547, -0.405140, -0.403100, -0.339685]
-
-    """
-
-
-    # Compute the sample cross correlation or cross covariance of
-    # (Xt, Xt+l) and (Yt, Yt+l) as a function of the lag (l).
-
-    nx = len(x)
-
-    if (nx != len(y)):
-        raise ValueError("X and Y arrays must have the same number of elements.")
-
-    # Check length.
-    if (nx<2):
-        raise ValueError("X and Y arrays must contain 2 or more elements.")
-
-    # Remove the mean
-    if nomean is False:
-        xmn = np.nanmean(x)
-        ymn = np.nanmean(y)
-        xd = x.copy()-xmn
-        yd = y.copy()-ymn
-    else:
-        xd = x.copy()
-        yd = y.copy()
-    yerr2 = np.ones(x.shape)
-    if yerr is not None: yerr2=yerr.copy()
-    
-        
-    fx = np.isfinite(x)
-    ngdx = np.sum(fx)
-    nbdx = np.sum((fx==False))
-    if nbdx>0: xd[(fx==False)]=0.0
-    fy = np.isfinite(y)
-    ngdy = np.sum(fy)
-    nbdy = np.sum((fy==False))
-    if nbdy>0:
-        yd[(fy==False)]=0.0
-        yerr2[(fy==False)]=np.inf
-    nlag = len(lag)
-
-    loss = np.zeros(nlag,dtype=float)+1e30  # all bad to start
-    #loss_error = np.zeros(nlag,dtype=float)
-    num = np.zeros(nlag,dtype=int)  # number of "good" points at this lag
-    for k in range(nlag):
-        # Note the reversal of the variables for negative lags.
-        if lag[k]>0:
-             loss[k] = np.sum(np.abs((xd[0:nx - lag[k]] - yd[lag[k]:])/yerr2[lag[k]:]))
-             num[k] = np.sum(fx[0:nx - lag[k]] * fy[lag[k]:]) 
-             #if yerr is not None:
-             #    loss_error[k] = np.sum( (xd[0:nx - lag[k]] * yerr2[lag[k]:])**2 )
-        else:
-             loss[k] =  np.sum(np.abs((yd[0:nx + lag[k]] - xd[-lag[k]:])/yerr2[0:nx + lag[k]]))
-             num[k] = np.sum(fy[0:nx + lag[k]] * fx[-lag[k]:])
-             #if yerr is not None:
-             #    loss_error[k] = np.sum( (yerr2[0:nx + lag[k]] * xd[-lag[k]:])**2 )
-    # Normalize by number of "good" points
-    #loss *= np.max(num)
-    pnum = (num>0)
-    loss[pnum] /= num[pnum]  # normalize by number of "good" points
-    ## Take sqrt to finish adding errors in quadrature
-    #loss_error = np.sqrt(loss_error)
-    ## normalize
-    #loss_error *= np.max(num)
-    #loss_error[pnum] /= num[pnum]
-    
-    # Divide by N for covariance, or divide by variance for correlation.
-    #if ngdx>2:
-    #    rmsx = np.sqrt(np.sum(xd[fx]**2))
-    #else:
-    #    rmsx=1.0
-    #if rmsx==0.0: rmsx=1.0
-    #if ngdy>2:
-    #    rmsy = np.sqrt(np.sum(yd[fy]**2))
-    #else:
-    #    rmsy=1.0
-    #if rmsy==0.0: rmsy=1.0
-    #if covariance is True:
-    #    loss /= nx
-    #    loss_error /= nx
-    #else:
-    #    loss /= rmsx*rmsy
-    #    loss_error /= rmsx*rmsy
-
-    return loss
-
-def specshift_resid(xshift,spec,temp,sigma=1.0):
-    """ This shifts a template spectrum and then returns the
-    residual when compared to an observed spectrum"""
-    sig = sigma
-    if sigma is None: sig=1.0
-    x = np.arange(len(spec))
-    f = interp1d(x,temp,kind='cubic',bounds_error=False,fill_value=(0.0,0.0),assume_sorted=True)
-    shtemp = f(x+xshift)
-    resid = (spec-shtemp)/sig
-    print(xshift)
-    return resid
-
-def robust_xcorr(spec, temp, err=None, maxlag=200):
-    """ This program performs robust shifting/cross-correlation
-    of two spectra/arrays."""
-
-    bounds = (-maxlag,maxlag)
-    res_robust = least_squares(specshift_resid, 0.0, loss='soft_l1', f_scale=0.1, args=(spec,temp,err), bounds=bounds)
-    if res_robust.success is False:
-        raise Exception("Problem with least squares polynomial fitting. Status="+str(res_robust.status))
-    coef = res_robust.x
-
-    return coef
-
 def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
              binsize=0.05,perclevel=95.0,growsky=False,nsky=5):
     """
-    NORMSPEC
-
-    This program normalizes a spectrum
+    This program normalizes a spectrum.
 
     Parameters
     ----------
@@ -512,11 +330,16 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     masked : array
          A boolean array specifying if a pixel was masked (True) or not (False).
 
+    Examples
+    --------
+
+    nspec,cont,masked = normspec(spec)
+
     """
 
     # Not enough inputs
     if spec is None:
-        raise ValueError("""spec2 = apnormspec(spec,fixbadpix=fixbadpix,ncorder=ncorder,noerrcorr=noerrcorr,
+        raise ValueError("""spec2 = normspec(spec,fixbadpix=fixbadpix,ncorder=ncorder,noerrcorr=noerrcorr,
                                              binsize=binsize,perclevel=perclevel)""")
     musthave = ['flux','err','mask','wave']
     for a in musthave:
@@ -657,572 +480,87 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     return (nspec,cont,masked)
 
 
-def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf=False,prior=None):
-    """This measures the radial velocity of a spectrum vs. a template using cross-correlation.
-
-    This program measures the cross-correlation shift between
-    a template spectrum (can be synthetic or observed) and
-    an observed spectrum (or multiple spectra) on the same
-    logarithmic wavelength scale.
-
-    Parameters
-    ----------
-    wave : array
-          The wavelength array.
-    tempspec :
-          The template spectrum: normalized and on log-lambda scale.
-    obsspec : array
-           The observed spectra: normalized and sampled on tempspec scale.
-    obserr : array
-           The observed error; normalized and sampled on tempspec scale.
-    maxlag : int
-           The maximum lag or shift to explore.
-    prior : array, optional 
-           Set a Gaussian prior on the cross-correlation.  The first
-           term is the central position (in pixel shift) and the
-           second term is the Gaussian sigma (in pixels).
-
-    Returns
-    -------
-    outstr : numpy structured array
-           The output structure of the final derived RVs and errors.
-    auto : array
-           The auto-correlation function of the template
-
-    Examples
-    --------
-
-    out = apxcorr(wave,tempspec,spec,err)
-    
-    """
-
-
-    # Not enough inputs
-    if (wave is None) | (tempspec is None) | (obsspec is None) | (obserr is None):
-        raise ValueError('Syntax - out = apxcorr(wave,tempspec,spec,err,auto=auto)')
-        return
-
-    nwave = len(wave)
-    
-    # Are there multiple observed spectra
-    if obsspec.ndim>1:
-        nspec = obsspec.shape[1]
-    else:
-        nspec = 1
-    
-    # Set up the cross-correlation parameters
-    #  this only gives +/-450 km/s with 2048 pixels, maybe use larger range
-    nlag = 2*np.round(np.abs(maxlag))+1
-    if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
-    dlag = 1
-    minlag = -np.int(np.ceil(nlag/2))
-    lag = np.arange(nlag)*dlag+minlag+1
-
-    # Initialize the output structure
-    outstr = np.zeros(1,dtype=xcorr_dtype(nlag))
-    outstr["xshift"] = np.nan
-    outstr["xshifterr"] = np.nan
-    outstr["vrel"] = np.nan
-    outstr["vrelerr"] = np.nan
-    outstr["chisq"] = np.nan
-
-    # Interpolate the visit spectrum onto the synth wavelength grid
-    #---------------------------------------------------------------
-    wobs = wave.copy()
-    nw = len(wobs)
-    spec = obsspec.copy()
-    err = obserr.copy()
-    template = tempspec.copy()
-
-    ## Find first and last non-zero pixels in observed spec
-    #gd, = np.where( (spec != 0.0) & (np.isfinite(spec)))
-    #ngd = np.sum(gd)
-    #if ngd==0:
-    #    raise Exception("No good pixels")
-    #goodlo = (0 if gd[0]<0 else gd[0])
-    #goodhi = ((nw-1) if gd[ngd-1]<(nw-1) else gd[ngd-1])
-
-    # mask bad pixels, set to NAN
-    sfix = (spec < 0.01)
-    nsfix = np.sum(sfix)
-    if nsfix>0: spec[sfix] = np.nan
-    tfix = (template < 0.01)
-    ntfix = np.sum(tfix)
-    if ntfix>0: template[tfix] = np.nan
-
-    # set cross-corrlation window to be good range + nlag
-    #lo = (0 if (gd[0]-nlag)<0 else gd[0]-nlag)
-    #hi = ((nw-1) if (gd[ngd-1]+nlag)>(nw-1) else gd[ngd-1]+nlag)
-
-    indobs,nindobs = dln.where(np.isfinite(spec) == True)  # only finite values, in case any NAN
-    indtemp,nindtemp = dln.where(np.isfinite(template) == True)
-    if (nindobs>0) & (nindtemp>0):
-        # Cross-Correlation
-        #------------------
-        # Calculate the CCF uncertainties using propagation of errors
-        # Make median filtered error array
-        #   high error values give crazy values in ccferr
-        obserr1 = err.copy()
-        bderr = ((obserr1 > 1) | (obserr1 <= 0.0))
-        nbderr = np.sum(bderr)
-        ngderr = np.sum((bderr==False))
-        if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[(bderr==False)]])
-        obserr1 = median_filter(obserr1,51)
-        ccf, ccferr = ccorrelate(template,spec,lag,obserr1)
-
-        # Apply flat-topped Gaussian prior with unit amplitude
-        #  add a broader Gaussian underneath so the rest of the
-        #   CCF isn't completely lost
-        if prior is not None:
-            ccf *= np.exp(-0.5*(((lag-prior[0])/prior[1])**4))*0.8+np.exp(-0.5*(((lag-prior[0])/150)**2))*0.2
-        
-    else:   # no good pixels
-        ccf = np.float(lag)*0.0
-        if (errccf is True) | (nofit is False): ccferr=ccf
-
-    # Remove the median
-    ccf -= np.median(ccf)
-
-    # Best shift
-    best_shiftind0 = np.argmax(ccf)
-    best_xshift0 = lag[best_shiftind0]
-    #temp = shift( tout, best_xshift0)
-    temp = np.roll(template, best_xshift0)
-
-    # Find Chisq for each synthetic spectrum
-    gdpix,ngdpix = dln.where( (np.isfinite(spec)==True) & (np.isfinite(template)==True) & (spec>0.0) & (err>0.0) & (err < 1e5))
-    if (ngdpix==0):
-        raise Exception('Bad spectrum')
-    chisq = np.sqrt( np.sum( (spec[gdpix]-template[gdpix])**2/err[gdpix]**2 )/ngdpix )
-    
-    outstr["chisq"] = chisq
-    outstr["ccf"] = ccf
-    outstr["ccferr"] = ccferr
-    outstr["ccnlag"] = nlag
-    outstr["cclag"] = lag    
-    
-    # Remove smooth background at large scales
-    cont = gaussian_filter1d(ccf,100)
-    ccf_diff = ccf-cont
-
-    # Get peak of CCF
-    best_shiftind = np.argmax(ccf_diff)
-    best_xshift = lag[best_shiftind]
-    
-    # Fit ccf peak with a Gaussian plus a line
-    #---------------------------------------------
-    # Some CCF peaks are SOOO wide that they span the whole width
-    # do the first one without background subtraction
-    estimates0 = [ccf_diff[best_shiftind0], best_xshift0, 4.0, 0.0]
-    lbounds0 = [1e-3, np.min(lag), 0.1, -np.inf]
-    ubounds0 =  [np.inf, np.max(lag), np.max(lag), np.inf]
-    pars0, cov0 = dln.gaussfit(lag,ccf_diff,estimates0,ccferr,bounds=(lbounds0,ubounds0))
-    perror0 = np.sqrt(np.diag(cov0))
-
-    # Fit the width
-    #  keep height, center and constant constrained
-    estimates1 = pars0
-    estimates1[1] = best_xshift
-    lbounds1 = [0.5*estimates1[0], best_xshift-4, 0.3*estimates1[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates1[3]-0.1)) ]
-    ubounds1 =  [1.5*estimates1[0], best_xshift+4, 1.5*estimates1[2], dln.gt(np.max(ccf_diff)*0.5,estimates1[3]+0.1) ]
-    lo1 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates1[2]*2,5)),0))
-    hi1 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates1[2]*2,5)),len(lag)))
-    pars1, cov1 = dln.gaussfit(lag[lo1:hi1],ccf_diff[lo1:hi1],estimates1,ccferr[lo1:hi1],bounds=(lbounds1,ubounds1))
-    yfit1 = dln.gaussian(lag[lo1:hi1],*pars1)
-    perror1 = np.sqrt(np.diag(cov1))
-    
-    # Fefit and let constant vary more, keep width constrained
-    estimates2 = pars1
-    estimates2[1] = dln.limit(estimates2[1],np.min(lag),np.max(lag))    # must be in range
-    estimates2[3] = np.median(ccf_diff[lo1:hi1]-yfit1) + pars1[3]
-    lbounds2 = [0.5*estimates2[0], dln.limit(best_xshift-dln.gt(estimates2[2],1), np.min(lag), estimates2[1]-1),
-                0.3*estimates2[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates2[3]-0.1)) ]
-    ubounds2 = [1.5*estimates2[0], dln.limit(best_xshift+dln.gt(estimates2[2],1), estimates2[1]+1, np.max(lag)),
-                1.5*estimates2[2], dln.gt(np.max(ccf_diff)*0.5,estimates2[3]+0.1) ]
-    lo2 = np.int(dln.gt(np.floor( best_shiftind-dln.gt(estimates2[2]*2,5)),0))
-    hi2 = np.int(dln.lt(np.ceil( best_shiftind+dln.gt(estimates2[2]*2,5)),len(lag)))
-    pars2, cov2 = dln.gaussfit(lag[lo2:hi2],ccf_diff[lo2:hi2],estimates2,ccferr[lo2:hi2],bounds=(lbounds2,ubounds2))
-    yfit2 = dln.gaussian(lag[lo2:hi2],*pars2)    
-    perror2 = np.sqrt(np.diag(cov2))
-    
-    # Refit with even narrower range
-    estimates3 = pars2
-    estimates3[1] = dln.limit(estimates3[1],np.min(lag),np.max(lag))    # must be in range
-    estimates3[3] = np.median(ccf_diff[lo1:hi1]-yfit1) + pars1[3]
-    lbounds3 = [0.5*estimates3[0], dln.limit(best_xshift-dln.gt(estimates3[2],1), np.min(lag), estimates3[1]-1),
-                0.3*estimates3[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates3[3]-0.1)) ]
-    ubounds3 = [1.5*estimates3[0], dln.limit(best_xshift+dln.gt(estimates3[2],1), estimates3[1]+1, np.max(lag)),
-                1.5*estimates3[2], dln.gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]    
-    lo3 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates3[2]*2,5)),0))
-    hi3 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates3[2]*2,5)),len(lag)))
-    pars3, cov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],estimates3,ccferr[lo3:hi3],bounds=(lbounds3,ubounds3))
-    yfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
-    perror3 = np.sqrt(np.diag(cov3))
-
-    # This seems to fix high shift/sigma errors
-    if (perror3[0]>10) | (perror3[1]>10):
-        dlbounds3 = [0.5*estimates3[0], -10+pars3[1], 0.01, dln.lt(np.min(ccf_diff),dln.lt(0,estimates3[3]-0.1)) ]
-        dubounds3 = [1.5*estimates3[0], 10+pars3[1], 2*pars3[2], dln.gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]
-        dpars3, dcov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],pars3,ccferr[lo3:hi3],bounds=(dlbounds3,dubounds3))
-        dyfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
-        perror3 = np.sqrt(np.diag(dcov3))
-        
-    # Final parameters
-    pars = pars3
-    perror = perror3
-    xshift = pars[1]
-    xshifterr = perror[1]
-    ccpfwhm_pix = pars[2]*2.35482  # ccp fwhm in pixels
-    # v = (10^(delta log(wave))-1)*c
-    dwlog = np.median(dln.slope(np.log10(wave)))
-    ccpfwhm = ( 10**(ccpfwhm_pix*dwlog)-1 )*cspeed  # in km/s
-
-    # Convert pixel shift to velocity
-    #---------------------------------
-    # delta log(wave) = log(v/c+1)
-    # v = (10^(delta log(wave))-1)*c
-    dwlog = np.median(dln.slope(np.log10(wave)))
-    vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    # Vrel uncertainty
-    dvreldshift = np.log(10.0)*(10**(xshift*dwlog))*dwlog*cspeed  # derivative wrt shift
-    vrelerr = dvreldshift * xshifterr
-    
-    # Make CCF structure and add to STR
-    #------------------------------------
-    outstr["xshift0"] = best_xshift
-    outstr["ccp0"] = np.max(ccf)
-    outstr["xshift"] = xshift
-    outstr["xshifterr"] = xshifterr
-    #outstr[i].xshift_interp = xshift_interp
-    outstr["ccpeak"] = pars[0] 
-    outstr["ccpfwhm"] = ccpfwhm  # in km/s
-    outstr["ccp_pars"] = pars
-    outstr["ccp_perror"] = perror
-    #outstr[i].ccp_polycoef = polycoef
-    outstr["vrel"] = vrel
-    outstr["vrelerr"] = vrelerr
-    outstr["w0"] = np.min(wave)
-    outstr["dw"] = dwlog
-    
-    return outstr
-
-
-def apxcorr(wave,tempspec,obsspec,obserr,outstr,dosum=False,maxlag=None,nofit=True,
-            pixlim=None,errccf=False):
-    """
-    This program measures the cross-correlation shift between
-    a template spectrum (can be synthetic or observed) and
-    an observed spectrum (or multiple spectra) on the same
-    logarithmic wavelength scale.
-
-    Parameters
-    ----------
-    wave : array
-         Wavelength array
-    tempspec : array
-         Template spectrum: normalized and on log-lambda scale
-    obsspec : array
-         Observed spectra: normalized and sampled on tempspec scale
-    obserr : array
-         Observed error; normalized and sampled on tempspec scale
-    dosum : bool, optional, default=False
-         Set to sum the multiple cross-correlation functions; used
-         if we have three chips of data that are stacked
-
-    Returns
-    -------
-    outstr : numpy structured array
-         The output structured array of the final derived RVs and errors.
-    auto : array
-         The auto-correlation function of the template
-
-    Usage
-    -----
-    >>>outstr, auto = apxcorr(wave,tempspec,spec,err,outstr)
-    
-    By D.Nidever  June 2012
-    By J.Holtzman  October 2012
-    """
-    
-    cspeed = 2.99792458e5  # speed of light in km/s
-
-    nwave = len(wave)
-    ntempspec = len(tempspec)
-    nspec = len(obsspec)
-    nerr = len(obserr)
-
-    # Not enough inputs
-    if (nwave==0) | (ntempspec==0) | (nspec==0) | (nerr==0):
-        raise ValueError('Syntax - apxcorr,wave,tempspec,spec,err,outstr,auto=auto,pl=pl')
-        return
-
-    sz = size(obsspec)
-    if sz[0]==2:
-        nspec = sz[2]
-    else:
-        nspec = 1
-    nsum = 1
-    if dosum is True:
-      nsum = nspec
-      nspec = 1
-    if pixlim is not None: nsum = len(pixlim[0,:])
-
-    # Set up the cross-correlation parameters
-    #  this only gives +/-450 km/s with 2048 pixels, maybe use larger range
-    nlag = 401
-    if len(maxlag)>0: nlag = 2*np.round(np.abs(maxlag[0]))+1
-    if ((nlag % 2) == 0): nlag+=1  # make sure nlag is even
-    dlag = 1
-    minlag = -nlag/2
-    lag = np.arange(nlag)*dlag+minlag
-
-
-    # Spectrum cross-correlation loop
-    #---------------------------------
-    for i in range(nspec):
-
-        nsumgood = 0
-        for ichip in range(nsum):
-            # Interpolate the visit spectrum onto the synth wavelength grid
-            #---------------------------------------------------------------
-            wobs = reform(wave)
-            nw = len(wobs)
-            if pixlim is not None:
-                if pixlim[0,ichip] < pixlim[1,ichip]:
-                    spec = obsspec[pixlim[0,ichip]:pixlim[1,ichip],i]
-                    err = obserr[pixlim[0,ichip]:pixlim[1,ichip],i]
-                    template = tempspec[pixlim[0,ichip]:pixlim[1,ichip]]
-                else:
-                    spec = 0.
-                    err = 0.
-                    template = 0.
-                nw = len(spec)
-            else:
-                spec = obsspec[:,i+ichip]
-                err = obserr[:,i+ichip]
-                template = tempspec
-
-            # find first and last non-zero pixels in observed spec
-            gd, = np.where(spec != 0.0)
-            ngd = np.sum(gd)
-            if ngd==0:
-                ccf = np.float(lag)*0.0
-                if (errccf is True) | (nofit is False): ccferr = ccf
-                lo = 0
-                hi = nw-1
-                goto,BOMB1
-            goodlo = (0 if gd[0]<0 else gd[0])
-            goodhi = ((nw-1) if gd[ngd-1]<(nw-1) else gd[ngd-1])
-
-            # mask bad pixels, set to NAN
-            sfix, = np.where(spec < 0.01)
-            nsfix = np.sum(sfix)
-            if nsfix>0: spec[sfix] = np.nan
-            tfix, = np.where(template < 0.01)
-            ntfix = np.sum(tfix)
-            if ntfix>0: template[tfix] = np.nan
-
-            # How masking pixels affects the cross-correlation
-            # -mean
-            # -total(x*y)
-            # -1/rmsx*rmsy
-            # apc_correlate deals with all this appropriately if bad pixels are NAN
-
-            # set cross-corrlation window to be good range + nlag
-            lo = (0 if (gd[0]-nlag)<0 else gd[0]-nlag)
-            hi = ((nw-1) if (gd[ngd-1]+nlag)>(nw-1) else gd[ngd-1]+nlag)
-
-            indobs, = np.where(np.isfinite(spec) == 1)  # only finite values, in case any NAN
-            nindobs = np.sum(indobs)
-            indtemp, = np.where(np.isfinite(template) == 1)
-            nindtemp = np.sum(indtemp)
-            if ((hi-lo+1)>nlag) & (nindobs>0) & (nindtemp>0):
-                # Cross-Correlation
-                #------------------
-                ccf = ccorrelate(template[lo:hi],spec[lo:hi],lag)
-
-                # Calculate the CCF uncertainties using propagation of errors
-                #if keyword_set(errccf) then begin
-                if (errccf is True) | (nofit is False):
-                    # Make median filtered error array
-                    #   high error values give crazy values in ccferr
-                    obserr1 = err[lo:hi]
-                    bdcondition = (obserr1 > 1) | (obserr1 <= 0.0)
-                    bderr, = np.where(bdcondition)
-                    nbderr = np.sum(bderr)
-                    gderr, = np.where(~bdcondition)
-                    ngderr = np.sum(gderr)
-                    if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[gderr]])
-                    obserr1 = dln.medfilt(obserr1,51)
-                    ccferr = ccorrelate(template[lo:hi],spec[lo:hi],lag,obserr1)
-
-                nsumgood += 1
-            else:   # no good pixels
-                ccf = np.zeros(lag.shape,float)
-                if (errccf is True) | (nofit is False): ccferr=ccf
-
-
-            if (ichip==0):
-                xcorr = ccf 
-                if (ccferr is True): xcorrerr = ccferr^2
-                tout = template[lo:hi] #+1
-                sout = spec[lo:hi]     #+1
-                errout = err[lo:hi]
-            else:
-                xcorr += ccf
-                if (ccferr is True): xcorrerr += ccferr^2  # add in quadrature
-                tout = [tout,template[lo:hi]] #+1
-                sout = [sout,spec[lo:hi]]     # +1
-                errout = [errout,err[lo:hi]]
-
-        # No good cross-correlation
-        if nsumgood==0:
-            raise Exception("No good cross-correlation")
-
-        if nsumgood>1: xcorr /= nsumgood   # want to average XCORR arrays from multiple chips
-        if (xcorrerr is True):
-            xcorrerr = np.sqrt(xcorrerr)
-            if nsumgood>1: xcorrerr /= nsumgood
-
-        # Remove the median
-        xcorr -= np.median(xcorr)
-
-        # Best shift
-        best_shiftind0 = np.argmax(xcorr)
-        best_xshift0 = lag[best_shiftind0]
-        temp = np.roll( tout, best_xshift0)
-
-        # Find Chisq for each synthetic spectrum
-        gdpix, = np.where( (np.isfinite(sout)==1) & (np.isfinite(temp)==1) & (sout>0.0) & (errout>0.0) & (errout < 1e5))
-        ngdpix = np.sum(gdpix)
-        if (ngdpix==0):
-            raise Exception("Bad spectrum")
-
-        chisq = np.sqrt( np.sum( (sout[gdpix]-temp[gdpix])**2/errout[gdpix]**2 )/ngdpix )
-
-        outstr["chisq"] = chisq
-        outstr["ccf"] = xcorr
-        if (errccf is True): outstr[i].ccferr = xcorrerr
-
-        if (nofit is True): return
-
-        # Remove smooth background at large scales
-        cont = dln.gsmooth(xcorr,100)
-        xcorr_diff = xcorr-cont
-
-        # Fit Xcorr peak with a Gaussian plus a line
-        #---------------------------------------------
-        # Some CCF peaks are SOOO wide that they span the whole width
-        # do the first one without background subtraction
-        estimates0 = [xcorr_diff[best_shiftind0],best_xshift0,4.0,0.0]
-        lbounds0 = [1e-3, np.min(lag), 0.1, -2*np.max(xcorr_diff)]
-        ubounds0 = [np.max(xcorr_diff)*2, np.max(lag), np.max(lag), 2*np.max(xcorr_diff) ]
-        pars0, cov0 = dln.gaussfit(lag,xcorr_diff,estimates0,xcorrerr,bounds=(lbounds0,ubounds0),binned=True)
-        yfit0 = dln.gaussbin(lag,*pars0)
-        # Find peak in the background subtracted XCOR
-        best_shiftind = np.argmax(xcorr_diff)
-        best_xshift = lag[best_shiftind]
-  
-        # Fit the width
-        #  keep height, center and constant constrained
-        estimates = pars0
-        estimates[1] = best_xshift
-        lbounds0 = [0.5*estimates[0], best_xshift-4, 0.3*pars0[2], dln.lt(dln.lt(np.min(xcorr_diff),0),(pars0[3]-0.1)) ]
-        ubounds0 = [1.5*estimates[0], best_xshift+4, 1.5*pars0[2],  dln.gt(np.max(xcorr_diff)*0.5,(pars0[3]+0.1)) ]
-        lo1 = dln.gt(np.floor( best_shiftind-dln.gt(pars0[2]*2,5)), 0)
-        hi1 = dln.lt(np.ceil( best_shiftind+dln.gt(pars0[2]*2,5) ), (len(lag)-1))
-        pars1, cov1 = dln.gaussfit(lag[lo1:hi1],xcorr_diff[lo1:hi1],estimates,xcorrerr[lo1:hi1],
-                                   bounds=(lbounds1,ubounds1),binned=True)
-        yfit1 = dln.gaussbin(lag[lo1:hi1],*pars1)
-
-        # Refit and let constant vary more, keep width constrained
-        lo2 = dln.gt(np.floor( best_shiftind-dln.gt(pars1[2]*2,5)), 0)
-        hi2 = dln.lt(np.ceil( best_shiftind+dln.gt(pars1[2]*2,5)), (len(lag)-1))
-        est2 = pars1
-        est2[3] = np.median(xcorr_diff[lo1:hi1]-yfit1) + pars1[3]
-        lbounds2 = [0.5*pars1[0], dln.limit(np.min(lag), (best_xshift-dln.gt(pars1[2],1)), (pars1[1]-1)),
-                    0.3*pars1[2], dln.lt(dln.lt(np.min(xcorr_diff),0), (est2[3]-0.1))]
-        ubounds2 = [1.5*pars1[0], dln.limit(np.max(lag), (pars1[1]+1), (best_xshift+dln.gt(pars1[2],1))),
-                    1.5*pars1[2], dln.gt(np.max(xcorr_diff)*0.5, (est2[3]+0.1))]
-        pars2, cov2 = dln.gaussfit(lag[lo2:hi2],xcorr_diff[lo2:hi2],est2,xcorrerr[lo2:hi2],
-                                   bounds=(lbounds2,ubounds2),binned=True)
-        yfit2 = dln.gaussbin(lag[lo2:hi2],*pars2)
-        
-        # Refit with even narrower range
-        lo2 = dln.gt(np.floor( best_shiftind-dln.gt(pars2[2],5)), 0)
-        hi2 = dln.lt(np.ceil( best_shiftind+dln.gt(pars2[2],5)), (len(lag)-1))
-        lbounds3 = [0.5*pars2[0], dln.limit(np.min(lag), (best_xshift-dln.gt(pars2[2],1)), (pars2[1]-1)),
-                    0.3*pars2[2], dln.lt(dln.lt(np.min(xcorr_diff),0), (pars2[3]-0.1))]
-        ubounds3 = [1.5*pars2[0], dln.limit(np.max(lag), (pars2[1]+1), (best_xshift+dln.gt(pars2[2],1))),
-                    1.5*pars2[2], dln.gt(np.max(xcorr_diff)*0.5, (pars2[3]+0.1))]
-        pars3, cov3 = dln.gaussfit(lag[lo3:hi3],xcorr_diff[lo3:hi3],pars2,xcorrerr[lo3:hi3],
-                                   bounds=(lbounds3,ubounds3),binned=True)
-        yfit3 = dln.gaussbin(lag[lo3:hi3],*pars3)
-
-        # Final parameters
-        pars = pars3
-        perror = np.sqrt(np.diag(cov3))
-        xshift = pars[1]
-        xshifterr = perror[1]
-        ccpfwhm_pix = pars[2]*2.35482  # ccp fwhm in pixels
-        # v = (10^(delta log(wave))-1)*c
-        dwlog = np.median(dln.slope(np.log10(wave)))
-        ccpfwhm = ( 10**(ccpfwhm_pix*dwlog)-1 )*cspeed  # in km/s
-
-        # Convert pixel shift to velocity
-        #---------------------------------
-        # delta log(wave) = log(v/c+1)
-        # v = (10^(delta log(wave))-1)*c
-        dwlog = np.median(dln.slope(np.log10(wave)))
-        vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-        # Vrel uncertainty
-        dvreldshift = np.log10(10.0)*(10**(xshift*dwlog))*dwlog*cspeed  # derivative wrt shift
-        vrelerr = dvreldshift * xshifterr
-
-        # Make XCORR structure and add to STR
-        #------------------------------------
-        outstr["xshift0"] = best_xshift
-        outstr["ccp0"] = np.max(xcorr)
-        outstr["xshift"] = xshift
-        outstr["xshifterr"] = xshifterr
-        #outstr["xshift_interp"] = xshift_interp
-        outstr["ccpeak"] = pars[0] 
-        outstr["ccpfwhm"] = ccpfwhm  # in km/s
-        outstr["ccp_pars"] = pars
-        outstr["ccp_perror"] = perror
-        #outstr["ccp_polycoef"] = polycoef
-        outstr["vrel"] = vrel
-        outstr["vrelerr"] = vrelerr
-        outstr["w0"] = np.min(wave)
-        outstr["dw"] = dwlog
-        #outstr["chisq"] = chisq
-        
-        # Printing
-        #----------
-        print(' Best Xshift = '+str(best_xshift)+' pixels')
-        print(' Best Gaussian fit Xshift = '+str(xshift)+' +/- '+str(xshifterr)+' pixels')
-        print(' Vrel = '+str(vre)+' +/- '+str(vrelerr)+' km/s')
-
-
-    # Auto-correlation
-    auto = ccorrelate(template,template,lag)
-
-
 def spec_resid(pars,wave,flux,err,models,spec):
-    """ This returns the error-normalized residuals between an observed spectrum and a Cannon model."""
-    #import pdb; pdb.set_trace()
+    """
+    This helper function calculates the residuals between an observed spectrum and a Cannon model spectrum.
+    
+    Parameters
+    ----------
+    pars : array
+      Input parameters [teff, logg, feh, rv].
+    wave : array
+      Wavelength array for observed spectrum.
+    flux : array
+       Observed flux array.
+    err : array
+        Uncertainties in the observed flux.
+    models : list of Cannon models
+        List of Cannon models to use
+    spec : Spec1D
+        The observed spectrum.  Needed to run cannon.model_spectrum().
+
+    Outputs
+    -------
+    resid : array
+         Array of residuals between the observed flux array and the Cannon model spectrum.
+
+    """
     m = cannon.model_spectrum(models,spec,teff=pars[0],logg=pars[1],feh=pars[2],rv=pars[3])
     if m is None:
         return np.repeat(1e30,len(flux))
     resid = (flux-m.flux)/err
     return resid 
 
+
 def emcee_lnlike(theta, x, y, yerr, models, spec):
+    """
+    This helper function calculates the log likelihood for the MCMC portion of fit().
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    x : array
+      Array of x-values for y.  Not really used.
+    y : array
+       Observed flux array.
+    yerr : array
+        Uncertainties in the observed flux.
+    models : list of Cannon models
+        List of Cannon models to use
+    spec : Spec1D
+        The observed spectrum.  Needed to run cannon.model_spectrum().
+
+    Outputs
+    -------
+    lnlike : float
+         The log likelihood value.
+
+    """
     m = cannon.model_spectrum(models,spec,teff=theta[0],logg=theta[1],feh=theta[2],rv=theta[3])
     inv_sigma2 = 1.0/yerr**2
     return -0.5*(np.sum((y-m.flux)**2*inv_sigma2))
 
+
 def emcee_lnprior(theta, models):
+    """
+    This helper function calculates the log prior for the MCMC portion of fit().
+    It's a flat/uniform prior across the stellar parameter space covered by the
+    Cannon models.
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    models : list of Cannon models
+        List of Cannon models to use
+
+    Outputs
+    -------
+    lnprior : float
+         The log prior value.
+
+    """
     for m in models:
         inside = True
         for i in range(3):
@@ -1233,7 +571,31 @@ def emcee_lnprior(theta, models):
     return -np.inf
 
 def emcee_lnprob(theta, x, y, yerr, models, spec):
-    #print(theta)
+    """
+    This helper function calculates the log probability for the MCMC portion of fit().
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    x : array
+      Array of x-values for y.  Not really used.
+    y : array
+       Observed flux array.
+    yerr : array
+        Uncertainties in the observed flux.
+    models : list of Cannon models
+        List of Cannon models to use
+    spec : Spec1D
+        The observed spectrum.  Needed to run cannon.model_spectrum().
+
+    Outputs
+    -------
+    lnprob : float
+         The log probability value, which is the sum of the log prior and the
+         log likelihood.
+
+    """
     lp = emcee_lnprior(theta,models)
     if not np.isfinite(lp):
         return -np.inf
@@ -1241,8 +603,42 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
 
 
 def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
-    """ Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models."""
+    """
+    Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models, optional
+         A list of Cannon models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is False by default.
+    figname : string, optional
+         The filename for a diagnostic plot showing the observed spectrum, model
+         spectrum and the best-fit parameters.
+    cornername : string, optional
+         The filename for a "corner" plot showing the posterior distributions from
+         the MCMC run.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    model : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+
+    Usage
+    -----
+    >>>out, model = doppler.rv.fit(spec)
+
+    """
+
+    
     # Turn off the Cannon's info messages
     tclogger = logging.getLogger('thecannon.utils')
     tclogger.disabled = True
@@ -1533,8 +929,7 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
 
     # Construct the output
     #---------------------
-    #bc = spec.barycorr()
-    bc = 0.0
+    bc = spec.barycorr()
     vhelio = fpars[3] + bc
     if verbose is True:
         print('Vhelio = %5.2f km/s' % vhelio)
