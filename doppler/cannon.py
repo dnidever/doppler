@@ -41,7 +41,49 @@ def cannon_copy(model):
         if name not in ['_vectorizer']:
             setattr(omodel,name,copy.deepcopy(value))
     return omodel
+
+def hstack(models):
+    """ Stack Cannon models.  Basically combine all of the pixels right next to each other."""
+    nmodels = dln.size(models)
+    if nmodels==1: return models
+
+    # Number of combined pixels
+    nfpix = 0
+    for i in range(nmodels): nfpix += len(models[i].dispersion)
+
+    # Initiate final Cannon model
+    npix, ntheta = models[0]._theta.shape
+    nlabels = len(models[0].vectorizer.label_names)
+    labelled_set = np.zeros([2,nlabels])
+    normalized_flux = np.zeros([2,nfpix])
+    normalized_ivar = normalized_flux.copy()*0
+    omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,models[0].vectorizer)
+    omodel._s2 = np.empty(nfpix,np.float64)
+    omodel._scales = models[0]._scales.copy()
+    omodel._theta = np.empty((nfpix,ntheta),np.float4)
+    omodel._design_matrix = models[0]._design_matrix.copy()
+    omodel._fiducials = models[0]._fiducials.copy()
+    omodel.dispersion = np.empty(nfpix,np.float64)
+    omodel.regularization = models[0].regularization
+    omodel.ranges = models[0].ranges
+
+    # scales, design_matrix, fiducials should be identical or we have problems
+    if np.sum((models[0]._scales!=models[1]._scales)) + np.sum((models[0]._design_matrix!=models[1]._design_matrix)) + \
+       np.sum((models[0]._fiducials!=models[1]._fiducials)) + np.sum((models[0].ranges!=models[1].ranges)) > 0:
+              raise ValueError('scales, design_matrix, fiducials, and ranges must be identical in the Cannon models')
     
+    # Fill in the information
+    off = 0  # offset
+    for i in range(nmodels):
+        model = models[i]
+        npix, ntheta = model._theta.shape
+        omodel._s2[off:off+npix,:] = model._s2
+        omodel._theta[off:off+npix,:] = model._theta
+        omodel.dispersion[off:off+npix] = model.dispersion
+        off += npix
+        
+    return omodel
+        
 
 # Load the cannon model
 def load_all_cannon_models():
@@ -71,6 +113,13 @@ def load_all_cannon_models():
         for i in range(3):
             ranges[i,:] = dln.minmax(model1._training_set_labels[:,i])
         model1.ranges = ranges
+        # Rename _fwhm to fwhm and _wavevac to wavevac
+        if hasattr(model1,'_fwhm'):
+            setattr(model1,'fwhm',model1._fwhm)
+            delattr(model1,'_fwhm')
+        if hasattr(model1,'_wavevac'):
+            setattr(model1,'wavevac',model1._wavevac)
+            delattr(model1,'_wavevac')            
         models.append(model1)
     return models
 
@@ -435,23 +484,36 @@ def prepare_cannon_model(model,spec,dointerp=False):
             w1 = np.max(w)
             dw = dln.slope(w)
             dw = np.hstack((dw,dw[-1]))
+            dw = np.abs(dw)
+            meddw = np.median(dw)
             npix = len(w)
 
             if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
                 raise Exception('Model does not cover the observed wavelength range')
-
+            
             # Trim
-            if (np.min(model.dispersion)<(w0-50*dw[0])) | (np.max(model.dispersion)>(w1+50*dw[-1])):
-                tmodel = trim_cannon_model(model,w0=w0-20*dw[0],w1=w1+20*dw[-1])
+            if (np.min(model.dispersion)<(w0-50*meddw)) | (np.max(model.dispersion)>(w1+50*meddw)):
+                tmodel = trim_cannon_model(model,w0=w0-20*meddw,w1=w1+20*meddw)
+            #if (np.min(model.dispersion)<(w0-1000.0*w0/cspeed)) | (np.max(model.dispersion)>(w1+1000.0*w1/cspeed)):                                
+            #    # allow for up to 1000 km/s offset on each end
+            #    tmodel = trim_cannon_model(model,w0=w0-1000.0*w0/cspeed,w1=w1+1000.0*w1/cspeed)
                 tmodel.trim = True
             else:
                 tmodel = cannon_copy(model)
                 tmodel.trim = False
 
+
+            print('KLUDGE')
+            return tmodel
+                
             # Rebin
             #  get LSF FWHM (A) for a handful of positions across the spectrum
             xp = np.arange(npix//20)*20
             fwhm = spec.lsf.fwhm(w[xp],xtype='Wave',order=o)
+            # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
+            if spec.lsf.xtype.lower().find('pix')>-1:
+                dw1 = dln.interp(w,dw,w[xp],assume_sorted=False)
+                fwhm *= dw1
             #  convert FWHM (A) in number of model pixels at those positions
             dwmod = dln.slope(tmodel.dispersion)
             dwmod = np.hstack((dwmod,dwmod[-1]))
@@ -469,9 +531,11 @@ def prepare_cannon_model(model,spec,dointerp=False):
             else:
                 rmodel = cannon_copy(tmodel)
                 rmodel.rebin = False
-            
+                
             # Convolve
             lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=0)
+
+            import pdb; pdb.set_trace()
             cmodel = convolve_cannon_model(rmodel,lsf)
             cmodel.convolve = True
         
@@ -565,7 +629,7 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
 
         # Apply doppler shift to wavelength
         if rv!=0.0:
-            model_wave *= (1+rv/cspeed)
+            model_wave1 *= (1+rv/cspeed)
             # w = synwave*(1.0d0 + par[0]/cspeed)
     
         # Interpolation
@@ -577,11 +641,11 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
         # scales linearly with number of points
         #spl = UnivariateSpline(model_wave,model_spec)
         #model_spec_interp = spl(spec.wave)
-
+        
         # Stuff in the information for this order
-        model_spec[...] = model_spec_interp
-        model_wave[...] = spwave1
-        sigma[...] = sigma1
+        model_spec[:,o] = model_spec_interp
+        model_wave[:,o] = spwave1
+        sigma[:,o] = sigma1
         
     # Create Spec1D object
     mspec = Spec1D(model_spec,wave=model_wave,lsfsigma=sigma,instrument='Model')

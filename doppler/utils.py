@@ -205,10 +205,15 @@ def make_logwave_scale(wave,vel=1000.0):
     This is used by rv.fit() to create a logarithmic wavelength scale for
     cross-correlation.
 
+    If the input wavelength array is 2D with multiple orders (trailing
+    dimension), then the output wavelength array will extend beyond the
+    boundaries of some of the orders.  These pixels will have to be
+    "padded" with dummy/masked-out pixels.
+
     Parameters
     ----------
     wave : array
-         Input wavelength array.
+         Input wavelength array, 1D or 2D with multiple orders.
     vel : float, optional
          Maximum velocity shift to allow for.  Default is 1000.
 
