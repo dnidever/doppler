@@ -398,14 +398,26 @@ class Spec1D:
                 swave1 = swave[:,i]                
                 sflux1 = sflux[:,i]
                 serr1 = serr[:,i]
-                ssigma1 = self.lsf.sigma(order=i)                
+                ssigma1 = self.lsf.sigma(order=i)
                 smask1 = smask[:,i]
                 # Some overlap
                 if (np.min(swave1)<wr1[1]) & (np.max(swave1)>wr1[0]):
+                    # Fix NaN pixels
+                    bd,nbd = dln.where(np.isfinite(sflux1)==False) 
+                    if nbd>0:
+                        sflux1[bd] = 1.0
+                        serr1[bd] = 1e30
+                        smask1[bd] = 1
                     ind,nind = dln.where( (wave1>np.min(swave1)) & (wave1<np.max(swave1)) )
                     oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
                     oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False)
                     osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
+                    # Gauss-Hermite, convert to wavelength units
+                    if self.lsf.lsftype=='Gauss-Hermite':
+                        sdw1 = np.abs(swave1[1:]-swave1[0:-1])
+                        sdw1 = np.hstack((sdw1,sdw1[-1])) 
+                        dw = dln.interp(swave1,sdw1,wave1[ind],extrapolate=False,assume_sorted=False)
+                        osigma[ind,i] *= dw   # in Ang
                     mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
                     mask_interp_bool = np.empty(nind,bool)
                     mask_interp_bool[mask_interp>0.4] = True
@@ -439,12 +451,15 @@ class Spec1D:
             osigma = osigma.flatten()            
             omask = omask.flatten()
         # Create output spectrum object
-        if self.lsf.lsftype=='GaussHermite':
-            print('Cannon interpolate Gauss-Hermite LSF yet')
-            ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask)            
+        if self.lsf.lsftype=='Gauss-Hermite':
+            # Can't interpolate Gauss-Hermite LSF yet
+            # instead convert to a Gaussian approximation in wavelength units
+            #print('Cannot interpolate Gauss-Hermite LSF yet')
+            lsfxtype = 'wave'
         else:
-            ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask,lsftype=self.lsf.lsftype,
-                           lsfxtype=self.lsf.xtype,lsfsigma=osigma)
+            lsfxtype = self.lsf.xtype
+        ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask,lsftype='Gaussian',
+                       lsfxtype=lsfxtype,lsfsigma=osigma)
 
         return ospec
                 
@@ -468,18 +483,18 @@ class Spec1D:
         if hasattr(self,'bc') is False:
             if hasattr(self,'observatory') is False:
                 print('No observatory information.  Cannot calculate barycentric correction.')
-                return None
+                return 0.0
             obs = EarthLocation.of_site(self.observatory)
             ra = self.head.get('ra')
             dec = self.head.get('dec')  
             if (ra is None) | (dec is None):
                 print('No RA/DEC information in header.  Cannot calculate barycentric correction.')
-                return None                
+                return 0.0                
             sc = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
             dateobs = self.head.get('date-obs')
             if (dateobs is None):
                 print('No DATE information in header.  Cannot calculate barycentric correction.')
-                return None
+                return 0.0
             t = Time(dateobs, format='isot', scale='utc')
             barycorr = sc.radial_velocity_correction(kind='barycentric',obstime=t, location=obs)  
             bc = barycorr.to(u.km/u.s)  

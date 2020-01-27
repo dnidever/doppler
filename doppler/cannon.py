@@ -15,7 +15,9 @@ import warnings
 from glob import glob
 from scipy.interpolate import interp1d
 import thecannon as tc
-from dlnpyutils import utils as dln, bindata
+from thecannon.model import CannonModel
+from thecannon import (censoring, vectorizer as vectorizer_module)
+from dlnpyutils import (utils as dln, bindata, astro)
 from .spec1d import Spec1D
 from . import utils
 import copy
@@ -28,6 +30,217 @@ cspeed = 2.99792458e5  # speed of light in km/s
 
 # astropy.modeling can handle errors and constraints
 
+class DopplerCannonModelSet(object):
+    def __init__(self,models):
+        if type(models) is list:
+            self.nmodels = len(models)
+            self._data = models
+        else:
+            self.nmodels = 1
+            self._data = [models]    # make it a list so it is iterable
+        self.prepared = False
+
+    @property
+    def has_continuum(self):
+        return self._data[0].has_continuum
+
+    def get_best_model(self,labels):
+        pass
+    
+    def __call__(self,pars=None,teff=None,logg=None,feh=None):
+        # This will return a model given a set of parameters
+        if pars is None:
+            pars = np.array([teff,logg,feh])
+            pars = pars.flatten()
+        # Get best cannon model
+        model = self.get_best_model(pars)
+        if model is None: return None
+
+        return model(pars)
+
+    def model(self,spec,pars=None,teff=None,logg=None,feh=None,rv=None):
+        # This will return a model given a set of parameters, similar to model_spectrum()
+        if rv is None: rv=0.0
+        if pars is None:
+            pars = np.array([teff,logg,feh])
+            pars = pars.flatten()
+        # Get best cannon model
+        model = self.get_best_model(pars)
+        if model is None: return None
+
+        # NOT PREPARED, prepare for this spectrum and use its wavelength array
+        if self.prepared is False:
+            pmodel = self.prepare(spec)
+        # Already PREPARED, just use the wavelength aray
+        else:
+            pmodel = self
+            
+        # Create the model spectrum
+        
+        # Loop over the orders
+        model_spec = np.zeros(spec.wave.shape,dtype=np.float32)
+        model_wave = np.zeros(spec.wave.shape,dtype=np.float64)
+        sigma = np.zeros(spec.wave.shape,dtype=np.float32)
+        for o in range(spec.norder):
+            if spec.ndim==1:
+                model1 = model
+                spwave1 = spec.wave
+                sigma1 = spec.lsf.sigma(xtype='Wave')
+            else:
+                model1 = model[o]
+                spwave1 = spec.wave[:,o]
+                sigma1 = spec.lsf.sigma(xtype='Wave',order=o)            
+            model_spec1 = model1(pars)
+            model_wave1 = model1.dispersion.copy()
+
+            # Apply doppler shift to wavelength
+            if rv!=0.0:
+                model_wave1 *= (1+rv/cspeed)
+    
+            # Interpolation
+            model_spec_interp = interp1d(model_wave1,model_spec1,kind='cubic',bounds_error=False,
+                                         fill_value=(np.nan,np.nan),assume_sorted=True)(spwave1)
+        
+            # Stuff in the information for this order
+            model_spec[:,o] = model_spec_interp
+            model_wave[:,o] = spwave1
+            sigma[:,o] = sigma1
+        
+        # Create Spec1D object
+        mspec = Spec1D(model_spec,wave=model_wave,lsfsigma=sigma,instrument='Model')
+        mspec.teff = teff
+        mspec.logg = logg
+        mspec.feh = feh
+        mspec.rv = rv
+        mspec.snr = np.inf
+        
+        return mspec
+        
+    
+    def __iter__(self):
+        self.count = 0
+        return self
+        
+    def __next__(self):
+        if self.count <= self.nmodels:
+            self.count += 1
+            return self._data[self.count]
+        else:
+            raise StopIteration
+        
+    def prepare(self,spec,nointerp=True):
+        # Loop through the models and prepare them
+        models = []
+        for i,m in enumerate(self.nmodels):
+            newm = m.prepare(spec,nointerp=nointerp)
+            models.append(newm)
+        new = class(models)
+        new.prepared = True
+        return new
+
+    def flatten(self):
+        # This flattens multiple orders and stacks them into one long model
+        for i,m in enumerate(self._data):
+            
+        if self.norder==1:
+            return
+        # stack them, spectrum and continuum
+        model = hstack(self._data)
+        new = class(model)
+        new.prepared = self.prepared
+        return new
+
+        
+class DopplerCannonModel(object):
+
+    def __init__(self,model):
+        if type(model) is list:
+            raise ValueError("Can only input a single Cannon model")
+        self.norder = 1
+        self._data = [models]     # make it a list so it is iterable
+        self.prepared = False
+
+    @property
+    def has_continuum(self):
+        if hasattr(self._data[0],'continuum'):
+            return True
+        else:
+            return False
+
+    def dispersion(self,order=0):
+        return self._data[order].dispersion
+        
+    def __call__(self,labels,order=None,norm=True,fluxonly=False):
+        # Default is to return all orders
+        # order can also be a list or array of orders
+        # Orders to loop over
+        if order is None:
+            orders = np.arange(self.norder)
+        else:
+            orders = list(np.atleast_1d(order))
+        norders = dln.size(orders)
+        npix = self._data[0].shape[0]
+        flux = np.zeros((npix,norders),np.float32)
+        wave = np.zeros((npix,norders),np.float64)
+        # Order loop
+        for i in orders:
+            m = self._data[i]
+            f = m(labels)
+            # Get Continuum
+            if (norm is False):
+                if hasattr(m,'continuum'):
+                    contmodel = m.continuum
+                    smallcont = contmodel(labels)
+                    # Interpolate to the full spectrum wavelength array
+                    cont = dln.interp(contmodel.dispersion,smallcont,m.dispersion)
+                    # Now mulitply the flux array by the continuum
+                    f *= cont
+                else:
+                    raise ValueError("Model does not have continuum information")
+            # Stuff in the array
+            flux[:,i] = f
+            wave[:,i] = m.dispersion
+
+        # Only return the flux
+        if fluxonly is True: return flux
+
+        # Create Spec1D object
+        mspec = Spec1D(flux,wave=wave,lsfsigma=None,instrument='Model')
+        mspec.teff = labels[0]
+        mspec.logg = labels[1]
+        mspec.feh = labels[2]
+        #mspec.rv = rv
+        mspec.snr = np.inf
+        
+        return mspec
+    
+    def prepare(spec,nointerp=True):
+        # prepare the models
+        models = []
+        for i,m in enumerate(self._data):
+            newm = prepare_cannon_model(m,spec,nointerp=nointerp)
+            models.append(newm)
+        new = class(models)
+        new.prepared = True
+        return new
+        
+    def flatten(self):
+        # This flattens multiple orders and stacks then into one long model
+        if self.norder==1:
+            new = class(self._data)
+            new.prepared = self.prepared
+            return new
+        # stack them, spectrum and continuum
+        model = hstack(self._data)
+        new = class(model)
+        new.prepared = self.prepared
+        return new
+        
+    def read(mfile):
+        model = load_cannon_model(mfile)
+        return class(model)
+
+    
 def cannon_copy(model):
     """ Make a new copy of a Cannon model."""
     npix, ntheta = model._theta.shape
@@ -41,6 +254,35 @@ def cannon_copy(model):
         if name not in ['_vectorizer']:
             setattr(omodel,name,copy.deepcopy(value))
     return omodel
+
+
+def readfromdata(state):
+    """ Read a Cannon model from the loaded pickle data/dictionary.
+        This is used to generate the continuum model."""
+    
+    metadata = state.get("metadata", {})
+    
+    init_attributes = list(metadata["data_attributes"]) \
+                      + list(metadata["descriptive_attributes"])
+
+    kwds = dict([(a, state.get(a, None)) for a in init_attributes])
+        
+    # Initiate the vectorizer.
+    vectorizer_class, vectorizer_kwds = kwds["vectorizer"]
+    klass = getattr(vectorizer_module, vectorizer_class)
+    kwds["vectorizer"] = klass(**vectorizer_kwds)
+    
+    # Initiate the censors.
+    kwds["censors"] = censoring.Censors(**kwds["censors"])
+
+    model = CannonModel(**kwds)
+
+    # Set training attributes.
+    for attr in metadata["trained_attributes"]:
+        setattr(model, "_{}".format(attr), state.get(attr, None))
+
+    return model
+
 
 def hstack(models):
     """ Stack Cannon models.  Basically combine all of the pixels right next to each other."""
@@ -80,10 +322,64 @@ def hstack(models):
         omodel._s2[off:off+npix,:] = model._s2
         omodel._theta[off:off+npix,:] = model._theta
         omodel.dispersion[off:off+npix] = model.dispersion
+        print('stack the continuum models as well!!!')
         off += npix
+
+    # Stack the continuum models as well
+    if hasattr(model,'continuum'):
+        cmodels = []
+        for i in range(models):
+            cmodels.append(models[i].continuum)
+        contstack = hstack(cmodels)
+        omodel.continuum = contstack
         
     return omodel
+
+# Load a single or list of Cannon models
+def load_cannon_model(files):
+    """
+    Load a single (or list of) Cannon models from file and manipulate as needed.
+
+    Returns
+    -------
+    files : string
+       File name (or list of filenames) of Cannon models to load.
+
+    Examples
+    --------
+    model = load_cannon_model()
+
+    """
+    
+    if os.path.exists(files) == False: return None
+
+    # Convert single string into a list
+    if type(files) is not list: files=list(np.atleast_1d(files))
+
+    model = []
+    for f in files:
+        model1 = tc.CannonModel.read(f)
+        # Generate the model ranges
+        ranges = np.zeros([3,2])
+        for i in range(3):
+            ranges[i,:] = dln.minmax(model1._training_set_labels[:,i])
+        model1.ranges = ranges
+        # Rename _fwhm to fwhm and _wavevac to wavevac
+        if hasattr(model1,'_fwhm'):
+            setattr(model1,'fwhm',model1._fwhm)
+            delattr(model1,'_fwhm')
+        if hasattr(model1,'_wavevac'):
+            setattr(model1,'wavevac',model1._wavevac)
+            delattr(model1,'_wavevac')
+        # Create continuum model if the information is there
+        if hasattr(model1,'_continuum'):
+            contmodel = readfromdata(model1._continuum)
+            model.contmodel = contmodel
+            delattr(model1,'_continuum')
+        model.append(model1)
         
+    return model
+
 
 # Load the cannon model
 def load_all_cannon_models():
@@ -97,7 +393,7 @@ def load_all_cannon_models():
 
     Examples
     --------
-    models = load_all_cannnon_models()
+    models = load_all_cannon_models()
 
     """
     
@@ -106,22 +402,35 @@ def load_all_cannon_models():
     nfiles = len(files)
     if nfiles==0:
         raise Exception("No Cannon model files in "+datadir)
-    models = []
-    for f in files:
-        model1 = tc.CannonModel.read(f)
-        ranges = np.zeros([3,2])
-        for i in range(3):
-            ranges[i,:] = dln.minmax(model1._training_set_labels[:,i])
-        model1.ranges = ranges
-        # Rename _fwhm to fwhm and _wavevac to wavevac
-        if hasattr(model1,'_fwhm'):
-            setattr(model1,'fwhm',model1._fwhm)
-            delattr(model1,'_fwhm')
-        if hasattr(model1,'_wavevac'):
-            setattr(model1,'wavevac',model1._wavevac)
-            delattr(model1,'_wavevac')            
-        models.append(model1)
+    models = load_cannon_model(files)
     return models
+
+
+# Load all cannon models and return as DopplerCannonModelSet.
+def load_models():
+    """
+    Load all Cannon models from the Doppler data/ directory
+    and return as a DopplerCannonModelSet.
+
+    Returns
+    -------
+    models : DopplerCannonModelSet
+        DopplerCannonModelSet for all cannon models in the
+        Doppler /data directory.
+
+    Examples
+    --------
+    models = load_models()
+
+    """    
+    datadir = utils.datadir()
+    files = glob(datadir+'cannongrid*.pkl')
+    nfiles = len(files)
+    if nfiles==0:
+        raise Exception("No Cannon model files in "+datadir)
+    models = load_cannon_model(files)
+    return DopplerCannonModelSet(models)
+
 
 # Get correct cannon model for a given set of inputs
 def get_best_cannon_model(models,pars):
@@ -459,7 +768,6 @@ def prepare_cannon_model(model,spec,dointerp=False):
         if model.dispersion is None:
             raise Exception('No model wavelength information')
 
-    
     if type(model) is list:
         outmodel = []
         for i in range(len(model)):
@@ -467,6 +775,18 @@ def prepare_cannon_model(model,spec,dointerp=False):
             omodel1 = prepare_cannon_model(model1,spec,dointerp=dointerp)
             outmodel.append(omodel1)
     else:
+
+        # Convert wavelength from air->vacuum or vice versa
+        if model.wavevac != spec.wavevac:
+            # Air -> Vacuum
+            if spec.wavevac is True:
+                model.dispersion = astro.airtovac(model.dispersion)
+                model.wavevac = True
+            # Vacuum -> Air
+            else:
+                model.dispersion = astro.vactoair(model.dispersion)
+                model.wavevac = False
+
         # Observed spectrum values
         wave = spec.wave
         ndim = wave.ndim

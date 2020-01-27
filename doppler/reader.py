@@ -177,6 +177,13 @@ def apvisit(filename):
             skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
             mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
         spec.mask = mask
+        # Fix NaN pixels
+        for i in range(spec.norder):
+            bd,nbd = dln.where(np.isfinite(spec.flux[:,i])==False) 
+            if nbd>0:
+                spec.flux[bd,i] = 0.0
+                spec.err[bd,i] = 1e30
+                spec.mask[bd,i] = True
         if (nhdu>=11):
             spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
         # Spectrum, error, sky, skyerr are in units of 1e-17
@@ -284,6 +291,12 @@ def apstar(filename):
         skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
         mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
         spec.mask = mask
+        # Fix NaN pixels
+        bd,nbd = dln.where(np.isfinite(spec.flux[:,i])==False) 
+        if nbd>0:
+            spec.flux[bd] = 0.0
+            spec.err[bd] = 1e30
+            spec.mask[bd] = True
         if nhdu>=9:
             spec.meta = fits.getdata(filename,9)    # meta-data
         spec.snr = spec.head["SNR"]

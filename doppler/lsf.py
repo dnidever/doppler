@@ -1175,7 +1175,7 @@ class GaussHermiteLsf(Lsf):
     def sigma(self,x=None,xtype='pixels',order=0,extrapolate=True):
         """
         Return the Gaussian sigma at specified locations.  The sigma
-        will be in units of pixels
+        will be in pixel units.
 
         Parameters
         ----------
@@ -1193,7 +1193,7 @@ class GaussHermiteLsf(Lsf):
         Returns
         -------
         sigma : array
-            The array of Gaussian sigma values.
+            The array of Gaussian sigma values in units of xtype.
 
         Examples
         --------
@@ -1315,6 +1315,7 @@ class GaussHermiteLsf(Lsf):
         nx = len(x)
         # Only pixels supported, convert wavelength to pixels
         if xtype.lower().find('wave') > -1:
+            w = x.copy()
             x = self.wave2pix(w,order=order)
         # Make LSF array
         xlsf = np.arange(nlsf)-nlsf//2
