@@ -893,9 +893,11 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
     if spec.mask is not None:
         # Set errors to high value, leave flux alone
         spec.err[spec.mask] = 1e30
-    
+
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
+    if (models is None) & (hasattr(cannon,'models') is True):
+        models = cannon.models
     if models is None: models = cannon.load_all_cannon_models() 
     #  NOT interpolated onto the observed wavelength scale
     pmodels = cannon.prepare_cannon_model(models,spec,dointerp=False)        

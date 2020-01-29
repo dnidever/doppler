@@ -9,6 +9,10 @@ from . import reader
 # >>>reader._readers['myreader'] = myreader
 # You can also do this in your own code.
 
+# Saving all the models in cannon.models
+models = cannon.load_models()
+cannon.models = models
+
 def read(filename=None,format=None):
     return reader.read(filename=filename,format=None)
 
