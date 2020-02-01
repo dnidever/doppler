@@ -199,6 +199,10 @@ class Spec1D:
             s += "File = "+self.filename+"\n"
         if self.snr is not None:
             s += ("S/N = %7.2f" % self.snr)+"\n"
+        if self.norder>1:
+            s += 'Dimensions: ['+str(self.npix)+','+str(self.norder)+']\n'
+        else:
+            s += 'Dimensions: ['+str(self.npix)+']\n'                                                       
         s += "Flux = "+str(self.flux)+"\n"
         if self.err is not None:
             s += "Err = "+str(self.err)+"\n"
