@@ -896,14 +896,10 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
 
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
-    if (models is None) & (hasattr(cannon,'models') is True):
-        models = cannon.models
-    if models is None: models = cannon.load_all_cannon_models() 
-    #  NOT interpolated onto the observed wavelength scale
-    pmodels = cannon.prepare_cannon_model(models,spec,dointerp=False)        
-
-    #### I THINK THE WAVELENGTH AIR<->VACUUM CONVERSION SHOULD HAPPEN INSIDE
-    #### PREPARE_CANON_MODEL().  IT COULD BE DIFFERENT FOR EACH MODEL.
+    if models is None: models = cannon.models
+    pmodels = models.prepare(spec)
+    ##  NOT interpolated onto the observed wavelength scale
+    #pmodels = cannon.prepare_cannon_model(models,spec,dointerp=False)        
     
     # Step 3: put on logarithmic wavelength grid
     #-------------------------------------------
@@ -918,14 +914,15 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
     maxlag = np.int(np.ceil(np.log10(1+2000.0/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
-    teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0,  3500.0, 4300.0, 4700.0, 5200.0]
-    logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]
+    teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+    logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
     feh = -0.5
     outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
                          ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
     outstr = np.zeros(len(teff),dtype=outdtype)
     if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
     for i in range(len(teff)):
+        import pdb; pdb.set_trace()
         m = cannon.model_spectrum(pmodels,obs,teff=teff[i],logg=logg[i],feh=feh,rv=0)
         outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
         if verbose is True:

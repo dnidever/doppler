@@ -61,7 +61,7 @@ class DopplerCannonModelSet(object):
                 return m
         return None
     
-    def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,fluxonly=False,rv=None):
+    def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,fluxonly=False,wave=None,rv=None):
         # This will return a model given a set of parameters
         if pars is None:
             pars = np.array([teff,logg,feh])
@@ -70,7 +70,7 @@ class DopplerCannonModelSet(object):
         model = self.get_best_model(pars)
         if model is None: return None
 
-        return model(pars,order=order,norm=norm,fluxonly=fluxonly,rv=rv)
+        return model(pars,order=order,norm=norm,fluxonly=fluxonly,wave=wave,rv=rv)
 
     def model(self,spec,pars=None,teff=None,logg=None,feh=None,rv=None):
         # This will return a model given a set of parameters, similar to model_spectrum()
@@ -243,7 +243,7 @@ class DopplerCannonModel(object):
     def dispersion(self,order=0):
         return self._data[order].dispersion
         
-    def __call__(self,labels,order=None,norm=True,fluxonly=False,rv=None):
+    def __call__(self,labels,order=None,norm=True,fluxonly=False,wave=None,rv=None):
         # Default is to return all orders
         # order can also be a list or array of orders
         # Orders to loop over
@@ -252,17 +252,31 @@ class DopplerCannonModel(object):
         else:
             orders = list(np.atleast_1d(order))
         norders = dln.size(orders)
+        # Get maximum number of pixels over all orders
         npix = 0
         for i in range(self.norder):
             npix = np.maximum(npix,self._data[i].dispersion.shape[0])
-        flux = np.zeros((npix,norders),np.float32)+np.nan
-        wave = np.zeros((npix,norders),np.float64)
-        mask = np.zeros((npix,norders),bool)+True
+        # Wavelength array input
+        if wave is not None:
+            if wave.ndim==1:
+                wnorders = 1
+            else:
+                wnorders = wave.shape[1]
+            if wnorders != norders:
+                raise ValueError("Number of orders in WAVE must match orders in the model")
+            npix = wave.shape[0]
+        # Initialize output arrays
+        oflux = np.zeros((npix,norders),np.float32)+np.nan
+        owave = np.zeros((npix,norders),np.float64)
+        omask = np.zeros((npix,norders),bool)+True
         # Order loop
         for i in orders:
-            owave = self._data[i].dispersion  # final wavelength array for this order
+            if wave is None:
+                owave1 = self._data[i].dispersion  # final wavelength array for this order
+            else:
+                owave1 = wave[:,i]
             # Get model and add radial velocity if necessary
-            if rv is None:
+            if (rv is None) & (wave is None):
                 m = self._data[i]
                 f = m(labels)
                 zfactor = 1
@@ -271,7 +285,7 @@ class DopplerCannonModel(object):
                 f0 = m(labels)
                 zfactor = 1 + rv/cspeed   # redshift factor
                 zwave = m.dispersion*zfactor  # redshift the wavelengths
-                f = dln.interp(zwave,f0,owave)
+                f = dln.interp(zwave,f0,owave1)
             # Get Continuum
             if (norm is False):
                 if hasattr(m,'continuum'):
@@ -281,29 +295,27 @@ class DopplerCannonModel(object):
                         smallcont = 10**smallcont
                     # Interpolate to the full spectrum wavelength array
                     #   with any redshift
-                    cont = dln.interp(contmodel.dispersion*zfactor,smallcont,owave)
+                    cont = dln.interp(contmodel.dispersion*zfactor,smallcont,owave1)
                     # Now mulitply the flux array by the continuum
                     f *= cont
                 else:
                     raise ValueError("Model does not have continuum information")
-            #if len(f) != 2452:
-            #    import pdb; pdb.set_trace()
             # Stuff in the array
-            flux[0:len(f),i] = f
-            wave[0:len(f),i] = owave
-            mask[0:len(f),i] = False
+            oflux[0:len(f),i] = f
+            owave[0:len(f),i] = owave1
+            omask[0:len(f),i] = False
 
         # Only return the flux
-        if fluxonly is True: return flux
+        if fluxonly is True: return oflux
 
         # Change single order 2D arrays to 1D
         if norders==1:
-            flux = flux.flatten()
-            wave = wave.flatten()
-            mask = mask.flatten()            
+            oflux = oflux.flatten()
+            owave = owave.flatten()
+            omask = omask.flatten()            
         
         # Create Spec1D object
-        mspec = Spec1D(flux,wave=wave,mask=mask,lsfsigma=None,instrument='Model')
+        mspec = Spec1D(oflux,wave=owave,mask=omask,lsfsigma=None,instrument='Model')
         mspec.teff = labels[0]
         mspec.logg = labels[1]
         mspec.feh = labels[2]
@@ -1100,7 +1112,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
 
 def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
     """
-    Create a Cannon model spectrum matches to an input observed spectrum
+    Create a Cannon model spectrum matched to an input observed spectrum
     and for given stellar parameters (teff, logg, feh) and radial velocity
     (rv).
 
