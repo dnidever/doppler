@@ -922,8 +922,7 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
     outstr = np.zeros(len(teff),dtype=outdtype)
     if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
     for i in range(len(teff)):
-        import pdb; pdb.set_trace()
-        m = cannon.model_spectrum(pmodels,obs,teff=teff[i],logg=logg[i],feh=feh,rv=0)
+        m = pmodels([teff[i],logg[i],feh],wave=wavelog,rv=0)
         outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
         if verbose is True:
             print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
@@ -944,33 +943,41 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
         print('logg   = %5.2f' % beststr['logg'])
         print('[Fe/H] = %5.2f' % beststr['feh']) 
 
+    import pdb; pdb.set_trace()
+        
         
     # Step 5: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
     # put observed spectrum on rest wavelength scale
-    # get cannnon model for "best" teff/logg/feh values
+    # get cannon model for "best" teff/logg/feh values
     # run cannon.test() on the spectrum and variances
     # just shift the observed wavelengths to rest, do NOT interpolate the spectrum
     #restwave = obs.wave*(1-beststr['vrel']/cspeed)
     restwave = spec.wave*(1-beststr['vrel']/cspeed)    
-    bestmodel = cannon.get_best_cannon_model(pmodels,[beststr['teff'],beststr['logg'],beststr['feh']])
-    # Deal with multiple orders
-    if spec.norder>1:
-        bestmodelinterp = []
-        for i in range(spec.norder):
-            import pdb; pdb.set_trace()
-            bestmodelinterp1 = cannon.interp_cannon_model(bestmodel[i],wout=restwave[:,i])
-            bestmodelinterp.append(bestmodelinterp1)
-    else:
-        bestmodelinterp = cannon.interp_cannon_model(bestmodel,wout=restwave)
+    bestmodel = pmodels.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
+    bestmodel_interp = bestmodel.interp(restwave)
+    labels0, cov0, meta0 = bestmodel_interp.test(spec)
 
-        
-    # Need to "stack" the cannon models to perform a single fit
-    if spec.norders>1:
-        bestmodlinterp = cannon.hstack(bestmodelinterp)
-        
-    with mute():   # suppress output
-        labels0, cov0, meta0 = bestmodelinterp.test(obs.flux, 1.0/obs.err**2)
+    # OLD CODE
+    #bestmodel = cannon.get_best_cannon_model(pmodels,[beststr['teff'],beststr['logg'],beststr['feh']])
+    ## Deal with multiple orders
+    #if spec.norder>1:
+    #    bestmodelinterp = []
+    #    for i in range(spec.norder):
+    #        import pdb; pdb.set_trace()
+    #        bestmodelinterp1 = cannon.interp_cannon_model(bestmodel[i],wout=restwave[:,i])
+    #        bestmodelinterp.append(bestmodelinterp1)
+    #else:
+    #    bestmodelinterp = cannon.interp_cannon_model(bestmodel,wout=restwave)
+    #
+    ## Need to "stack" the cannon models to perform a single fit
+    #if spec.norders>1:
+    #    bestmodlinterp = cannon.hstack(bestmodelinterp)
+    #
+    #with mute():   # suppress output
+    #    labels0, cov0, meta0 = bestmodelinterp.test(obs.flux, 1.0/obs.err**2)
+
+
     # Make sure the labels are within the ranges
     labels0 = labels0.flatten()
     for i in range(3): labels0[i]=dln.limit(labels0[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])

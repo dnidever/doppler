@@ -22,6 +22,7 @@ from .spec1d import Spec1D
 from . import utils
 import copy
 import logging
+import contextlib, io, sys
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -34,6 +35,33 @@ cspeed = 2.99792458e5  # speed of light in km/s
 # Turn off the Cannon's info messages
 tclogger = logging.getLogger('thecannon.utils')
 tclogger.disabled = True
+
+# https://stackoverflow.com/questions/2828953/silence-the-stdout-of-a-function-in-python-without-trashing-sys-stdout-and-resto
+# usage:
+#  with mute():
+#    foo()
+@contextlib.contextmanager
+def mute():
+    '''Prevent print to stdout, but if there was an error then catch it and
+    print the output before raising the error.'''
+
+    saved_stdout = sys.stdout
+    saved_stderr = sys.stderr
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()    
+    try:
+        yield
+    except Exception:
+        saved_output = sys.stdout
+        saved_outerr = sys.stderr
+        sys.stdout = saved_stdout
+        sys.stderr = saved_stderr
+        print(saved_output.getvalue())
+        print(saved_outerr.getvalue())        
+        raise
+    sys.stdout = saved_stdout
+    sys.stderr = saved_stderr
+
 
 class DopplerCannonModelSet(object):
     def __init__(self,models):
@@ -51,7 +79,7 @@ class DopplerCannonModelSet(object):
         return self._data[0].has_continuum
 
     def get_best_model(self,pars):
-        """ This returns the first DopplerCannonModel instance that the right range."""
+        """ This returns the first DopplerCannonModel instance that has the right range."""
         for m in self._data:
             ranges = m.ranges
             inside = True
@@ -141,7 +169,8 @@ class DopplerCannonModelSet(object):
         bestmodel = []
         chisq = []
         for m in self:
-            labels1, cov1, meta1 = m.test(spec)
+            with mute():
+                labels1, cov1, meta1 = m.test(spec)
             # Take out the first dimension
             labels1 = labels1.flatten()
             cov1 = cov1[0,:,:]
@@ -191,11 +220,12 @@ class DopplerCannonModelSet(object):
         new.prepared = True
         return new
 
-    def copy(self):
-        # Make a copy of this DopplerCannonModelSet
+    def interp(self,wave):
+        # Interpolate onto a new wavelength scale
         models = []
         for i,m in enumerate(self):
-            models.append(m.copy())
+            newm = m.interp(wave)
+            models.append(newm)
         new = DopplerCannonModelSet(models)
         return new
     
@@ -208,6 +238,15 @@ class DopplerCannonModelSet(object):
             models.append(m.flatten())
         new = DopplerCannonModelSet(model)
         return new
+    
+    def copy(self):
+        # Make a copy of this DopplerCannonModelSet
+        models = []
+        for i,m in enumerate(self):
+            models.append(m.copy())
+        new = DopplerCannonModelSet(models)
+        return new
+
 
     def read(files):
         models = load_cannon_model(files)
@@ -285,7 +324,10 @@ class DopplerCannonModel(object):
                 f0 = m(labels)
                 zfactor = 1 + rv/cspeed   # redshift factor
                 zwave = m.dispersion*zfactor  # redshift the wavelengths
-                f = dln.interp(zwave,f0,owave1)
+                f = np.zeros(len(owave1),np.float32)+np.nan
+                gind,ngind = dln.where((owave1>=np.min(zwave)) & (owave1<=np.max(zwave)))  # wavelengths we can cover
+                if ngind>0:
+                    f[gind] = dln.interp(zwave,f0,owave1[gind])
             # Get Continuum
             if (norm is False):
                 if hasattr(m,'continuum'):
@@ -327,26 +369,30 @@ class DopplerCannonModel(object):
     def test(self,spec):
         # Fit a spectrum using this Cannon Model
         # Outputs: labels, cov, meta
-
+        
         # NOT PREPARED, prepare for this spectrum and use its wavelength array
         if self.prepared is False:
             pmodel = self.prepare(spec)
         # Already PREPARED
         else:
             pmodel = self
-
+            
         # Flatten if multiple orders
         if self.norder>1:
             pmodel_flat = pmodel.flatten()
             flux = spec.flux.T.reshape(spec.npix*spec.norder)
             err = spec.err.T.reshape(spec.npix*spec.norder)
             cmodel = pmodel_flat._data[0]
-            return cmodel.test(flux, 1/err**2)
+            with mute():
+                out = cmodel.test(flux, 1/err**2)
+            return out
         else:
             flux = spec.flux
             err = spec.err
             cmodel = pmodel._data[0]
-            return cmodel.test(flux, 1/err**2)
+            with mute():
+                out = cmodel.test(flux, 1/err**2)
+            return out
 
     def __len__(self):
         return self.norder
@@ -380,7 +426,30 @@ class DopplerCannonModel(object):
         new.norder = len(newm)
         new.prepared = True
         return new
-        
+
+    def interp(self,wave):
+        # Interpolate model onto new wavelength grid
+        if wave.ndim==1:
+            wnorder = 1
+        else:
+            wnorder = wave.shape[1]
+        if wnorder != self.norder:
+            raise ValueError('Wave must have same orders as cannon model')
+        newm = []
+        for i in range(self.norder):
+            newm1 = interp_cannon_model(self._data_nointerp[i],wout=wave[:,i])
+            newm1.interp = True
+            newm.append(newm1)
+        new = DopplerCannonModel(newm[0])
+        new._data = newm
+        newm_nointerp = []
+        for i in range(self.norder):
+            newm_nointerp.append(cannon_copy(self._data_nointerp[i]))
+        new._data_nointerp = newm_nointerp
+        new.prepared = self.prepared
+        new.norder = len(newm)
+        return new
+            
     def flatten(self):
         # This flattens multiple orders and stacks then into one long model
         # THIS REMOVES THE _DATA_NOINTERP INFORMATION
