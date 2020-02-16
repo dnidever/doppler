@@ -178,7 +178,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
         raise ValueError("If X and Y are 2D then their length in the 2nd dimension must be the same.")
 
     # Check that Y and Yerr have the same length
-    if y is not None:
+    if yerr is not None:
         if (y.shape != yerr.shape):
             raise ValueError("Y and Yerr must have the same shape.")
     
