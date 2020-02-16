@@ -178,8 +178,9 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
         raise ValueError("If X and Y are 2D then their length in the 2nd dimension must be the same.")
 
     # Check that Y and Yerr have the same length
-    if (y.shape != yerr.shape):
-        raise ValueError("Y and Yerr must have the same shape.")
+    if y is not None:
+        if (y.shape != yerr.shape):
+            raise ValueError("Y and Yerr must have the same shape.")
     
     if (nx<2):
         raise ValueError("X and Y arrays must contain 2 or more elements.")
@@ -943,9 +944,6 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
         print('logg   = %5.2f' % beststr['logg'])
         print('[Fe/H] = %5.2f' % beststr['feh']) 
 
-    import pdb; pdb.set_trace()
-        
-        
     # Step 5: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
     # put observed spectrum on rest wavelength scale
@@ -955,8 +953,8 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
     #restwave = obs.wave*(1-beststr['vrel']/cspeed)
     restwave = spec.wave*(1-beststr['vrel']/cspeed)    
     bestmodel = pmodels.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
-    bestmodel_interp = bestmodel.interp(restwave)
-    labels0, cov0, meta0 = bestmodel_interp.test(spec)
+    bestmodelinterp = bestmodel.interp(restwave)
+    labels0, cov0, meta0 = bestmodelinterp.test(spec)
 
     # OLD CODE
     #bestmodel = cannon.get_best_cannon_model(pmodels,[beststr['teff'],beststr['logg'],beststr['feh']])
@@ -987,20 +985,24 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
         print('Teff   = %5.2f K' % labels0[0])
         print('logg   = %5.2f' % labels0[1])
         print('[Fe/H] = %5.2f' % labels0[2])    
-    
+
+    import pdb; pdb.set_trace()        
+
+        
     # Tweak the continuum normalization
-    smlen = len(obs.flux)/20.0
-    ratio = obs.flux/bestmodelspec0
+    smlen = len(spec.flux)/20.0
+    ratio = spec.flux/bestmodelspec0.flux
     ratio[0] = np.median(ratio[0:np.int(smlen/2)])
     ratio[-1] = np.median(ratio[-np.int(smlen/2):-1])
     sm = dln.gsmooth(ratio,smlen,boundary='extend')
-    obs.cont = sm
-    obs.flux /= sm
-    obs.err /= sm
-
+    spec.cont = sm
+    spec.flux /= sm
+    spec.err /= sm
+    
     # Refit the Cannon
-    with mute():    # suppress output
-        labels, cov, meta = bestmodelinterp.test(obs.flux, 1.0/obs.err**2)
+    labels, cov, meta = bestmodelinterp.test(spec)
+    #with mute():    # suppress output
+    #    labels, cov, meta = bestmodelinterp.test(obs.flux, 1.0/obs.err**2)
     # Make sure the labels are within the ranges
     labels = labels.flatten()
     for i in range(3): labels[i]=dln.limit(labels[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])
@@ -1011,7 +1013,7 @@ def fit(spec,models=None,verbose=False,mcmc=False,figname=None,cornername=None):
         print('logg   = %5.2f' % labels[1])
         print('[Fe/H] = %5.2f' % labels[2]) 
     
-
+        
     # Step 6: Improved RV using better Cannon template
     #-------------------------------------------------
     m = cannon.model_spectrum(pmodels,obs,teff=labels[0],logg=labels[1],feh=labels[2],rv=0)
