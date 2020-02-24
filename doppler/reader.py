@@ -150,9 +150,9 @@ def apvisit(filename):
         spec.instrument = "APOGEE"        
         spec.head = fits.getheader(filename,0)
         spec.err = fits.getdata(filename,2).T * 1e-17  # [Npix,Norder]
-        bad = (spec.err<=0)   # fix bad error values
-        if np.sum(bad) > 0:
-            spec.err[bad] = 1e30
+        #bad = (spec.err<=0)   # fix bad error values
+        #if np.sum(bad) > 0:
+        #    spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3).T
         spec.sky = fits.getdata(filename,5).T * 1e-17
         spec.skyerr = fits.getdata(filename,6).T * 1e-17
@@ -179,7 +179,7 @@ def apvisit(filename):
         spec.mask = mask
         # Fix NaN pixels
         for i in range(spec.norder):
-            bd,nbd = dln.where(np.isfinite(spec.flux[:,i])==False) 
+            bd,nbd = dln.where( (np.isfinite(spec.flux[:,i])==False) | (spec.err[:,i] <= 0) )
             if nbd>0:
                 spec.flux[bd,i] = 0.0
                 spec.err[bd,i] = 1e30
@@ -266,9 +266,9 @@ def apstar(filename):
         spec.instrument = "APOGEE"
         spec.head = fits.getheader(filename,0)
         spec.err = fits.getdata(filename,2).T * 1e-17
-        bad = (spec.err<=0)   # fix bad error values
-        if np.sum(bad) > 0:
-            spec.err[bad] = 1e30
+        #bad = (spec.err<=0)   # fix bad error values
+        #if np.sum(bad) > 0:
+        #    spec.err[bad] = 1e30
         spec.bitmask = fits.getdata(filename,3)
         spec.sky = fits.getdata(filename,4).T * 1e-17
         spec.skyerr = fits.getdata(filename,5).T * 1e-17
@@ -291,8 +291,8 @@ def apstar(filename):
         skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
         mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
         spec.mask = mask
-        # Fix NaN pixels
-        bd,nbd = dln.where(np.isfinite(spec.flux[:,i])==False) 
+        # Fix NaN or bad pixels pixels
+        bd,nbd = dln.where( (np.isfinite(spec.flux[:,i])==False) | (spec.err[:,i] <= 0.0) )
         if nbd>0:
             spec.flux[bd] = 0.0
             spec.err[bd] = 1e30
@@ -350,11 +350,11 @@ def boss(filename):
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
             err[bad] = 1e30  #np.nan
-            mask = np.zeros(flux.shape)
+            mask = np.zeros(flux.shape,bool)
             mask[bad] = True
         else:
             err = 1.0/np.sqrt(ivar)
-            mask = np.zeros(flux.shape)
+            mask = np.zeros(flux.shape,bool)
         spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Wave')
         spec.lsf.clean()   # clean up some bad LSF values
         spec.filename = filename
@@ -412,11 +412,11 @@ def mastar(filename):
             ivar[bad] = 1.0
             err = 1.0/np.sqrt(ivar)
             err[bad] = 1e30 #np.nan
-            mask = np.zeros(flux.shape)
+            mask = np.zeros(flux.shape,bool)
             mask[bad] = True
         else:
             err = 1.0/np.sqrt(ivar)
-            mask = np.zeros(flux.shape)
+            mask = np.zeros(flux.shape,bool)
         spec = Spec1D(flux,wave=wave,err=err,mask=mask)
         spec.filename = filename
         spec.sptype = "MaStar"

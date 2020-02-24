@@ -16,3 +16,5 @@ cannon.models = models
 def read(filename=None,format=None):
     return reader.read(filename=filename,format=None)
 
+def fit(*args,**kwargs):
+    return rv.fit(*args,**kwargs)

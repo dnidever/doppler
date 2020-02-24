@@ -337,3 +337,155 @@ def datadir():
     codedir = os.path.dirname(fil)
     datadir = codedir+'/data/'
     return datadir
+
+
+# Denoise a spectrum array
+def denoise(flux,err=None,wtype='db2'):
+    """ Try to remove the noise using wavelet denoising."""
+    # sym9 seems to produce a smoother curve
+    # db2 is also pretty good
+    # harr and sb1 give more "blocky" results
+    
+    # Get shape
+    if flux.ndim==1:
+        npix = len(flux)
+        norder = 1
+    else:
+        npix,norder = flux.shape
+
+    # Loop over the orders
+    out = np.zeros((npix,norder),float)
+    for i in range(norder):
+        if norder==1:
+            f = flux
+            e = err
+        else:
+            f = flux[:,0]
+            e = err[:,0]
+
+        # Normalize
+        medf = np.median(f)
+        f /= medf
+        e /= medf
+            
+        # Values must be finite
+        smlen = np.minimum(31,int(np.round(0.1*npix)))
+        if smlen % 2 == 0:  # smlen must be odd
+            smlen += 1
+        bd,nbd = dln.where(~np.isfinite(f))
+        if nbd>0:
+            smf = dln.medfilt(f,smlen)
+            f[bd] = smf[bd]
+            sme = dln.medfilt(e,smlen)        
+            e[bd] = sme[bd]
+
+        # Get median err
+        if err is not None:
+            mede = np.median(e)
+        else:
+            mede = dln.mad(f-dln.medfilt(f,5))
+
+        # Do the denoising, and rescale with medf
+        out[:,i] = medf * denoise_wavelet(f, mede, wavelet=wtype, multichannel=False, method='BayesShrink', mode='soft', rescale_sigma=True)  
+
+    # Only one order
+    if norder==1:
+        out = out.flatten()
+
+    return out
+
+#out=denoise_wavelet(f2,0.3, wavelet='db2',method='BayesShrink', mode='soft', rescale_sigma=False) 
+
+def maskoutliers(spec,nsig=5,verbose=False):
+    """
+    Mask large positive outliers and negative flux pixels in the spectrum.
+
+    """
+
+    spec2 = spec.copy()
+    wave = spec2.wave.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    flux = spec2.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    err = spec2.err.copy().reshape(spec2.npix,spec2.norder)     # make 2D
+    mask = spec2.mask.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    totnbd = 0
+    for o in range(spec2.norder):
+        w = wave[:,o].copy()
+        x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
+        y = flux[:,o].copy()
+        m = mask[:,o].copy()
+        # Divide by median
+        medy = np.nanmedian(y)
+        y /= medy
+        # Perform sigma clipping out large positive outliers
+        coef = dln.poly_fit(x,y,2,robust=True)
+        sig = dln.mad(y-dln.poly(x,coef))
+        bd,nbd = dln.where( ((y-dln.poly(x,coef)) > nsig*sig) | (y<0))
+        totnbd += nbd
+        if nbd>0:
+            flux[bd,o] = dln.poly(x[bd],coef)*medy
+            err[bd,o] = 1e30
+            mask[bd,o] = True
+
+    # Flatten to 1D if norder=1
+    if spec2.norder==1:
+        flux = flux.flatten()
+        err = err.flatten()
+        mask = mask.flatten()
+
+    # Stuff back in
+    spec2.flux = flux
+    spec2.err = err
+    spec2.mask = mask
+    
+    if verbose is True: print('Masked '+str(totnbd)+' outlier or negative pixels')
+    
+    return spec2
+
+
+def maskdiscrepant(spec,model,nsig=4,verbose=False):
+    """
+    Mask pixels that are discrepant when compared to a model.
+
+    """
+
+    spec2 = spec.copy()
+    wave = spec2.wave.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    flux = spec2.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    err = spec2.err.copy().reshape(spec2.npix,spec2.norder)     # make 2D
+    mask = spec2.mask.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    mflux = model.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D
+    totnbd = 0
+    for o in range(spec2.norder):
+        w = wave[:,o].copy()
+        x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
+        y = flux[:,o].copy()
+        m = mask[:,o].copy()
+        my = mflux[:,o].copy()
+        # Divide by median
+        medy = np.nanmedian(y)
+        y /= medy
+        my /= medy
+        # Perform sigma clipping out large positive outliers
+        coef = dln.poly_fit(x,y,2,robust=True)
+        sig = dln.mad(y-my)
+        bd,nbd = dln.where( np.abs(y-my) > nsig*sig )
+        totnbd += nbd
+        if nbd>0:
+            flux[bd,o] = dln.poly(x[bd],coef)*medy
+            err[bd,o] = 1e30
+            mask[bd,o] = True
+
+    # Flatten to 1D if norder=1
+    if spec2.norder==1:
+        flux = flux.flatten()
+        err = err.flatten()
+        mask = mask.flatten()
+
+    # Stuff back in
+    spec2.flux = flux
+    spec2.err = err
+    spec2.mask = mask
+
+    if verbose is True: print('Masked '+str(totnbd)+' discrepant pixels')
+    
+    return spec2

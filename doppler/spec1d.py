@@ -84,9 +84,9 @@ def combine(speclist,wave=None,sum=False):
         nwpix,nworder = wave.shape
             
     # Loop over the spectra
-    flux = np.empty((nwpix,nworder,nspec),float)
-    err = np.empty((nwpix,nworder,nspec),float)
-    mask = np.empty((nwpix,nworder,nspec),bool)
+    flux = np.zeros((nwpix,nworder,nspec),float)
+    err = np.zeros((nwpix,nworder,nspec),float)
+    mask = np.zeros((nwpix,nworder,nspec),bool)
     for i in range(nspec):
         if (nspec==1):
             spec = speclist
@@ -105,7 +105,7 @@ def combine(speclist,wave=None,sum=False):
     aerr = 1.0 / np.sqrt(np.sum(wt,axis=2))
     # mask is set only if all mask values are set
     #  and combine
-    amask = np.empty((nwpix,nworder),bool)
+    amask = np.zeros((nwpix,nworder),bool)
     for i in range(nspec):
         amask = np.logical_and(amask,mask[:,:,i])
 
@@ -314,26 +314,37 @@ class Spec1D:
         self._flux = self.flux  # Save the original
         #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
 
-        binsize = 0.05
+        binsize = 0.10
         perclevel = 90.0
         wave = self.wave.copy().reshape(self.npix,self.norder)   # make 2D
         flux = self.flux.copy().reshape(self.npix,self.norder)   # make 2D
-        err = self.err.copy().reshape(self.npix,self.norder)   # make 2D
-        cont = err.copy()*0.0
+        err = self.err.copy().reshape(self.npix,self.norder)     # make 2D
+        mask = self.mask.copy().reshape(self.npix,self.norder)   # make 2D
+        cont = err.copy()*0.0+1
         for o in range(self.norder):
-            w = wave[:,o]
+            w = wave[:,o].copy()
             x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
-            y = flux[:,o]
-            gdmask = (y>0)        # need positive fluxes
+            y = flux[:,o].copy()
+            m = mask[:,o].copy()
+            # Divide by median
+            medy = np.nanmedian(y)
+            y /= medy
+            # Perform sigma clipping out large positive outliers
+            coef = dln.poly_fit(x,y,2,robust=True)
+            sig = dln.mad(y-dln.poly(x,coef))
+            bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
+            if nbd>0: m[bd]=True
+            gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
             # Bin the data points
             xr = [np.nanmin(x),np.nanmax(x)]
             bins = np.ceil((xr[1]-xr[0])/binsize)+1
-            ybin, bin_edges, binnumber = bindata.binned_statistic(x,y,statistic='percentile',
+            ybin, bin_edges, binnumber = bindata.binned_statistic(x[gdmask],y[gdmask],statistic='percentile',
                                                                   percentile=perclevel,bins=bins,range=None)
             xbin = bin_edges[0:-1]+0.5*binsize
             # Interpolate to full grid
             cont1 = dln.interp(xbin,ybin,x,extrapolate=True)
-
+            cont1 *= medy
+            
             flux[:,o] /= cont1
             err[:,o] /= cont1
             cont[:,o] = cont1
@@ -376,10 +387,10 @@ class Spec1D:
         wave = wave.reshape(nwpix,nworder)  # make 2D for order indexing
             
         # Loop over orders in final wavelength
-        oflux = np.empty((nwpix,nworder),float)
-        oerr = np.empty((nwpix,nworder),float)
-        omask = np.empty((nwpix,nworder),bool)
-        osigma = np.empty((nwpix,nworder),float)        
+        oflux = np.zeros((nwpix,nworder),float)
+        oerr = np.zeros((nwpix,nworder),float)
+        omask = np.zeros((nwpix,nworder),bool)
+        osigma = np.zeros((nwpix,nworder),float)        
         for i in range(nworder):
             # Interpolate onto the final wavelength scale
             wave1 = wave[:,i]
@@ -423,7 +434,7 @@ class Spec1D:
                         dw = dln.interp(swave1,sdw1,wave1[ind],extrapolate=False,assume_sorted=False)
                         osigma[ind,i] *= dw   # in Ang
                     mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
-                    mask_interp_bool = np.empty(nind,bool)
+                    mask_interp_bool = np.zeros(nind,bool)
                     mask_interp_bool[mask_interp>0.4] = True
                     omask[ind,i] = mask_interp_bool
                     
@@ -443,7 +454,7 @@ class Spec1D:
                         oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False)
                         osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
                         mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
-                        mask_interp_bool = np.empty(nind,bool)
+                        mask_interp_bool = np.zeros(nind,bool)
                         mask_interp_bool[mask_interp>0.4] = True
                         omask[ind,i] = mask_interp_bool
                     # Currently this does NOT deal with the overlap of multiple orders (e.g. averaging)
@@ -470,7 +481,7 @@ class Spec1D:
 
     def copy(self):
         """ Create a new copy."""
-        new = Spec1D(self.flux,err=self.err,wave=self.wave,mask=self.mask,lsfpars=self.lsf.pars,lsftype=self.lsf.type,
+        new = Spec1D(self.flux,err=self.err,wave=self.wave,mask=self.mask,lsfpars=self.lsf.pars,lsftype=self.lsf.lsftype,
                      lsfxtype=self.lsf.xtype,lsfsigma=self.lsf.sigma,instrument=self.instrument,filename=self.filename)
         new.lsf = copy.deepcopy(self.lsf)  # make sure all parts of Lsf are copied over
         for name, value in vars(self).items():
@@ -502,6 +513,6 @@ class Spec1D:
             t = Time(dateobs, format='isot', scale='utc')
             barycorr = sc.radial_velocity_correction(kind='barycentric',obstime=t, location=obs)  
             bc = barycorr.to(u.km/u.s)  
-            self.bc = bc
+            self.bc = bc.value
         return self.bc
         

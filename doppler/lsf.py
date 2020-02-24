@@ -1322,4 +1322,5 @@ class GaussHermiteLsf(Lsf):
         lsf = ghlsf(xlsf,x,self.pars[:,order])
         lsf[lsf<0.] = 0.
         lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
+        
         return lsf

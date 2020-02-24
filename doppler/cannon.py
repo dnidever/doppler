@@ -313,7 +313,10 @@ class DopplerCannonModel(object):
             if wave is None:
                 owave1 = self._data[i].dispersion  # final wavelength array for this order
             else:
-                owave1 = wave[:,i]
+                if wave.ndim==1:
+                    owave1 = wave.copy()
+                else:
+                    owave1 = wave[:,i]
             # Get model and add radial velocity if necessary
             if (rv is None) & (wave is None):
                 m = self._data[i]
@@ -412,11 +415,13 @@ class DopplerCannonModel(object):
         # Keep uninterpolated model in ._data_nointerp, and the interpolated
         #  data in ._data
         newm_nointerp = prepare_cannon_model(self._data[0],spec,dointerp=False)
-        if type(newm_nointerp) is not list: newm_nointerp=list(newm_nointerp)  # make sure it's a list
+        if type(newm_nointerp) is not list: newm_nointerp=[newm_nointerp]  # make sure it's a list
         # Interpolate onto the observed wavelength scale
         newm = []
         for i in range(spec.norder):
-            newm1 = interp_cannon_model(newm_nointerp[i],wout=spec.wave[:,i])
+            wave = spec.wave
+            if wave.ndim==1: wave=np.atleast_2d(spec.wave).T
+            newm1 = interp_cannon_model(newm_nointerp[i],wout=wave[:,i])
             newm1.interp = True
             newm.append(newm1)
 
@@ -431,6 +436,7 @@ class DopplerCannonModel(object):
         # Interpolate model onto new wavelength grid
         if wave.ndim==1:
             wnorder = 1
+            wave = np.atleast_2d(wave).T
         else:
             wnorder = wave.shape[1]
         if wnorder != self.norder:
@@ -922,7 +928,7 @@ def interp_cannon_model(model,xout=None,wout=None):
             npix, npars = model.theta.shape
             x = np.arange(npix)
             xout = interp1d(model.dispersion,x,kind='cubic',bounds_error=False,
-                            fill_value=(np.nan,np.nan),assume_sorted=True)(wout)
+                            fill_value='extrapolate',assume_sorted=True)(wout)
         npix, npars = model.theta.shape
         npix2 = len(xout)
         nlabels = len(model.vectorizer.label_names)
@@ -932,17 +938,17 @@ def interp_cannon_model(model,xout=None,wout=None):
         omodel = tc.CannonModel(labelled_set,normalized_flux,normalized_ivar,model.vectorizer)
         x = np.arange(npix)
         omodel._s2 = interp1d(x,model._s2,kind='cubic',bounds_error=False,
-                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+                              fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
         omodel._scales = model._scales
         omodel._theta = np.zeros((npix2,npars),np.float64)
         for i in range(npars):
             omodel._theta[:,i] = interp1d(x,model._theta[:,i],kind='cubic',bounds_error=False,
-                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+                                          fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
         omodel._design_matrix = model._design_matrix
         omodel._fiducials = model._fiducials
         if model.dispersion is not None:
             omodel.dispersion = interp1d(x,model.dispersion,kind='cubic',bounds_error=False,
-                           fill_value=(np.nan,np.nan),assume_sorted=True)(xout)
+                                         fill_value='extrapolate',assume_sorted=True)(xout)
         omodel.regularization = model.regularization
         if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
 
@@ -1107,8 +1113,12 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 raise Exception('Model does not cover the observed wavelength range')
             
             # Trim
-            if (np.min(model.dispersion)<(w0-50*meddw)) | (np.max(model.dispersion)>(w1+50*meddw)):
-                tmodel = trim_cannon_model(model,w0=w0-20*meddw,w1=w1+20*meddw)
+            nextend = int(np.ceil(len(w)*0.25))  # extend 25% on each end
+            nextend = np.maximum(nextend,200)    # or 200 pixels
+            if (np.min(model.dispersion)<(w0-nextend*meddw)) | (np.max(model.dispersion)>(w1+nextend*meddw)):
+                tmodel = trim_cannon_model(model,w0=w0-nextend*meddw,w1=w1+nextend*meddw)
+            #if (np.min(model.dispersion)<(w0-50*meddw)) | (np.max(model.dispersion)>(w1+50*meddw)):
+            #    tmodel = trim_cannon_model(model,w0=w0-20*meddw,w1=w1+20*meddw)
             #if (np.min(model.dispersion)<(w0-1000.0*w0/cspeed)) | (np.max(model.dispersion)>(w1+1000.0*w1/cspeed)):                                
             #    # allow for up to 1000 km/s offset on each end
             #    tmodel = trim_cannon_model(model,w0=w0-1000.0*w0/cspeed,w1=w1+1000.0*w1/cspeed)
@@ -1147,12 +1157,12 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 rmodel.rebin = False
                 
             # Convolve
-            lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=0)
-
+            lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=o)
+            
             #import pdb; pdb.set_trace()
             cmodel = convolve_cannon_model(rmodel,lsf)
             cmodel.convolve = True
-        
+            
             # Interpolate
             if dointerp is True:
                 omodel = interp_cannon_model(cmodel,wout=spec.wave)
@@ -1160,7 +1170,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
             else:
                 omodel = cannon_copy(cmodel)
                 omodel.interp = False
-
+                
             # Order information
             omodel.norder = norder
             omodel.order = o
