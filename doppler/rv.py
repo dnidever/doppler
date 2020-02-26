@@ -254,7 +254,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     
     if (nx<2):
         raise ValueError("X and Y arrays must contain 2 or more elements.")
-
+    
     # Reshape arrays to [Npix,Norder], even if both are 1D
     xd = x.copy()
     yd = y.copy()
@@ -268,14 +268,15 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     else:
         xd = xd.reshape(npix,1)
         yd = yd.reshape(npix,1)        
-        yderr = yderr.reshape(npix,1)
+        if yerr is not None:
+            yderr = yderr.reshape(npix,1)
         
     # Remove the means
     if nomean is False:
         for i in range(norder):
             xd[:,i] -= np.nanmean(xd[:,i])
             yd[:,i] -= np.nanmean(yd[:,i])
-
+      
     # Set NaNs or Infs to 0.0, mask bad pixels
     fx = np.isfinite(xd)
     ngdx = np.sum(fx)
@@ -290,79 +291,149 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
         yd[(fy==False)]=0.0
         if yerr is not None: yderr[(fy==False)]=0.0
     nlag = len(lag)
-    
-    # Initialize the output arrays
-    cross = np.zeros((nlag,norder),dtype=float)
-    cross_error = np.zeros((nlag,norder),dtype=float)
-    num = np.zeros((nlag,norder),dtype=int)  # number of "good" points at this lag        
-    rmsx = np.zeros(norder,dtype=float)
-    rmsy = np.zeros(norder,dtype=float)    
-    
-    # Loop over orders
-    for i in range(norder):
+
+    # MULTI-ORDER with ONE template and ONE spectrum to cross-correlate
+    ###################################################################
+    # This is 2.3x faster than the original method down below
+    #   for (4936, 3) spectra and nlag=765
+    if (norder>1) & (nxorder == nyorder):
+
+        # Initialize the output arrays
+        cross = np.zeros(nlag,dtype=float)
+        cross_error = np.zeros(nlag,dtype=float)
+        num = np.zeros(nlag,dtype=int)  # number of "good" points at this lag        
+        
+        # flatten multi-order to 1D with buffer
+        buff = np.max(np.abs(lag))
+        xd1 = np.zeros(nx*norder + (norder-1)*buff,float)
+        yd1 = np.zeros(nx*norder + (norder-1)*buff,float)
+        yderr1 = np.zeros(nx*norder + (norder-1)*buff,float)
+        fx1 = np.zeros(nx*norder + (norder-1)*buff,bool)
+        fy1 = np.zeros(nx*norder + (norder-1)*buff,bool)    
+        for i in range(norder):
+            lo = i*(nx+buff)
+            hi = lo+nx
+            xd1[lo:hi] = xd[:,i]
+            yd1[lo:hi] = yd[:,i]
+            yderr1[lo:hi] = yderr[:,i]
+            fx1[lo:hi] = fx[:,i]
+            fy1[lo:hi] = fy[:,i]        
+        nx1 = len(xd1)
+            
         # Loop over lag points
         for k in range(nlag):
             # Note the reversal of the variables for negative lags.
             if lag[k]>0:
-                cross[k,i] = np.sum(xd[0:nx-lag[k],i] * yd[lag[k]:,i])
-                num[k,i] = np.sum(fx[0:nx-lag[k],i] * fy[lag[k]:,i]) 
+                cross[k] = np.sum(xd1[0:nx1-lag[k]] * yd1[lag[k]:])
+                num[k] = np.sum(fx1[0:nx1-lag[k]] * fy1[lag[k]:]) 
                 if yerr is not None:
-                    cross_error[k,i] = np.sum( (xd[0:nx-lag[k],i] * yderr[lag[k]:,i])**2 )
+                    cross_error[k] = np.sum( (xd1[0:nx1-lag[k]] * yderr1[lag[k]:])**2 )
             else:
-                cross[k,i] =  np.sum(yd[0:nx+lag[k],i] * xd[-lag[k]:,i])
-                num[k,i] = np.sum(fy[0:nx+lag[k],i] * fx[-lag[k]:,i])
+                cross[k] =  np.sum(yd1[0:nx1+lag[k]] * xd1[-lag[k]:])
+                num[k] = np.sum(fy1[0:nx1+lag[k]] * fx1[-lag[k]:])
                 if yerr is not None:
-                    cross_error[k,i] = np.sum( (yderr[0:nx+lag[k],i] * xd[-lag[k]:,i])**2 )
-                    
-        if (npix>2):
-            rmsx[i] = np.sum(xd[fx[:,i],i]**2)
-            if (rmsx[i]==0): rmsx[i]=1.0
-            rmsy[i] = np.sum(yd[fy[:,i],i]**2)
-            if (rmsy[i]==0): rmsy[i]=1.0
-        else:
-            rmsx[i] = 1.0
-            rmsy[i] = 1.0
-            
-    # Both X and Y are 2D, sum data from multiple orders
-    if (nxorder>1) & (nyorder>1):
-        cross = np.sum(cross,axis=1).reshape(nlag,1)
-        cross_error= np.sum(cross_error,axis=1).reshape(nlag,1)
-        num = np.sum(num,axis=1).reshape(nlag,1)
-        rmsx = np.sqrt(np.sum(rmsx,axis=0)).reshape(1)
-        rmsy = np.sqrt(np.sum(rmsy,axis=0)).reshape(1)
-        norder = 1
-        nelements = npix*norder
-    else:
-        rmsx = np.sqrt(rmsx)
-        rmsy = np.sqrt(rmsy)        
-        nelements = npix
-        
-    # Normalizations
-    for i in range(norder):
+                    cross_error[k] = np.sum( (yderr1[0:nx1+lag[k]] * xd1[-lag[k]:])**2 )
+
+        rmsx = np.sqrt(np.sum((xd*fx)**2))
+        if rmsx==0.0: rmsx=1.0
+        rmsy = np.sqrt(np.sum((yd*fy)**2))
+        if rmsy==0.0: rmsy=1.0    
+
         # Normalize by number of "good" points
-        cross[:,i] *= np.max(num[:,i])
-        pnum = (num[:,i]>0)
-        cross[pnum,i] /= num[pnum,i]  # normalize by number of "good" points
+        cross *= np.max(num)
+        pnum = (num>0)
+        cross[pnum] /= num[pnum]  # normalize by number of "good" points
         # Take sqrt to finish adding errors in quadrature
-        cross_error[:,i] = np.sqrt(cross_error[:,i])
+        cross_error = np.sqrt(cross_error)
         # normalize
-        cross_error[:,i] *= np.max(num[:,i])
-        cross_error[pnum,i] /= num[pnum,i]
+        cross_error *= np.max(num)
+        cross_error[pnum] /= num[pnum]
 
         # Divide by N for covariance, or divide by variance for correlation.
+        nelements = npix*norder
         if covariance is True:
-            cross[:,i] /= nelements
-            cross_error[:,i] /= nelements
+            cross /= nelements
+            cross_error /= nelements
         else:
-            cross[:,i] /= rmsx[i]*rmsy[i]
-            cross_error[:,i] /= rmsx[i]*rmsy[i]
+            cross /= rmsx*rmsy
+            cross_error /= rmsx*rmsy
 
+        
+    # SIGLE-ORDER OR ONE template with MULTIPLE spectrum to cross-correlate
+    #######################################################################
+    else:
 
-    # Flatten to 1D if norder=1
-    if norder==1:
-        cross = cross.flatten()
-        cross_error = cross_error.flatten()
+        # Initialize the output arrays
+        cross = np.zeros((nlag,norder),dtype=float)
+        cross_error = np.zeros((nlag,norder),dtype=float)
+        num = np.zeros((nlag,norder),dtype=int)  # number of "good" points at this lag        
+        rmsx = np.zeros(norder,dtype=float)
+        rmsy = np.zeros(norder,dtype=float)    
     
+        # Loop over orders
+        for i in range(norder):
+            # Loop over lag points
+            for k in range(nlag):
+                # Note the reversal of the variables for negative lags.
+                if lag[k]>0:
+                    cross[k,i] = np.sum(xd[0:nx-lag[k],i] * yd[lag[k]:,i])
+                    num[k,i] = np.sum(fx[0:nx-lag[k],i] * fy[lag[k]:,i]) 
+                    if yerr is not None:
+                        cross_error[k,i] = np.sum( (xd[0:nx-lag[k],i] * yderr[lag[k]:,i])**2 )
+                else:
+                    cross[k,i] =  np.sum(yd[0:nx+lag[k],i] * xd[-lag[k]:,i])
+                    num[k,i] = np.sum(fy[0:nx+lag[k],i] * fx[-lag[k]:,i])
+                    if yerr is not None:
+                        cross_error[k,i] = np.sum( (yderr[0:nx+lag[k],i] * xd[-lag[k]:,i])**2 )
+                    
+            if (npix>2):
+                rmsx[i] = np.sum(xd[fx[:,i],i]**2)
+                if (rmsx[i]==0): rmsx[i]=1.0
+                rmsy[i] = np.sum(yd[fy[:,i],i]**2)
+                if (rmsy[i]==0): rmsy[i]=1.0
+            else:
+                rmsx[i] = 1.0
+                rmsy[i] = 1.0
+    
+        # Both X and Y are 2D, sum data from multiple orders
+        if (nxorder>1) & (nyorder>1):
+            cross = np.sum(cross,axis=1).reshape(nlag,1)
+            cross_error= np.sum(cross_error,axis=1).reshape(nlag,1)
+            num = np.sum(num,axis=1).reshape(nlag,1)
+            rmsx = np.sqrt(np.sum(rmsx,axis=0)).reshape(1)
+            rmsy = np.sqrt(np.sum(rmsy,axis=0)).reshape(1)
+            norder = 1
+            nelements = npix*norder
+        else:
+            rmsx = np.sqrt(rmsx)
+            rmsy = np.sqrt(rmsy)        
+            nelements = npix
+  
+        # Normalizations
+        for i in range(norder):
+            # Normalize by number of "good" points
+            cross[:,i] *= np.max(num[:,i])
+            pnum = (num[:,i]>0)
+            cross[pnum,i] /= num[pnum,i]  # normalize by number of "good" points
+            # Take sqrt to finish adding errors in quadrature
+            cross_error[:,i] = np.sqrt(cross_error[:,i])
+            # normalize
+            cross_error[:,i] *= np.max(num[:,i])
+            cross_error[pnum,i] /= num[pnum,i]
+
+            # Divide by N for covariance, or divide by variance for correlation.
+            if covariance is True:
+                cross[:,i] /= nelements
+                cross_error[:,i] /= nelements
+            else:
+                cross[:,i] /= rmsx[i]*rmsy[i]
+                cross_error[:,i] /= rmsx[i]*rmsy[i]
+
+        # Flatten to 1D if norder=1
+        if norder==1:
+            cross = cross.flatten()
+            cross_error = cross_error.flatten()
+            
     if yerr is not None: return cross, cross_error
     return cross
 
@@ -474,7 +545,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
         #    print('problem')
         #    import pdb; pdb.set_trace()
         ccf, ccferr = ccorrelate(template,spec,lag,obserr1)
-
+        
         # Apply flat-topped Gaussian prior with unit amplitude
         #  add a broader Gaussian underneath so the rest of the
         #   CCF isn't completely lost
@@ -487,7 +558,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
 
     # Remove the median
     ccf -= np.median(ccf)
-
+    
     # Best shift
     best_shiftind0 = np.argmax(ccf)
     best_xshift0 = lag[best_shiftind0]
@@ -937,7 +1008,7 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit_xcorrgrid(spec,models=None,samples=None,verbose=False):
+def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
     """
     Fit spectrum using cross-correlation with models sampled in the parameter space.
     
@@ -952,6 +1023,8 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False):
          Catalog of teff/logg/feh parameters to use when sampling the parameter space.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
+    maxvel : float, optional
+         The maximum velocity to probe in the cross-correlation.  The default is 1000 km/s.
 
     Returns
     -------
@@ -1001,7 +1074,7 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False):
     #------------------------------------------------------------------------------------------------
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+2000.0/cspeed)/dwlog))
+    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     if samples is None:
         teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
@@ -1499,7 +1572,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figname=None,cornername=No
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid(spec,pmodels,verbose=verbose)
+    beststr, xmodel = fit_xcorrgrid(spec,pmodels,verbose=verbose,maxvel=1000.0)
 
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
