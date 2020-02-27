@@ -10,7 +10,7 @@ setup(name='Doppler',
       author_email='dnidever@montana.edu',
       url='https://github.com/dnidever/doppler',
       packages=find_packages(exclude=["tests"]),
-      scripts=['bin/dopfit'],
+      scripts=['bin/dopfit','bin/dopjointfit'],
       requires=['numpy','astropy','scipy','thecannon','dlnpyutils'],
       include_package_data=True,
 )

@@ -115,41 +115,64 @@ def tweakcontinuum(spec,model):
     return spec
 
 
-def specplot(figname,spec,fmodel,out):
+def specplot(figfile,spec,fmodel,out):
     """ Make diagnostic figure."""
     #import matplotlib
     matplotlib.use('Agg')
     #import matplotlib.pyplot as plt
-    if os.path.exists(figname): os.remove(figname)
-    fig,ax = plt.subplots()
-    fig.set_figheight(10)
-    fig.set_figwidth(12)
-    plt.plot(spec.wave,spec.flux,'b',label='Data')
-    plt.plot(fmodel.wave,fmodel.flux,'--r',label='Model')
-    #ax.axis('equal')
-    leg = ax.legend(loc='upper left', frameon=False)
-    plt.xlabel('Wavelength (Angstroms)')
-    plt.ylabel('Normalized Flux')
-    xr = dln.minmax(spec.wave)
-    yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
-    yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
-    yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
-    plt.xlim(xr)
-    plt.ylim(yr)
-    # legend
-    # best-fit pars: Teff, logg, [Fe/H], RV with uncertainties and Chisq
-    #leg = Legend(ax, lines[2:], ['line C', 'line D'],
-    #             loc='lower right', frameon=False)
-    #ax.add_artist(leg)
-    wr = dln.minmax(spec.wave)
-    #plt.legend(('Teff', 'logg', '[Fe/H]','Vrel'),
-    #           loc='upper left', handlelength=1.5, fontsize=16)
-    ax.annotate(r'Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f ' %
-                (out['teff'], out['tefferr'], out['logg'], out['loggerr'], out['feh'], out['feherr'], out['vrel'], out['vrelerr']),
-                xy=(xr[0]+dln.valrange(xr)*0.05, yr[0]+dln.valrange(yr)*0.05))
-    plt.savefig(figname)
+    if os.path.exists(figfile): os.remove(figfile)
+    norder = spec.norder
+    # Single-order plot
+    if norder==1:
+        fig,ax = plt.subplots()
+        fig.set_figheight(6)
+        fig.set_figwidth(12)
+        plt.plot(spec.wave,spec.flux,'b',label='Data',linewidth=1)
+        plt.plot(fmodel.wave,fmodel.flux,'r',label='Model',linewidth=1,alpha=0.8)
+        leg = ax.legend(loc='upper left', frameon=False)
+        plt.xlabel('Wavelength (Angstroms)')
+        plt.ylabel('Normalized Flux')
+        xr = dln.minmax(spec.wave)
+        yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
+        yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.15]
+        yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+        plt.xlim(xr)
+        plt.ylim(yr)
+        snr = np.nanmedian(spec.flux/spec.err)
+        plt.title(spec.filename)
+        ax.annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
+                    (snr, out['teff'], out['tefferr'], out['logg'], out['loggerr'], out['feh'], out['feherr'], out['vrel'], out['vrelerr'], out['chisq']),
+                    xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.90),ha='center')
+    # Multi-order plot
+    else:
+        fig,ax = plt.subplots(norder)
+        fig.set_figheight(10)
+        fig.set_figwidth(12)
+        for i in range(norder):
+            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Data',linewidth=1)
+            ax[i].plot(fmodel.wave[:,i],fmodel.flux[:,i],'r',label='Model',linewidth=1,alpha=0.8)
+            if i==0:
+                leg = ax[i].legend(loc='upper left', frameon=False)
+            ax[i].set_xlabel('Wavelength (Angstroms)')
+            ax[i].set_ylabel('Normalized Flux')
+            xr = dln.minmax(spec.wave[:,i])
+            yr = [np.min([spec.flux[:,i],fmodel.flux[:,i]]), np.max([spec.flux[:,i],fmodel.flux[:,i]])]
+            yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
+            if i==0:
+                yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.15]            
+            yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+            ax[i].set_xlim(xr)
+            ax[i].set_ylim(yr)
+            # legend
+            if i==0:
+                snr = np.nanmedian(spec.flux/spec.err)
+                ax[i].set_title(spec.filename)
+                ax[i].annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
+                               (snr,out['teff'],out['tefferr'],out['logg'],out['loggerr'],out['feh'],out['feherr'],out['vrel'],out['vrelerr'],out['chisq']),
+                               xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.90),ha='center')
+    plt.savefig(figfile,bbox_inches='tight')
     plt.close(fig)
-    print('Figure saved to '+figname)
+    print('Figure saved to '+figfile)
 
 
 def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
@@ -1489,7 +1512,7 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     return out, lsmodel
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figname=None,cornername=None,retpmodels=False):
+def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -1505,7 +1528,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figname=None,cornername=No
     mcmc : bool, optional
          Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
          This is False by default.
-    figname : string, optional
+    figfile : string, optional
          The filename for a diagnostic plot showing the observed spectrum, model
          spectrum and the best-fit parameters.
     cornername : string, optional
@@ -1715,10 +1738,9 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figname=None,cornername=No
     out['chisq'] = fchisq
     out['bc'] = bc
 
-
     # Make diagnostic figure
-    if figname is not None:
-        specplot(figname,specm,fmodel,out)
+    if figfile is not None:
+        specplot(figfile,specm,fmodel,out)
 
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
@@ -1731,7 +1753,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figname=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
+def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=False):
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
@@ -1750,7 +1772,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
         info['snr'][i] = s.snr
         
     # Step 1) Loop through each spectrum and run fit()
-    if verbose is True: print('Step 1) Fitting the individual spectra')
+    if verbose is True: print('Step #1: Fitting the individual spectra')
     specmlist = []
     modlist = []
     for i,spec in enumerate(speclist):
@@ -1759,7 +1781,14 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
             print(speclist[i].filename)
         # Only do this for spectra with S/N>10 or 15
         if spec.snr>snrcut:
-            out, model, specm, pmodels = fit(speclist[i],verbose=verbose,retpmodels=True)
+            # Save the plot, figure the output figure filename
+            figfile = None
+            if saveplot is True:
+                fdir, base, ext = utils.splitfilename(speclist[i].filename)
+                figfile = base+'_fit.png'
+                if fdir != '': figfile = fdir+'/'+figfile
+            # Fit the spectrum    
+            out, model, specm, pmodels = fit(speclist[i],verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
@@ -1788,7 +1817,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
         if verbose is True: print(' ')
             
     # Step 2) find weighted stellar parameters
-    if verbose is True: print('Step 2) Getting weighted stellar parameters')
+    if verbose is True: print('Step #2: Getting weighted stellar parameters')
     gd, ngd = dln.where(np.isfinite(info['chisq']))
     if ngd>0:
         pars = ['teff','logg','feh','vhelio']
@@ -1821,8 +1850,10 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
     initpar[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
 
     
-    # Step 4) refit all spectra simultaneous fitting stellar parameters and RVs
-    if verbose is True: print('Fitting all spectra simultaneously')
+    # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
+    if verbose is True:
+        print(' ')
+        print('Step #3: Fitting all spectra simultaneously')
     out, fmodels = multifit_lsq(specmlist,modlist,initpar)
     stelpars = out['pars'][0,0:3]
     stelparerr = out['parerr'][0,0:3]    
@@ -1833,8 +1864,9 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
     if verbose is True:
         print('Final parameters:')
         printpars(np.hstack((stelpars,mnvhelio)))
+        vscatter = np.std(vhelio)
+        print('Vscatter =  %6.2f km/s' % vscatter)
         print(vhelio)
-
 
     # Final output structure
     final = info.copy()
@@ -1856,7 +1888,5 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,verbose=False):
         chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
         final['chisq'][i] = chisq
         bmodel.append(m)
-        
-    # Delete all temporary variables
     
     return final, bmodel

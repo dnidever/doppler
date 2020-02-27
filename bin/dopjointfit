@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+#
+# Script to run doppler.jointfit() on a list of spectra
+
+import os
+import time
+import doppler
+from astropy.io import fits
+from astropy.table import Table
+from argparse import ArgumentParser
+from dlnpyutils import utils as dln
+
+# Main command-line program
+if __name__ == "__main__":
+    parser = ArgumentParser(description='Run Doppler Joint Fit on a list of spectra')
+    parser.add_argument('files', type=str, nargs='*', help='Spectrum FITS files')
+    parser.add_argument('-l','--list', type=str, default='', help='Input list of FITS files')
+    parser.add_argument('--outfile', type=str, default='', help='Output filename')
+    parser.add_argument('--snrcut', type=float, default=15.0, help='S/N threshold to fit spectrum separately')
+    parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
+    parser.add_argument('-m','--mcmc', action='store_true', help='Run MCMC when fitting spectra individually')    
+    parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')    
+    args = parser.parse_args()
+    
+    t0 = time.time()
+
+    # Input arguments
+    files = args.files
+    inlist = args.list
+    outfile = args.outfile
+    snrcut = args.snrcut
+    saveplot = args.plot
+    mcmc = args.mcmc
+    verbose = args.verbose
+    
+    # Load files from a list
+    if (len(files)==0) & (inlist!=''):
+        # Check that file exists
+        if os.path.exists(inlist) is False:
+            raise ValueError(inlist+' NOT FOUND')
+        # Read in the list
+        files = dln.readlines(inlist)
+
+    # Default output filename
+    if outfile=='':
+        fdir,base,ext = doppler.utils.splitfilename(files[0])
+        outfile = base+'_dopjointfit.fits'
+        if fdir != '': outfile = fdir+'/'+outfile
+
+    if verbose is True:
+        print('--- Running Doppler Jointfit on '+str(len(files))+' spectra ---')
+        print('')
+            
+    # Load the spectra
+    if verbose is True: print('Loading the spectra')
+    speclist = []
+    for i,f in enumerate(files):
+        # Check that the file exists
+        if os.path.exists(f) is False:
+            raise ValueError(f+' NOT FOUND')
+
+        # Load the spectrum
+        spec = doppler.read(f)
+        spec.normalize()
+
+        if verbose is True:
+              print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
+          
+        # Append to the list
+        speclist.append(spec)
+
+        
+    # Run Doppler jointfit()
+    if verbose is True: print('')
+    out, model = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose)
+
+    # Save the output
+    if verbose is True:
+        print('Writing output to '+outfile)
+    if os.path.exists(outfile): os.remove(outfile)
+    Table(out).write(outfile)
+    # append best model
+    # there's a model for each spectrum, each one gets an extension
+    hdulist = fits.open(outfile)
+    for i,m in enumerate(model):
+        hdu = fits.PrimaryHDU(m.flux)
+        hdulist.append(hdu)
+    hdulist.writeto(outfile,overwrite=True)
+    hdulist.close()
+
+    # Save the best-fitting plots
+    if verbose is True:
+        print('Making best-fit plots for each spectrum')
+    for i,f in enumerate(files):
+        # Figure the output figure filename
+        fdir,base,ext = doppler.utils.splitfilename(speclist[i].filename)
+        figname = base+'_dopjointfit.png'
+        if fdir != '': figname = fdir+'/'+figname
+        # Make the plot
+        specm = speclist[i]
+        fmodel = model[i]
+        fout = out[i]
+        doppler.rv.specplot(figname,specm,fmodel,fout)

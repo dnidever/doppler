@@ -338,6 +338,18 @@ def datadir():
     datadir = codedir+'/data/'
     return datadir
 
+# Split a filename into directory, base and fits extensions
+def splitfilename(filename):
+    """ Split filename into directory, base and extensions."""
+    fdir = os.path.dirname(filename)
+    base = os.path.basename(filename)
+    exten = ['.fit','.fits','.fit.gz','.fits.gz','.fit.fz','.fits.fz']
+    for e in exten:
+        if base[-len(e):]==e:
+            base = base[0:-len(e)]
+            ext = e
+            break
+    return (fdir,base,ext)
 
 # Denoise a spectrum array
 def denoise(flux,err=None,wtype='db2'):

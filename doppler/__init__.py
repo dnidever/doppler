@@ -18,3 +18,6 @@ def read(filename=None,format=None):
 
 def fit(*args,**kwargs):
     return rv.fit(*args,**kwargs)
+
+def jointfit(*args,**kwargs):
+    return rv.jointfit(*args,**kwargs)
