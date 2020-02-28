@@ -9,6 +9,7 @@ from astropy.io import fits
 from astropy.table import Table
 from argparse import ArgumentParser
 from dlnpyutils import utils as dln
+import subprocess
 
 # Main command-line program
 if __name__ == "__main__":
@@ -72,7 +73,7 @@ if __name__ == "__main__":
         
     # Run Doppler jointfit()
     if verbose is True: print('')
-    out, model = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose)
+    out, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose)
 
     # Save the output
     if verbose is True:
@@ -89,15 +90,35 @@ if __name__ == "__main__":
     hdulist.close()
 
     # Save the best-fitting plots
-    if verbose is True:
-        print('Making best-fit plots for each spectrum')
-    for i,f in enumerate(files):
-        # Figure the output figure filename
-        fdir,base,ext = doppler.utils.splitfilename(speclist[i].filename)
-        figname = base+'_dopjointfit.png'
-        if fdir != '': figname = fdir+'/'+figname
-        # Make the plot
-        specm = speclist[i]
-        fmodel = model[i]
-        fout = out[i]
-        doppler.rv.specplot(figname,specm,fmodel,fout)
+    if saveplot is True:
+        if verbose is True:
+            print('')
+            print('Making best-fit plots for each spectrum')
+        pdfnames = []
+        for i,f in enumerate(files):
+            # Figure the output figure filename
+            fdir,base,ext = doppler.utils.splitfilename(speclist[i].filename)
+            figname = base+'_dopjointfit.png'
+            if fdir != '': figname = fdir+'/'+figname
+            # Make the plot
+            specm = specmlist[i]
+            fmodel = model[i]
+            fout = out[i]
+            doppler.rv.specplot(figname,specm,fmodel,fout,verbose=True)
+            # Make a PDF version that we will combine at the end
+            fignamepdf = figname.replace('.png','.pdf')
+            doppler.rv.specplot(fignamepdf,specm,fmodel,fout,verbose=False)
+            pdfnames.append(fignamepdf)
+        # Combine the PDFs into one
+        fdir,base,ext = doppler.utils.splitfilename(files[0])
+        combname = base+'_dopjointfit_comb.pdf'  # png
+        if fdir != '': combname = fdir+'/'+combname
+        if os.path.exists(combname): os.remove(combname)
+        cmd = ['gs','-dBATCH','-dNOPAUSE','-q','-sDEVICE=pdfwrite','-sOutputFile='+combname]
+        cmd = cmd+pdfnames
+        try:
+            out = subprocess.call(cmd,stderr=subprocess.STDOUT,shell=False)
+        except subprocess.CalledProcessError:
+            raise Exception("Could not combine PDFs with ghostscript")
+        # Delete individual PDFs
+        for fp in pdfnames: os.remove(fp)

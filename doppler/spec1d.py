@@ -481,8 +481,9 @@ class Spec1D:
 
     def copy(self):
         """ Create a new copy."""
-        new = Spec1D(self.flux,err=self.err,wave=self.wave,mask=self.mask,lsfpars=self.lsf.pars,lsftype=self.lsf.lsftype,
-                     lsfxtype=self.lsf.xtype,lsfsigma=self.lsf.sigma,instrument=self.instrument,filename=self.filename)
+        new = Spec1D(self.flux.copy(),err=self.err.copy(),wave=self.wave.copy(),mask=self.mask.copy(),
+                     lsfpars=self.lsf.pars.copy(),lsftype=self.lsf.lsftype,lsfxtype=self.lsf.xtype,
+                     lsfsigma=self.lsf.sigma,instrument=self.instrument,filename=self.filename)
         new.lsf = copy.deepcopy(self.lsf)  # make sure all parts of Lsf are copied over
         for name, value in vars(self).items():
             if name not in ['flux','wave','err','mask','lsf','instrument','filename']:

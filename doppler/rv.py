@@ -115,26 +115,32 @@ def tweakcontinuum(spec,model):
     return spec
 
 
-def specplot(figfile,spec,fmodel,out):
+def specfigure(figfile,spec,fmodel,out,original=None,verbose=True,figsize=10):
     """ Make diagnostic figure."""
     #import matplotlib
     matplotlib.use('Agg')
     #import matplotlib.pyplot as plt
     if os.path.exists(figfile): os.remove(figfile)
     norder = spec.norder
+    nlegcol = 2
+    if original is not None: nlegcol=3
     # Single-order plot
     if norder==1:
         fig,ax = plt.subplots()
-        fig.set_figheight(6)
-        fig.set_figwidth(12)
-        plt.plot(spec.wave,spec.flux,'b',label='Data',linewidth=1)
+        fig.set_figheight(figsize*0.5)
+        fig.set_figwidth(figsize)
+        if original is not None:
+            plt.plot(original.wave,original.flux,color='green',label='Original',linewidth=1)
+        plt.plot(spec.wave,spec.flux,'b',label='Masked Data',linewidth=1)
         plt.plot(fmodel.wave,fmodel.flux,'r',label='Model',linewidth=1,alpha=0.8)
-        leg = ax.legend(loc='upper left', frameon=False)
+        leg = ax.legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
         plt.xlabel('Wavelength (Angstroms)')
         plt.ylabel('Normalized Flux')
         xr = dln.minmax(spec.wave)
         yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
-        yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.15]
+        if original is not None:
+            yr = [np.min([original.flux,spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]            
+        yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.005]
         yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
         plt.xlim(xr)
         plt.ylim(yr)
@@ -142,24 +148,28 @@ def specplot(figfile,spec,fmodel,out):
         plt.title(spec.filename)
         ax.annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
                     (snr, out['teff'], out['tefferr'], out['logg'], out['loggerr'], out['feh'], out['feherr'], out['vrel'], out['vrelerr'], out['chisq']),
-                    xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.90),ha='center')
+                    xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
     # Multi-order plot
     else:
         fig,ax = plt.subplots(norder)
-        fig.set_figheight(10)
-        fig.set_figwidth(12)
+        fig.set_figheight(figsize)
+        fig.set_figwidth(figsize)
         for i in range(norder):
-            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Data',linewidth=1)
+            if original is not None:
+                ax[i].plot(original.wave[:,i],original.flux[:,i],color='green',label='Original',linewidth=1)            
+            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Masked Data',linewidth=1)
             ax[i].plot(fmodel.wave[:,i],fmodel.flux[:,i],'r',label='Model',linewidth=1,alpha=0.8)
             if i==0:
-                leg = ax[i].legend(loc='upper left', frameon=False)
+                leg = ax[i].legend(loc='upper left', frameon=True, framealpha=0.8, ncol=nlegcol)
             ax[i].set_xlabel('Wavelength (Angstroms)')
             ax[i].set_ylabel('Normalized Flux')
             xr = dln.minmax(spec.wave[:,i])
             yr = [np.min([spec.flux[:,i],fmodel.flux[:,i]]), np.max([spec.flux[:,i],fmodel.flux[:,i]])]
+            if original is not None:
+                yr = [np.min([original.flux[:,i],spec.flux[:,i],fmodel.flux[:,i]]), np.max([spec.flux[:,i],fmodel.flux[:,i]])]
             yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
             if i==0:
-                yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.15]            
+                yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.05]            
             yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
             ax[i].set_xlim(xr)
             ax[i].set_ylim(yr)
@@ -169,10 +179,10 @@ def specplot(figfile,spec,fmodel,out):
                 ax[i].set_title(spec.filename)
                 ax[i].annotate(r'S/N=%5.1f   Teff=%5.1f$\pm$%5.1f  logg=%5.2f$\pm$%5.2f  [Fe/H]=%5.2f$\pm$%5.2f   Vrel=%5.2f$\pm$%5.2f   chisq=%5.2f' %
                                (snr,out['teff'],out['tefferr'],out['logg'],out['loggerr'],out['feh'],out['feherr'],out['vrel'],out['vrelerr'],out['chisq']),
-                               xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.90),ha='center')
+                               xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
     plt.savefig(figfile,bbox_inches='tight')
     plt.close(fig)
-    print('Figure saved to '+figfile)
+    if verbose is True: print('Figure saved to '+figfile)
 
 
 def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
@@ -994,7 +1004,7 @@ def emcee_lnprior(theta, models):
         inside = True
         for i in range(3):
             inside &= (theta[i]>=m.ranges[i,0]) & (theta[i]<=m.ranges[i,1])
-        inside &= (np.abs(theta[3]) <= 2000)
+        inside &= (np.abs(theta[3]) <= 1000)
         if inside:
             return 0.0
     return -np.inf
@@ -1190,8 +1200,8 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     for p in models:
         lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
         ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
-    lbounds[3] = -2000
-    ubounds[3] = 2000    
+    lbounds[3] = -1000
+    ubounds[3] = 1000    
     bounds = (lbounds, ubounds)
     
     # function to use with curve_fit
@@ -1389,8 +1399,8 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     for p in modlist[0]:
         lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
         ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
-    lbounds[3:] = -2000
-    ubounds[3:] = 2000    
+    lbounds[3:] = -1000
+    ubounds[3:] = 1000    
     bounds = (lbounds, ubounds)
     
     # function to use with curve_fit
@@ -1585,18 +1595,18 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
             spec.err[bd[0]] = 1e30
             spec.mask[bd[0]] = True
     # Mask out any large positive outliers, e.g. badly subtracted sky lines
-    spec = utils.maskoutliers(spec,verbose=True)
+    specm = utils.maskoutliers(spec,verbose=verbose)
     
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
     if models is None: models = cannon.models
-    pmodels = models.prepare(spec)
+    pmodels = models.prepare(specm)
     ##  NOT interpolated onto the observed wavelength scale
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid(spec,pmodels,verbose=verbose,maxvel=1000.0)
-
+    beststr, xmodel = fit_xcorrgrid(specm,pmodels,verbose=verbose,maxvel=1000.0)  
+    
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
     # put observed spectrum on rest wavelength scale
@@ -1604,10 +1614,10 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     # run cannon.test() on the spectrum and variances
     # just shift the observed wavelengths to rest, do NOT interpolate the spectrum
     #restwave = obs.wave*(1-beststr['vrel']/cspeed)
-    restwave = spec.wave*(1-beststr['vrel']/cspeed)    
+    restwave = specm.wave*(1-beststr['vrel']/cspeed)    
     bestmodel = pmodels.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
     bestmodelinterp = bestmodel.interp(restwave)
-    labels0, cov0, meta0 = bestmodelinterp.test(spec)
+    labels0, cov0, meta0 = bestmodelinterp.test(specm)
 
     # Make sure the labels are within the ranges
     labels0 = labels0.flatten()
@@ -1615,13 +1625,12 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     bestmodelspec0 = bestmodelinterp(labels0)
     if verbose is True:
         print('Initial Cannon stellar parameters using initial RV')
-        printpars(labels0)
+        printpars(labels0) 
         
     # Tweak the continuum normalization
-    spec = tweakcontinuum(spec,bestmodelspec0)    
+    specm = tweakcontinuum(specm,bestmodelspec0)
     # Mask out very discrepant pixels when compared to the best-fit model
-    specm = utils.maskdiscrepant(spec,bestmodelspec0,verbose=True)
-
+    specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
     
     # Refit the Cannon
     labels, cov, meta = bestmodelinterp.test(specm)
@@ -1633,7 +1642,6 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
         print('Initial Cannon stellar parameters using initial RV and Tweaking the normalization')
         printpars(labels)
     
-        
     # Step 5: Improved RV using better Cannon template
     #-------------------------------------------------
     wavelog = utils.make_logwave_scale(specm.wave,vel=0.0)  # get new wavelength solution
@@ -1641,7 +1649,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     m = pmodels.get_best_model(labels).interp(wavelog)(labels,rv=0)
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+2000.0/cspeed)/dwlog))
+    maxlag = np.int(np.ceil(np.log10(1+1000.0/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     outstr2 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
     outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
@@ -1651,7 +1659,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     beststr2['teff'] = labels[0]
     beststr2['logg'] = labels[1]
     beststr2['feh'] = labels[2]
-
+    
     # Step 6: Improved Cannon stellar parameters
     #-------------------------------------------
     restwave = specm.wave*(1-beststr['vrel']/cspeed)    
@@ -1665,20 +1673,21 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     if verbose is True:
         print('Improved RV and Cannon stellar parameters:')
         printpars(np.concatenate((labels2,beststr2['vrel'])),[None,None,None,beststr2['vrelerr']])
-
+    
     # Step 7: Least Squares fitting with forward modeling
     #----------------------------------------------------
     # Get best model so far
     m = pmodels(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
     # Tweak the continuum
     specm = tweakcontinuum(specm,m)
+
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
     initpar = np.array(initpar).flatten()
     lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose)
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]
-
+  
     
     # Step 8: Run fine grid in RV, forward modeling
     #----------------------------------------------
@@ -1696,7 +1705,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     if verbose is True:
         print('Fine grid best RV = %5.2f km/s' % finerv)
         print('chisq = %5.2f' % finechisq)
-
+    
     # Final parameters and uncertainties (so far)
     fpars = lspars
     fperror = lsperror
@@ -1713,7 +1722,6 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
         fperror = out['parerr']
         fchisq = out['chisq']
         fmodel = mcmodel
-
 
     # Construct the output
     #---------------------
@@ -1740,11 +1748,18 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     # Make diagnostic figure
     if figfile is not None:
-        specplot(figfile,specm,fmodel,out)
+        # Apply continuum tweak to original spectrum as well
+        cratio = specm.cont/spec.cont
+        orig = spec.copy()
+        orig.flux /= cratio
+        orig.err /= cratio
+        orig.cont *= cratio    
+        # Make the diagnostic figure
+        specfigure(figfile,specm,fmodel,out,original=orig,verbose=verbose)
 
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
-
+    
     # Return the prpared models
     if retpmodels is True:
         return out, fmodel, specm, pmodels
@@ -1758,7 +1773,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
     # speclist is list of Spec1D objects.
 
     nspec = len(speclist)
-
+    t0 = time.time()
+    
     # If list of filenames input, then load them
     
     # Creating catalog of info on each spectrum
@@ -1775,9 +1791,10 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
     if verbose is True: print('Step #1: Fitting the individual spectra')
     specmlist = []
     modlist = []
-    for i,spec in enumerate(speclist):
+    for i in range(len(speclist)):
+        spec = speclist[i].copy()
         if verbose is True:
-            print('Getting RV for spectrum '+str(i+1))
+            print('Fitting spectrum '+str(i+1))
             print(speclist[i].filename)
         # Only do this for spectra with S/N>10 or 15
         if spec.snr>snrcut:
@@ -1785,10 +1802,10 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
             figfile = None
             if saveplot is True:
                 fdir, base, ext = utils.splitfilename(speclist[i].filename)
-                figfile = base+'_fit.png'
+                figfile = base+'_dopfit.png'
                 if fdir != '': figfile = fdir+'/'+figfile
             # Fit the spectrum    
-            out, model, specm, pmodels = fit(speclist[i],verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
@@ -1806,7 +1823,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
             info['bc'][i] = out['bc']
         else:
             if verbose is True:
-                print('Skipping: S/N=%6.1f below threshold of %6.1f.  Just preparing models.' % (spec.snr,snrcut))
+                print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectra and preparing models.' % (spec.snr,snrcut))
             modlist.append(cannon.models.prepare(speclist[i]).copy())
             sp = speclist[i].copy()
             sp.normalize()
@@ -1815,7 +1832,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
-            
+        
     # Step 2) find weighted stellar parameters
     if verbose is True: print('Step #2: Getting weighted stellar parameters')
     gd, ngd = dln.where(np.isfinite(info['chisq']))
@@ -1845,48 +1862,85 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
             printpars(wtpars)
         
     # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
-    initpar = np.zeros(3+nspec,float)
-    initpar[0:3] = wtpars[0:3]
-    initpar[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
+    initpar1 = np.zeros(3+nspec,float)
+    initpar1[0:3] = wtpars[0:3]
+    initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
 
     
     # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #3: Fitting all spectra simultaneously')
-    out, fmodels = multifit_lsq(specmlist,modlist,initpar)
-    stelpars = out['pars'][0,0:3]
-    stelparerr = out['parerr'][0,0:3]    
-    vrel = out['pars'][0,3:]
-    vrelerr = out['parerr'][0,3:]
-    vhelio = vrel+info['bc']
-    mnvhelio = np.mean(vhelio)
+    out1, fmodels1 = multifit_lsq(specmlist,modlist,initpar1)
+    stelpars1 = out1['pars'][0,0:3]
+    stelparerr1 = out1['parerr'][0,0:3]    
+    vrel1 = out1['pars'][0,3:]
+    vrelerr1 = out1['parerr'][0,3:]
+    vhelio1 = vrel1+info['bc']
+    mnvhelio1 = np.mean(vhelio1)
+    if verbose is True:
+        print('Parameters:')
+        printpars(np.hstack((stelpars1,mnvhelio1)))
+        vscatter1 = np.std(vhelio1)
+        print('Vscatter =  %6.2f km/s' % vscatter1)
+        print(vhelio1)
+
+    # Step 4) tweak continua and remove outlies
+    if verbose is True:
+        print(' ')
+        print('Step #4: Tweaking continuum and masking outliers')
+    for i,spm in enumerate(specmlist):
+        bestm = modlist[i](stelpars1,rv=vrel1[i])
+        # Tweak the continuum normalization
+        spm = tweakcontinuum(spm,bestm)
+        # Mask out very discrepant pixels when compared to the best-fit model
+        spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
+        specmlist[i] = spm.copy()
+        
+    # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
+    if verbose is True:
+        print(' ')
+        print('Step #5: Re-fitting all spectra simultaneously')
+
+    # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    initpar2 = out1['pars'][0]
+    out2, fmodels2 = multifit_lsq(specmlist,modlist,initpar2)
+    stelpars2 = out2['pars'][0,0:3]
+    stelparerr2 = out2['parerr'][0,0:3]    
+    vrel2 = out2['pars'][0,3:]
+    vrelerr2 = out2['parerr'][0,3:]
+    vhelio2 = vrel2+info['bc']
+    mnvhelio2 = np.mean(vhelio2)
     if verbose is True:
         print('Final parameters:')
-        printpars(np.hstack((stelpars,mnvhelio)))
-        vscatter = np.std(vhelio)
-        print('Vscatter =  %6.2f km/s' % vscatter)
-        print(vhelio)
+        printpars(np.hstack((stelpars2,mnvhelio2)))
+        vscatter2 = np.std(vhelio2)
+        print('Vscatter =  %6.2f km/s' % vscatter2)
+        print(vhelio2)
+
 
     # Final output structure
     final = info.copy()
-    final['teff'] = stelpars[0]
-    final['tefferr'] = stelparerr[0]
-    final['logg'] = stelpars[1]
-    final['loggerr'] = stelparerr[1]
-    final['feh'] = stelpars[2]
-    final['feherr'] = stelparerr[2]    
-    final['vrel'] = vrel
-    final['vrelerr'] = vrelerr
-    final['vhelio'] = vhelio
+    final['teff'] = stelpars2[0]
+    final['tefferr'] = stelparerr2[0]
+    final['logg'] = stelpars2[1]
+    final['loggerr'] = stelparerr2[1]
+    final['feh'] = stelpars2[2]
+    final['feherr'] = stelparerr2[2]    
+    final['vrel'] = vrel2
+    final['vrelerr'] = vrelerr2
+    final['vhelio'] = vhelio2
     bmodel = []
     for i in range(nspec):
         pars1 = [final['teff'][i], final['logg'][i], final['feh'][i]]
-        vrel1 = final['vrel'][i]
-        sp = speclist[i]
-        m = modlist[i](pars1,rv=vrel1)
+        vr1 = final['vrel'][i]
+        sp = specmlist[i]
+        m = modlist[i](pars1,rv=vr1)
         chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
         final['chisq'][i] = chisq
         bmodel.append(m)
+
+    # How long did this take
+    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
-    return final, bmodel
+    return final, bmodel, specmlist

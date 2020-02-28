@@ -15,6 +15,7 @@ import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
 from dlnpyutils import utils as dln
+import matplotlib.pyplot as plt
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -454,7 +455,7 @@ def maskoutliers(spec,nsig=5,verbose=False):
     return spec2
 
 
-def maskdiscrepant(spec,model,nsig=4,verbose=False):
+def maskdiscrepant(spec,model,nsig=10,verbose=False):
     """
     Mask pixels that are discrepant when compared to a model.
 
@@ -501,3 +502,62 @@ def maskdiscrepant(spec,model,nsig=4,verbose=False):
     if verbose is True: print('Masked '+str(totnbd)+' discrepant pixels')
     
     return spec2
+
+
+def plotspec(spec,spec2=None,model=None,figsize=10):
+    """ Plot a spectrum."""
+    norder = spec.norder
+    fig = plt.gcf()   # get current graphics window
+    fig.clf()         # clear
+    # Single-order plot
+    if norder==1:
+        ax = fig.subplots()
+        fig.set_figheight(figsize*0.5)
+        fig.set_figwidth(figsize)
+        plt.plot(spec.wave,spec.flux,'b',label='Spectrum 1',linewidth=1)
+        if spec2 is not None:
+            plt.plot(spec2.wave,spec2.flux,'green',label='Spectrum 2',linewidth=1)            
+        if model is not None:
+            plt.plot(model.wave,model.flux,'r',label='Model',linewidth=1,alpha=0.8)
+        leg = ax.legend(loc='upper left', frameon=False)
+        plt.xlabel('Wavelength (Angstroms)')
+        plt.ylabel('Normalized Flux')
+        xr = dln.minmax(spec.wave)
+        allflux = spec.flux.flatten()
+        if spec2 is not None:
+            allflux = np.concatenate((allflux,spec2.flux.flatten()))
+        if model is not None:
+            allflux = np.concatenate((allflux,model.flux.flatten()))                
+        yr = [np.min(allflux), np.max(allflux)]
+        yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.005]
+        yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+        plt.xlim(xr)
+        plt.ylim(yr)
+    # Multi-order plot
+    else:
+        ax = fig.subplots(norder)
+        fig.set_figheight(figsize)
+        fig.set_figwidth(figsize)
+        for i in range(norder):
+            ax[i].plot(spec.wave[:,i],spec.flux[:,i],'b',label='Spectrum 1',linewidth=1)
+            if spec2 is not None:
+                ax[i].plot(spec2.wave[:,i],spec2.flux[:,i],'green',label='Spectrum 2',linewidth=1)                        
+            if model is not None:
+                ax[i].plot(model.wave[:,i],model.flux[:,i],'r',label='Model',linewidth=1,alpha=0.8)
+            if i==0:
+                leg = ax[i].legend(loc='upper left', frameon=False)
+            ax[i].set_xlabel('Wavelength (Angstroms)')
+            ax[i].set_ylabel('Normalized Flux')
+            xr = dln.minmax(spec.wave[:,i])
+            allflux = spec.flux[:,i].flatten()
+            if spec2 is not None:
+                allflux = np.concatenate((allflux,spec2.flux[:,i].flatten()))
+            if model is not None:
+                allflux = np.concatenate((allflux,model.flux[:,i].flatten()))                
+            yr = [np.min(allflux), np.max(allflux)]
+            yr = [yr[0]-dln.valrange(yr)*0.05,yr[1]+dln.valrange(yr)*0.05]
+            if i==0:
+                yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.05]            
+            yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
+            ax[i].set_xlim(xr)
+            ax[i].set_ylim(yr)
