@@ -30,7 +30,7 @@ if __name__ == "__main__":
     files = args.files
     inpoutfile = args.outfile
     inpfigfile = args.figfile
-    outdir = args.outdir
+    outdir = args.outdir[0]
     joint = args.joint
     snrcut = args.snrcut
     verbose = args.verbose
