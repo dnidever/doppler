@@ -88,7 +88,7 @@ def tweakcontinuum(spec,model):
     if hasattr(spec,'cont') is False:
         spec.cont = spec.flux.copy()*0+1
     for i in range(spec.norder):
-        smlen = spec.npix/20.0
+        smlen = spec.npix/10.0
         if spec.norder==1:
             ratio = spec.flux/model.flux
             mask = spec.mask
@@ -111,7 +111,7 @@ def tweakcontinuum(spec,model):
             spec.cont[:,i] *= sm
             spec.flux[:,i] /= sm
             spec.err[:,i] /= sm
-
+            
     return spec
 
 
@@ -596,7 +596,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     best_shiftind0 = np.argmax(ccf)
     best_xshift0 = lag[best_shiftind0]
     #temp = shift( tout, best_xshift0)
-    temp = np.roll(template, best_xshift0)
+    temp = np.roll(template, best_xshift0, axis=0)
 
     # Find Chisq for each synthetic spectrum
     gdmask = (np.isfinite(spec)==True) & (np.isfinite(temp)==True) & (spec>0.0) & (err>0.0) & (err < 1e5)
@@ -1132,7 +1132,7 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
         for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
         outstr['teff'][i] = teff[i]
         outstr['logg'][i] = logg[i]
-        outstr['feh'][i] = feh            
+        outstr['feh'][i] = feh
     # Get best fit
     bestind = np.argmin(outstr['chisq'])    
     beststr = outstr[bestind]
@@ -1786,6 +1786,13 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
     for i,s in enumerate(speclist):
         info['filename'][i] = s.filename
         info['snr'][i] = s.snr
+
+    # Make sure some spectra pass the S/N cut
+    hisnr, nhisnr = dln.where(info['snr']>snrcut)
+    if nhisnr==0:
+        snrcut = np.max(info['snr'])-0.5
+        if verbose is True:
+            print('Lowering S/N cut to %5.1f so at least one spectrum passes the cut' % snrcut)
         
     # Step 1) Loop through each spectrum and run fit()
     if verbose is True: print('Step #1: Fitting the individual spectra')
@@ -1823,15 +1830,16 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
             info['bc'][i] = out['bc']
         else:
             if verbose is True:
-                print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectra and preparing models.' % (spec.snr,snrcut))
+                print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
             modlist.append(cannon.models.prepare(speclist[i]).copy())
             sp = speclist[i].copy()
-            sp.normalize()
+            if sp.normalized is False: sp.normalize()
             sp = utils.maskoutliers(sp)
             specmlist.append(sp)
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
+
         
     # Step 2) find weighted stellar parameters
     if verbose is True: print('Step #2: Getting weighted stellar parameters')
@@ -1939,7 +1947,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
         chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
         final['chisq'][i] = chisq
         bmodel.append(m)
-
+        
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
