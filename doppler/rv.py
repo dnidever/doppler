@@ -1887,11 +1887,13 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     vrel1 = out1['pars'][0,3:]
     vrelerr1 = out1['parerr'][0,3:]
     vhelio1 = vrel1+info['bc']
-    mnvhelio1 = np.mean(vhelio1)
+    medvhelio1 = np.median(vhelio1)
+    vscatter1 = dln.mad(vhelio1)
+    verr1 = vscatter1/np.sqrt(nspec)
     if verbose is True:
         print('Parameters:')
-        printpars(np.hstack((stelpars1,mnvhelio1)))
-        vscatter1 = np.std(vhelio1)
+        printpars(stelpars1)
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio1,verr1))
         print('Vscatter =  %6.2f km/s' % vscatter1)
         print(vhelio1)
 
@@ -1920,11 +1922,13 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     vrel2 = out2['pars'][0,3:]
     vrelerr2 = out2['parerr'][0,3:]
     vhelio2 = vrel2+info['bc']
-    mnvhelio2 = np.mean(vhelio2)
+    medvhelio2 = np.median(vhelio2)
+    vscatter2 = dln.mad(vhelio2)
+    verr2 = vscatter2/np.sqrt(nspec)
     if verbose is True:
         print('Final parameters:')
-        printpars(np.hstack((stelpars2,mnvhelio2)))
-        vscatter2 = np.std(vhelio2)
+        printpars(stelpars2)
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
         print('Vscatter =  %6.2f km/s' % vscatter2)
         print(vhelio2)
 
