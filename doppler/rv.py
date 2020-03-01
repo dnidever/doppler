@@ -1789,7 +1789,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
 
     # Make sure some spectra pass the S/N cut
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
-    if nhisnr==0:
+    if nhisnr < np.ceil(0.25*nspec):
         snr = np.flip(np.sort(info['snr']))
         snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
         if verbose is True:
