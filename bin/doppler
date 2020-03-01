@@ -186,7 +186,7 @@ if __name__ == "__main__":
                 spec = speclist[i]
                 specm = specmlist[i]
                 fmodel = model[i]
-                fout = out[i]
+                fout = final[i]
                 # Apply continuum tweak to original spectrum as well
                 cratio = specm.cont/spec.cont
                 orig = spec.copy()
