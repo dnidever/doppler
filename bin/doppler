@@ -31,6 +31,7 @@ if __name__ == "__main__":
     inpoutfile = args.outfile
     inpfigfile = args.figfile
     outdir = args.outdir[0]
+    if outdir == '': outdir = None
     joint = args.joint
     snrcut = args.snrcut
     verbose = args.verbose
@@ -84,8 +85,8 @@ if __name__ == "__main__":
             if (inpfigfile=='') & (saveplot is True):
                 fdir,base,ext = doppler.utils.splitfilename(f)
                 figfile = base+'_dopfit.png'
-                if outdir != '': figfile = outdir+'/'+figfile
-                if (outdir == '') & (fdir != ''): figfile = fdir+'/'+figfile 
+                if outdir is not None: figfile = outdir+'/'+figfile
+                if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
                 
             # Run Doppler
             out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose)
@@ -96,8 +97,8 @@ if __name__ == "__main__":
             else:
                 fdir,base,ext = doppler.utils.splitfilename(f)
                 outfile = base+'_doppler.fits'
-                if outdir != '': outfile = outdir+'/'+outfile
-                if (outdir == '') & (fdir != ''): outfile = fdir+'/'+outfile
+                if outdir is not None: outfile = outdir+'/'+outfile
+                if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
             if verbose is True:
                 print('Writing output to '+outfile)
             if os.path.exists(outfile): os.remove(outfile)
@@ -119,8 +120,8 @@ if __name__ == "__main__":
         if inpoutfile=='':
             fdir,base,ext = doppler.utils.splitfilename(files[0])
             outfile = base+'_doppler.fits'
-            if outdir != '': outfile = outdir+'/'+outfile
-            if (outdir == '') & (fdir != ''): outfile = fdir+'/'+outfile
+            if outdir is not None: outfile = outdir+'/'+outfile
+            if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
         else:
             outfile = inpoutfile
             
@@ -148,7 +149,7 @@ if __name__ == "__main__":
     
         # Run Doppler jointfit()
         if verbose is True: print('')
-        out, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose)
+        out, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose,outdir=outdir)
 
         # Save the output
         if verbose is True:
@@ -174,8 +175,8 @@ if __name__ == "__main__":
                 # Figure the output figure filename
                 fdir,base,ext = doppler.utils.splitfilename(speclist[i].filename)
                 figname = base+'_dopjointfit.png'
-                if outdir != '': figname = outdir+'/'+figname
-                if (outdir == '') & (fdir != ''): figname = fdir+'/'+figname
+                if outdir is not None: figname = outdir+'/'+figname
+                if (outdir is None) & (fdir != ''): figname = fdir+'/'+figname
                 # Make the plot
                 spec = speclist[i]
                 specm = specmlist[i]
@@ -195,8 +196,8 @@ if __name__ == "__main__":
             # Combine the PDFs into one
             fdir,base,ext = doppler.utils.splitfilename(files[0])
             combname = base+'_dopjointfit_comb.pdf'  # png
-            if outdir != '': combname = outdir+'/'+combname
-            if (outdir == '') & (fdir != ''): combname = fdir+'/'+combname
+            if outdir is not None: combname = outdir+'/'+combname
+            if (outdir is None) & (fdir != ''): combname = fdir+'/'+combname
             if os.path.exists(combname): os.remove(combname)
             cmd = ['gs','-dBATCH','-dNOPAUSE','-q','-sDEVICE=pdfwrite','-sOutputFile='+combname]
             cmd = cmd+pdfnames
