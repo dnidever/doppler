@@ -1768,7 +1768,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=False,outdir=None):
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None):
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
@@ -1812,7 +1812,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
                 fdir, base, ext = utils.splitfilename(speclist[i].filename)
                 figfile = base+'_dopfit.png'
                 if outdir is not None: figfile = outdir+'/'+figfile
-                if (outdir is None) & (fdir != '':) figfile = fdir+'/'+figfile
+                if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
             out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
             modlist.append(pmodels.copy())

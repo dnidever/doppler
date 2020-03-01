@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
     parser.add_argument('-l','--list', type=str, default='', help='Input list of FITS files')
     parser.add_argument('-j','--joint', action='store_true', help='Joint fit all the spectra')
-    parser.add_argument('--snrcut', type=float, default=15.0, help='S/N threshold to fit spectrum separately')    
+    parser.add_argument('--snrcut', type=float, default=10.0, help='S/N threshold to fit spectrum separately')    
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
     parser.add_argument('-m','--mcmc', action='store_true', help='Run MCMC when fitting spectra individually')  
     parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')    
