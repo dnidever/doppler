@@ -149,16 +149,21 @@ if __name__ == "__main__":
     
         # Run Doppler jointfit()
         if verbose is True: print('')
-        out, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose,outdir=outdir)
+        sumstr, final, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,verbose=verbose,outdir=outdir)
 
         # Save the output
         if verbose is True:
             print('Writing output to '+outfile)
         if os.path.exists(outfile): os.remove(outfile)
-        Table(out).write(outfile)
+        # Summary average values
+        Table(sumstr).write(outfile)
+        # append other items
+        hdulist = fits.open(outfile)
+        # append final values for each spectrum
+        hdu = fits.table_to_hdu(Table(final))
+        hdulist.append(hdu)
         # append best model
         # there's a model for each spectrum, each one gets an extension
-        hdulist = fits.open(outfile)
         for i,m in enumerate(model):
             hdu = fits.PrimaryHDU(m.flux)
             hdulist.append(hdu)

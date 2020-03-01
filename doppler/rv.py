@@ -1931,8 +1931,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
         print('Vscatter =  %6.2f km/s' % vscatter2)
         print(vhelio2)
-
-
+    
     # Final output structure
     final = info.copy()
     final['teff'] = stelpars2[0]
@@ -1945,16 +1944,37 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     final['vrelerr'] = vrelerr2
     final['vhelio'] = vhelio2
     bmodel = []
+    totchisq = 0.0
+    totnpix = 0
     for i in range(nspec):
         pars1 = [final['teff'][i], final['logg'][i], final['feh'][i]]
         vr1 = final['vrel'][i]
         sp = specmlist[i]
         m = modlist[i](pars1,rv=vr1)
         chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
+        totchisq += np.sum(((sp.flux-m.flux)/sp.err)**2)
+        totnpix += sp.npix*sp.norder
         final['chisq'][i] = chisq
         bmodel.append(m)
+    totchisq = np.sqrt(totchisq/totnpix)
+        
+    # Average values
+    sumdt = np.dtype([('vhelio',float),('vscatter',float),('verr',float),
+                      ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
+                      ('feherr',float),('chisq',float)])
+    sumstr = np.zeros(1,dtype=sumdt)
+    sumstr['vhelio'] = medvhelio2
+    sumstr['vscatter'] = vscatter2
+    sumstr['verr'] = verr2
+    sumstr['teff'] = stelpars2[0]
+    sumstr['tefferr'] = stelparerr2[0]
+    sumstr['logg'] = stelpars2[1]
+    sumstr['loggerr'] = stelparerr2[1]
+    sumstr['feh'] = stelpars2[2]
+    sumstr['feherr'] = stelparerr2[2]
+    sumstr['chisq'] = totchisq
         
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
-    return final, bmodel, specmlist
+    return sumstr, final, bmodel, specmlist
