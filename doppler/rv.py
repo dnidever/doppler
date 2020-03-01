@@ -1790,7 +1790,9 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
     # Make sure some spectra pass the S/N cut
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
     if nhisnr==0:
-        snrcut = np.max(info['snr'])-0.5
+        snr = np.sort(info['snr']).flip()
+        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nlen-1))
+        #snrcut = np.max(info['snr'])-0.5
         if verbose is True:
             print('Lowering S/N cut to %5.1f so at least one spectrum passes the cut' % snrcut)
         
