@@ -1790,11 +1790,10 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=15.0,saveplot=False,verbose=
     # Make sure some spectra pass the S/N cut
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
     if nhisnr==0:
-        snr = np.sort(info['snr']).flip()
-        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nlen-1))]
-        #snrcut = np.max(info['snr'])-0.5
+        snr = np.flip(np.sort(info['snr']))
+        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
         if verbose is True:
-            print('Lowering S/N cut to %5.1f so at least one spectrum passes the cut' % snrcut)
+            print('Lowering S/N cut to %5.1f so at least 25%% of the spectra pass the cut' % snrcut)
         
     # Step 1) Loop through each spectrum and run fit()
     if verbose is True: print('Step #1: Fitting the individual spectra')
