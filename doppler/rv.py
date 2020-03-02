@@ -945,7 +945,7 @@ def printpars(pars,parerr=None):
         else:
             err = parerr[i]
         if err is not None:
-            print('%-6s =  %8.2f +/- %5.2f %-5s' % (names[i],pars[i],err,units[i]))
+            print('%-6s =  %8.2f +/- %6.3f %-5s' % (names[i],pars[i],err,units[i]))
         else:
             print('%-6s =  %8.2f %-5s' % (names[i],pars[i],units[i]))
 
@@ -1939,10 +1939,12 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     totchisq = np.sqrt(totchisq/totnpix)
         
     # Average values
-    sumdt = np.dtype([('vhelio',float),('vscatter',float),('verr',float),
+    sumdt = np.dtype([('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float),
                       ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
                       ('feherr',float),('chisq',float)])
     sumstr = np.zeros(1,dtype=sumdt)
+    sumstr['medsnr'] = np.median(info['snr'])
+    sumstr['totsnr'] = np.sqrt(np.sum(info['snr']**2))
     sumstr['vhelio'] = medvhelio2
     sumstr['vscatter'] = vscatter2
     sumstr['verr'] = verr2
