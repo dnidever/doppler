@@ -409,6 +409,31 @@ def denoise(flux,err=None,wtype='db2'):
 
 #out=denoise_wavelet(f2,0.3, wavelet='db2',method='BayesShrink', mode='soft', rescale_sigma=False) 
 
+
+def specprep(spec):
+    """ Prepare the spectrum.  Mask bad pixels and normalize."""
+
+    # Mask the spectrum
+    if spec.mask is not None:
+        # Set errors to high value, leave flux alone
+        spec.err[spec.mask] = 1e30
+    # Fix any NaNs in flux
+    bd = np.where(~np.isfinite(spec.flux))
+    if len(bd[0])>0:
+        if spec.norder>1:
+            spec.flux[bd[0],bd[1]] = 0.0
+            spec.err[bd[0],bd[1]] = 1e30
+            spec.mask[bd[0],bd[1]] = True
+        else:
+            spec.flux[bd[0]] = 0.0
+            spec.err[bd[0]] = 1e30
+            spec.mask[bd[0]] = True
+    # normalize spectrum
+    if spec.normalized is False: spec.normalize()  
+
+    return spec
+
+
 def maskoutliers(spec,nsig=5,verbose=False):
     """
     Mask large positive outliers and negative flux pixels in the spectrum.

@@ -1087,10 +1087,7 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
     # Step 1: Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    if spec.normalized is False: spec.normalize()
-    if spec.mask is not None:
-        # Set errors to high value, leave flux alone
-        spec.err[spec.mask] = 1e30
+    spec = utils.specprep(spec)
 
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
@@ -1180,10 +1177,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    if spec.normalized is False: spec.normalize()
-    if spec.mask is not None:
-        # Set errors to high value, leave flux alone
-        spec.err[spec.mask] = 1e30
+    spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
@@ -1216,7 +1210,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     # Use curve_fit
     lspars, lscov = curve_fit(spec_interp, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
                               p0=initpar, bounds=bounds)
-    # If it hits a boundary then the solution won't chance much compared to initpar
+    # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
     lsperror = np.sqrt(np.diag(lscov))
 
@@ -1278,10 +1272,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    if spec.normalized is False: spec.normalize()
-    if spec.mask is not None:
-        # Set errors to high value, leave flux alone
-        spec.err[spec.mask] = 1e30
+    spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
@@ -1578,22 +1569,8 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     
     # Step 1: Prepare the spectrum
     #-----------------------------
-    # normalize and mask spectrum
-    if spec.normalized is False: spec.normalize()
-    if spec.mask is not None:
-        # Set errors to high value, leave flux alone
-        spec.err[spec.mask] = 1e30
-    # Fix any NaNs in flux
-    bd = np.where(~np.isfinite(spec.flux))
-    if len(bd[0])>0:
-        if spec.norder>1:
-            spec.flux[bd[0],bd[1]] = 0.0
-            spec.err[bd[0],bd[1]] = 1e30
-            spec.mask[bd[0],bd[1]] = True
-        else:
-            spec.flux[bd[0]] = 0.0
-            spec.err[bd[0]] = 1e30
-            spec.mask[bd[0]] = True
+    # Normalize and mask the spectrum
+    spec = utils.specprep(spec)         
     # Mask out any large positive outliers, e.g. badly subtracted sky lines
     specm = utils.maskoutliers(spec,verbose=verbose)
     
@@ -1728,7 +1705,9 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     bc = specm.barycorr()
     vhelio = fpars[3] + bc
     if verbose is True:
-        print('Vhelio = %5.2f km/s' % vhelio)
+        print('Final parameters:')
+        printpars(fpars[0:3],fperror[0:3])
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (vhelio,fperror[3]))
         print('BC = %5.2f km/s' % bc)
     dtype = np.dtype([('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32),
                       ('teff',np.float32),('tefferr',np.float32),('logg',np.float32),('loggerr',np.float32),
@@ -1835,7 +1814,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
                 print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
             modlist.append(cannon.models.prepare(speclist[i]).copy())
             sp = speclist[i].copy()
-            if sp.normalized is False: sp.normalize()
+            sp = utils.specprep(sp)   # mask and normalize
+            # Mask outliers
             sp = utils.maskoutliers(sp)
             specmlist.append(sp)
             # at least need BC

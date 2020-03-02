@@ -342,7 +342,8 @@ class Spec1D:
                                                                   percentile=perclevel,bins=bins,range=None)
             xbin = bin_edges[0:-1]+0.5*binsize
             # Interpolate to full grid
-            cont1 = dln.interp(xbin,ybin,x,extrapolate=True)
+            fnt = np.isfinite(ybin)
+            cont1 = dln.interp(xbin[fnt],ybin[fnt],x,extrapolate=True)
             cont1 *= medy
             
             flux[:,o] /= cont1

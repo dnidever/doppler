@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
             # Load the spectrum
             spec = doppler.read(f)
-            spec.normalize()
+            spec = doppler.utils.specprep(spec)  # mask and normalize            
     
             if (verbose is True):
                 if (nfiles>1):
@@ -139,7 +139,7 @@ if __name__ == "__main__":
 
             # Load the spectrum
             spec = doppler.read(f)
-            spec.normalize()
+            spec = doppler.utils.specprep(spec)  # mask and normalize
 
             if verbose is True:
                 print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
