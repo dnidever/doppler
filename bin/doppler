@@ -15,10 +15,10 @@ import subprocess
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Doppler fitting on spectra')
     parser.add_argument('files', type=str, nargs='*', help='Spectrum FITS files')
-    parser.add_argument('--outfile', type=str, default='', help='Output filename')
+    parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
-    parser.add_argument('-l','--list', type=str, default='', help='Input list of FITS files')
+    parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
     parser.add_argument('-j','--joint', action='store_true', help='Joint fit all the spectra')
     parser.add_argument('--snrcut', type=float, default=10.0, help='S/N threshold to fit spectrum separately')    
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
@@ -28,16 +28,16 @@ if __name__ == "__main__":
 
     t0 = time.time()
     files = args.files
-    inpoutfile = args.outfile
-    inpfigfile = args.figfile
-    outdir = args.outdir[0]
+    inpoutfile = dln.first_el(args.outfile)
+    inpfigfile = dln.first_el(args.figfile)
+    outdir = dln.first_el(args.outdir)
     if outdir == '': outdir = None
     joint = args.joint
     snrcut = args.snrcut
     verbose = args.verbose
     mcmc = args.mcmc
     saveplot = args.plot
-    inlist = args.list
+    inlist = dln.first_el(args.list)
 
     # Load files from a list
     if (len(files)==0) & (inlist!=''):
