@@ -1298,7 +1298,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     # Get the median and stddev values
     pars = np.zeros(ndim,float)
     parerr = np.zeros(ndim,float)
-    if verbose is True: print('Final MCMC values:')
+    if verbose is True: print('MCMC values:')
     names = ['Teff','logg','[Fe/H]','Vrel']
     for i in range(ndim):
         t=np.percentile(samples[:,i],[16,50,84])
@@ -1695,11 +1695,11 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     if (mcmc is True) | (cornername is not None):
         mcout, mcmodel = fit_mcmc(specm,pmodels,fpars,verbose=verbose,cornername=cornername)
         # Use these parameters
-        fpars = out['pars']
-        fperror = out['parerr']
-        fchisq = out['chisq']
+        fpars = mcout['pars'][0]
+        fperror = mcout['parerr'][0]
+        fchisq = mcout['chisq'][0]
         fmodel = mcmodel
-
+        
     # Construct the output
     #---------------------
     bc = specm.barycorr()
