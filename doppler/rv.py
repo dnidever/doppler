@@ -1311,7 +1311,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     pars_ml = sampler.chain[bestind[0],bestind[1],:]
 
     mcmodel = models(teff=pars[0],logg=pars[1],feh=pars[2],rv=pars[3])
-    mcchisq = np.sqrt(np.sum(((spec.flux-mcmodel.flux)/spec.err)**2)/len(spec.flux))
+    mcchisq = np.sqrt(np.sum(((spec.flux-mcmodel.flux)/spec.err)**2)/(spec.npix*spec.norder))
 
     # Put it into the output structure
     dtype = np.dtype([('pars',float,4),('pars_ml',float,4),('parerr',float,4),('chisq',float)])
@@ -1709,6 +1709,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
         printpars(fpars[0:3],fperror[0:3])
         print('Vhelio = %6.2f +/- %5.2f km/s' % (vhelio,fperror[3]))
         print('BC = %5.2f km/s' % bc)
+        print('chisq = %5.2f' % fchisq)
     dtype = np.dtype([('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32),
                       ('teff',np.float32),('tefferr',np.float32),('logg',np.float32),('loggerr',np.float32),
                       ('feh',np.float32),('feherr',np.float32),('chisq',np.float32),('bc',np.float32)])

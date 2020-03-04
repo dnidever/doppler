@@ -1126,9 +1126,6 @@ def prepare_cannon_model(model,spec,dointerp=False):
             else:
                 tmodel = cannon_copy(model)
                 tmodel.trim = False
-
-            #print('KLUDGE')
-            #return tmodel
                 
             # Rebin
             #  get LSF FWHM (A) for a handful of positions across the spectrum
@@ -1145,8 +1142,9 @@ def prepare_cannon_model(model,spec,dointerp=False):
                              fill_value=(np.nan,np.nan),assume_sorted=False)(w[xp])
             xpmod = np.round(xpmod).astype(int)
             fwhmpix = fwhm/dwmod[xpmod]
-            # need at least ~3 pixels per LSF FWHM across the spectrum
-            nbin = np.round(np.min(fwhmpix)//3).astype(int)
+            # need at least ~4 pixels per LSF FWHM across the spectrum
+            #  using 3 affects the final profile shape
+            nbin = np.round(np.min(fwhmpix)//4).astype(int)
             if nbin==0:
                 raise Exception('Model has lower resolution than the observed spectrum')
             if nbin>1:
