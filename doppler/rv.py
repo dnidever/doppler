@@ -1847,7 +1847,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         wtpars[0] = 6000.0
         wtpars[1] = 4.0
         wtpars[2] = -0.5
-        wtpars[3] = 0.0        
+        wtpars[3] = 0.0
+        vscatter0 = 999999.
         if verbose is True:
             print('No good fits.  Using these as intial guesses:')
             printpars(wtpars)
@@ -1855,7 +1856,12 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
     initpar1 = np.zeros(3+nspec,float)
     initpar1[0:3] = wtpars[0:3]
+    # the default is to use mean vhelio + BC for all visit spectra
     initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
+    # Use the Vrel values from the initial fitting if they are accurate enough
+    gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
+    if ngdinit>0:
+        initpar1[gdinit+3] = info['vrel'][gdinit]
 
     
     # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
@@ -1875,7 +1881,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         print('Parameters:')
         printpars(stelpars1)
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio1,verr1))
-        print('Vscatter =  %6.2f km/s' % vscatter1)
+        print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
     # Step 4) tweak continua and remove outlies
@@ -1910,7 +1916,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         print('Final parameters:')
         printpars(stelpars2)
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
-        print('Vscatter =  %6.2f km/s' % vscatter2)
+        print('Vscatter =  %6.3f km/s' % vscatter2)
         print(vhelio2)
     
     # Final output structure
