@@ -513,6 +513,10 @@ class Spec1D:
                 print('No DATE information in header.  Cannot calculate barycentric correction.')
                 return 0.0
             t = Time(dateobs, format='isot', scale='utc')
+            exptime = self.head.get('exptime')
+            # Take mid-point of exposure
+            if exptime is not None:
+                t += 0.5*exptime/3600.0/24.0   # add half in days
             barycorr = sc.radial_velocity_correction(kind='barycentric',obstime=t, location=obs)  
             bc = barycorr.to(u.km/u.s)  
             self.bc = bc.value

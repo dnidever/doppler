@@ -567,16 +567,23 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
         # Make median filtered error array
         #   high error values give crazy values in ccferr
         obserr1 = err.copy()
-        bderr = ((obserr1 > 1) | (obserr1 <= 0.0))
-        nbderr = np.sum(bderr)
-        ngderr = np.sum((bderr==False))
-        if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[(bderr==False)]])
-        obserr1 = median_filter(obserr1,51)
-        #print(len(template))
-        #print(len(spec))
-        #if len(template)!=len(spec):
-        #    print('problem')
-        #    import pdb; pdb.set_trace()
+        if err.ndim==1:
+            bderr = ((obserr1 > 1) | (obserr1 <= 0.0))
+            nbderr = np.sum(bderr)
+            ngderr = np.sum((bderr==False))
+            if (nbderr > 0) & (ngderr > 1): obserr1[bderr]=np.median([obserr1[(bderr==False)]])
+            obserr1 = median_filter(obserr1,51)
+        if err.ndim==2:
+            for i in range(obserr1.shape[1]):
+                oerr1 = obserr1[:,i]
+                bderr = ((oerr1 > 1) | (oerr1 <= 0.0))
+                nbderr = np.sum(bderr)
+                ngderr = np.sum((bderr==False))
+                if (nbderr > 0) & (ngderr > 1): oerr1[bderr]=np.median([oerr1[(bderr==False)]])
+                oerr1 = median_filter(oerr1,51)
+                obserr1[:,i] = oerr1
+
+        # Run the cross-correlation
         ccf, ccferr = ccorrelate(template,spec,lag,obserr1)
         
         # Apply flat-topped Gaussian prior with unit amplitude
@@ -1107,8 +1114,11 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
     maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     if samples is None:
-        teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
-        logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
+        #teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+        #logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
+        # temporarily remove WD until that's fixed        
+        teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+        logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
         feh = -0.5
         dt = np.dtype([('teff',float),('logg',float),('feh',float)])
         samples = np.zeros(len(teff),dtype=dt)
@@ -1213,7 +1223,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
     lsperror = np.sqrt(np.diag(lscov))
-
+    
     if verbose is True:
         print('Least Squares RV and stellar parameters:')
         printpars(lspars)
@@ -1636,6 +1646,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     beststr2['teff'] = labels[0]
     beststr2['logg'] = labels[1]
     beststr2['feh'] = labels[2]
+
     
     # Step 6: Improved Cannon stellar parameters
     #-------------------------------------------
@@ -1663,8 +1674,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     initpar = np.array(initpar).flatten()
     lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose)
     lspars = lsout['pars'][0]
-    lsperror = lsout['parerr'][0]
-  
+    lsperror = lsout['parerr'][0]    
     
     # Step 8: Run fine grid in RV, forward modeling
     #----------------------------------------------
@@ -1835,10 +1845,14 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
             p = info[pars[i]][gd]
             perr = info[parerr[i]][gd]
             gdp,ngdp,bdp,nbdp = dln.where(perr > 0.0,comp=True)
-            if nbdp>0: perr[bdp] = np.max(perr[gdp])*2
             # Weighted by 1/perr^2
-            mnp = dln.wtmean(p,perr)
-            wtpars[i] = mnp
+            if ngdp>0:
+                if (nbdp>0): perr[bdp] = np.max(perr[gdp])*2
+                mnp = dln.wtmean(p,perr)
+                wtpars[i] = mnp
+            # Unweighted
+            else:
+                wtpars[i] = np.mean(p)
         if verbose is True:
             print('Initial weighted parameters are:')
             printpars(wtpars)
