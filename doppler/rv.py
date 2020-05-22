@@ -1523,7 +1523,7 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     return out, lsmodel
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False):
+def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -1547,6 +1547,8 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
          the MCMC run.
     retpmodels : bool, optional
          Return the prepared moels.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
 
     Returns
     -------
@@ -1572,6 +1574,14 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     tclogger = logging.getLogger('thecannon.utils')
     tclogger.disabled = True
 
+    # Set threads
+    if nthreads is not None:
+        os.environ["OMP_NUM_THREADS"] = str(nthreads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
+        os.environ["MKL_NUM_THREADS"] = str(nthreads)
+        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
+    
     t0 = time.time()
 
     # Make internal copy
@@ -1758,12 +1768,64 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None):
-    """This fits a Cannon model to multiple spectra of the same star."""
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,nthreads=None):
+    """
+    This fits a Cannon model to multiple spectra of the same star.
+
+    Parameters
+    ----------
+    speclist : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models, optional
+         A list of Cannon models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is only run the individual spectra are being fit.
+         This is False by default.
+    snrcut : int, optional
+         S/N cut to fit individual spectra in the first step.  The default is snrcut=10.
+    saveplot : bool, optional
+         Save output plots.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    outdir : str, optional
+         The directory for output files.  The default is to use the current directory.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+
+    Returns
+    -------
+    sumstr : numpy structured array
+         Summary catalog of final best-fit values.
+    final : 
+         Final best-fit values for each individual spectrum.
+    bmodel : List of Spec1D object
+         List of best-fitting model spectra.
+    specmlist : list of Spec1D object
+         List of the observed spectrua with discrepant and outlier pixels masked.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         sumstr, final, bmodel, specmlist = doppler.rv.joingfit(speclist)
+
+    """
+    
     # speclist is list of Spec1D objects.
 
     nspec = len(speclist)
     t0 = time.time()
+
+    # Set threads
+    if nthreads is not None:
+        os.environ["OMP_NUM_THREADS"] = str(nthreads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
+        os.environ["MKL_NUM_THREADS"] = str(nthreads)
+        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
     
     # If list of filenames input, then load them
     
