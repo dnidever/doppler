@@ -17,6 +17,8 @@ from astropy.table import Table
 from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
 from .spec1d import Spec1D
+import matplotlib.pyplot as plt
+import pdb
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -165,17 +167,24 @@ def apvisit(filename):
         #           'LITTROW_GHOST','PERSIST_HIGH','PERSIST_MED','PERSIST_LOW','SIG_SKYLINE','SIG_TELLURIC','NOT_ENOUGH_PSF','']
         #   badflag = [1,1,1,1,1,1,1,1,
         #              0,0,0,0,0,0,1,0]
-        mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
+        #mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
+        mask = (np.bitwise_and(spec.bitmask,20735)!=0) | (np.isfinite(spec.flux)==False)
         # Extra masking for bright skylines
         x = np.arange(spec.npix)
         nsky = 4
+        #plt.clf()
         for i in range(spec.norder):
             sky = spec.sky[:,i]
             medsky = median_filter(sky,201,mode='reflect')
             medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
             medsky2 = dln.poly(x,medcoef)*np.median(medsky)
             skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
-            mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+            #mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+            #plt.plot(spec.wave[:,i],sky)
+            #plt.plot(spec.wave[:,i],nsky*medsky2)
+            #plt.plot(spec.wave[:,i],spec.flux[:,i])
+        #plt.draw()
+        #pdb.set_trace()
         spec.mask = mask
         # Fix NaN pixels
         for i in range(spec.norder):
