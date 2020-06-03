@@ -118,7 +118,7 @@ def ghlsf(x,xcenter,params,nowings=False):
     wingparams2 = np.empty((nlsf*npix,params['nWpar']+1))
     for i in range(params['nWpar']+1):
         wingparams2[:,i] = np.repeat(wingparams1[i,:],nlsf)
-    out += ghwingsbin(xlsf,wingparams2,params['binsize'],params['Wproftype'])
+    if not nowings : out += ghwingsbin(xlsf,wingparams2,params['binsize'],params['Wproftype'])
 
     # Reshape it to [Npix,Nlsf]
     out = out.reshape(npix,nlsf)
@@ -528,7 +528,7 @@ def ghlsf_bovy(x,xcenter,params,nowings=False):
     # Calculate the GH part of the LSF
     out = gausshermitebin_bovy(x,ghparams,params['binsize'])
     # Calculate the Wing part of the LSF
-    out += ghwingsbin_bovy(x,wingparams,params['binsize'],params['Wproftype'])
+    if not nowings: out += ghwingsbin_bovy(x,wingparams,params['binsize'],params['Wproftype'])
     
     return out
 
