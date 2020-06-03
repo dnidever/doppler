@@ -36,6 +36,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
+import pdb
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -471,7 +472,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     return cross
 
 
-def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf=False,prior=None):
+def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,gfilt=0,errccf=False,prior=None,plot=False):
     """This measures the radial velocity of a spectrum vs. a template using cross-correlation.
 
     This program measures the cross-correlation shift between
@@ -609,8 +610,20 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     gdmask = (np.isfinite(spec)==True) & (np.isfinite(temp)==True) & (spec>0.0) & (err>0.0) & (err < 1e5)
     ngdpix = np.sum(gdmask)
     if (ngdpix==0):
-        raise Exception('Bad spectrum')
+        raise RuntimeError('Bad spectrum')
     chisq = np.sqrt( np.sum( (spec[gdmask]-temp[gdmask])**2/err[gdmask]**2 )/ngdpix )
+
+    if plot :
+        print(len(spec),len(gdmask), chisq)
+        plt.close()
+        #plt.plot((spec[gdmask]-temp[gdmask])**2/err[gdmask]**2 )
+        from tools import plots
+        fig,ax=plots.multi(1,2,figsize=(8,6)) 
+        for i in range(3) : 
+            ax[0].plot(wobs[:,i],spec[:,i],color='k')
+            ax[0].plot(wobs[gdmask[:,i],i],spec[gdmask[:,i],i],color='g')
+        #plt.plot(wobs[gdmask],err[gdmask])
+        for i in range(3) : ax[0].plot(wobs[gdmask[:,i],i],temp[gdmask[:,i],i],color='r')
     
     outstr["chisq"] = chisq
     outstr["ccf"] = ccf
@@ -619,8 +632,10 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     outstr["cclag"] = lag    
     
     # Remove smooth background at large scales
-    cont = gaussian_filter1d(ccf,100)
-    ccf_diff = ccf-cont
+    if gfilt > 0 :
+        cont = gaussian_filter1d(ccf,filter)
+        ccf_diff = ccf-cont
+    else : ccf_diff = ccf
 
     # Get peak of CCF
     best_shiftind = np.argmax(ccf_diff)
@@ -683,6 +698,12 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
         dpars3, dcov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],pars3,ccferr[lo3:hi3],bounds=(dlbounds3,dubounds3))
         dyfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
         perror3 = np.sqrt(np.diag(dcov3))
+
+    if plot :
+        ax[1].plot(lag,ccf)
+        ax[1].plot(lag,ccf_diff)
+        ax[1].plot(lag[lo3:hi3],yfit3)
+        plt.draw()
         
     # Final parameters
     pars = pars3
@@ -776,7 +797,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
 
     # Can only do 1D or 2D arrays
     if spec.flux.ndim>2:
-        raise Exception("Flux can only be 1D or 2D arrays")
+        raise RuntimeError("Flux can only be 1D or 2D arrays")
         
     # Do special processing if the input is 2D
     #  Loop over the shorter axis
@@ -855,7 +876,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     gdbin = np.isfinite(ybin)
     ngdbin = np.sum(gdbin)
     if ngdbin<(ncorder+1):
-        raise Exception("Not enough good flux points to fit the continuum")
+        raise RuntimeError("Not enough good flux points to fit the continuum")
     # Fit with robust polynomial
     coef1 = dln.poly_fit(xbin[gdbin],ybin[gdbin],ncorder,robust=True)
     cont1 = dln.poly(x,coef1)
@@ -881,7 +902,7 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
     gdbin2 = np.isfinite(ybin2)
     ngdbin2 = np.sum(gdbin2)
     if ngdbin2<(ncorder+1):
-        raise Exception("Not enough good flux points to fit the continuum")
+        raise RuntimeError("Not enough good flux points to fit the continuum")
     # Fit with robust polynomial
     coef2 = dln.poly_fit(xbin2[gdbin2],ybin2[gdbin2],ncorder,robust=True)
     cont2 = dln.poly(x,coef2)
@@ -1048,7 +1069,7 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
+def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0,plot=False):
     """
     Fit spectrum using cross-correlation with models sampled in the parameter space.
     
@@ -1125,23 +1146,26 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
         samples['teff'][:] = teff
         samples['logg'][:] = logg
         samples['feh'][:] = feh
-    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccp0',np.float32),
+                         ('ccpfwhm',np.float32),
                          ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
     outstr = np.zeros(len(teff),dtype=outdtype)
-    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
+    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CCP0   CHISQ')
     for i in range(len(samples)):
         m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
-        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
+        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag,plot=plot)
         #if outstr1['chisq'] > 1000:
         #    import pdb; pdb.set_trace()
         if verbose is True:
-            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
-        for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
+            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['ccp0'][0],outstr1['chisq'][0]))
+        for n in ['xshift','vrel','vrelerr','ccpeak','ccp0','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
         outstr['teff'][i] = teff[i]
         outstr['logg'][i] = logg[i]
         outstr['feh'][i] = feh
+        if plot : pdb.set_trace()
     # Get best fit
     bestind = np.argmin(outstr['chisq'])    
+    bestind = np.argmax(outstr['ccp0'])    
     beststr = outstr[bestind]
     bestmodel = models(teff=beststr['teff'],logg=beststr['logg'],feh=beststr['feh'],rv=beststr['vrel'])
     
@@ -1207,6 +1231,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     lbounds[3] = -1000
     ubounds[3] = 1000    
     bounds = (lbounds, ubounds)
+    initpar = np.minimum(ubounds-0.01,np.maximum(lbounds+0.01,initpar))
     
     # function to use with curve_fit
     def spec_interp(x,teff,logg,feh,rv):
@@ -1403,6 +1428,7 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     lbounds[3:] = -1000
     ubounds[3:] = 1000    
     bounds = (lbounds, ubounds)
+    initpar = np.minimum(ubounds-0.01,np.maximum(lbounds+0.01,initpar))
     
     # function to use with curve_fit
     def multispec_interp(x,*argv):
@@ -1446,34 +1472,39 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
         # Model at current values
         f0 = multispec_interp(x,*argv)
         # Compute full models for teff/logg/feh
+        step=np.array([5,0.01,0.01])
         for i in range(3):
             pars = np.array(copy.deepcopy(argv))
-            step = relstep*pars[i]
-            pars[i] += step
+            #step = relstep*pars[i]
+            #pars[i] += step
+            pars[i] += step[i]
             f1 = multispec_interp(x,*pars)
             # Hit an edge, try the negative value instead
             nbd = np.sum(f1>1000)
             if nbd>1000:
                 pars = np.array(copy.deepcopy(argv))
-                step = -relstep*pars[i]
-                pars[i] += step
+                #step = -relstep*pars[i]
+                #pars[i] += step
+                step[i] *= -1
+                pars[i] += step[i]
                 f1 = multispec_interp(x,*pars)
-            jac[:,i] = (f1-f0)/step
+            jac[:,i] = (f1-f0)/step[i]
         # Compute model for single spectra
         nspec = len(speclist)
         cnt = 0
+        #step = 1.0
+        step=0.1
         for i in range(nspec):
             vrel1 = vrel[i]
-            step = 1.0
             vrel1 += step
             npx = speclist[i].npix*speclist[i].norder
             m = modlist[i]([teff,logg,feh],rv=vrel1)
             if m is not None:
-                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
+                jac[cnt:cnt+npx,3+i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
             else:
-                jac[cnt:cnt+npx,i] = 1e30
+                jac[cnt:cnt+npx,3+i] = 1e30
             cnt += npx
-                
+        
         return jac
 
         
@@ -1520,10 +1551,11 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     out['parcov'] = lscov
     out['chisq'] = lschisq
     
+    del wave, flux, err
     return out, lsmodel
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False):
+def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,plot=False,tweak=True) :
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -1592,7 +1624,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid(specm,pmodels,verbose=verbose,maxvel=1000.0)  
+    beststr, xmodel = fit_xcorrgrid(specm,pmodels,verbose=verbose,maxvel=1000.0,plot=plot)  
     
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
@@ -1615,7 +1647,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
         printpars(labels0) 
         
     # Tweak the continuum normalization
-    specm = tweakcontinuum(specm,bestmodelspec0)
+    if tweak : specm = tweakcontinuum(specm,bestmodelspec0)
     # Mask out very discrepant pixels when compared to the best-fit model
     specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
     
@@ -1667,7 +1699,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     # Get best model so far
     m = pmodels(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
     # Tweak the continuum
-    specm = tweakcontinuum(specm,m)
+    if tweak: specm = tweakcontinuum(specm,m)
 
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
@@ -1739,6 +1771,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     # Make diagnostic figure
     if figfile is not None:
         # Apply continuum tweak to original spectrum as well
+        if hasattr(spec,'cont') is False: spec.cont = spec.flux.copy()*0+1
         cratio = specm.cont/spec.cont
         orig = spec.copy()
         orig.flux /= cratio
@@ -1749,7 +1782,9 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
-    
+   
+    del spec, wavelog, lsmodel, m
+
     # Return the prpared models
     if retpmodels is True:
         return out, fmodel, specm, pmodels
@@ -1758,24 +1793,32 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None):
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,plot=False,tweak=True,maxlag=200) :
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
     nspec = len(speclist)
     t0 = time.time()
-    
+
     # If list of filenames input, then load them
     
     # Creating catalog of info on each spectrum
+    nlag = 2*np.round(np.abs(maxlag))+1
     dt = np.dtype([('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float),
                    ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
-                   ('feherr',float),('chisq',float),('bc',float)])
+                   ('feherr',float),('chisq',float),('bc',float),('x_ccf',(float,nlag)),('ccf',(float,nlag)),
+                   ('xcorr_vrel',float),('xcorr_vrelerr',float),('xcorr_vhelio',float)])
     info = np.zeros(nspec,dtype=dt)
     for n in dt.names: info[n] = np.nan
     for i,s in enumerate(speclist):
         info['filename'][i] = s.filename
         info['snr'][i] = s.snr
+
+    # Create catalog of summary info
+    sumdt = np.dtype([('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float),
+                      ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
+                      ('feherr',float),('chisq',float)])
+    sumstr = np.zeros(1,dtype=sumdt)
 
     # Make sure some spectra pass the S/N cut
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
@@ -1789,6 +1832,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     if verbose is True: print('Step #1: Fitting the individual spectra')
     specmlist = []
     modlist = []
+    bdlist = []
     for i in range(len(speclist)):
         spec = speclist[i].copy()
         if verbose is True:
@@ -1804,7 +1848,15 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
-            out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            try :
+                out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True,plot=plot,tweak=tweak)
+            except RuntimeError as err :
+                print('Exception raised for: ', speclist[i].filename)
+                print("Runtime error: {0}".format(err))
+                print('removing from list ....')
+                bdlist.append(i)
+                continue
+
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
@@ -1820,6 +1872,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
             info['feherr'][i] = out['feherr']
             info['chisq'][i] = out['chisq']
             info['bc'][i] = out['bc']
+            del out
+            del model
         else:
             if verbose is True:
                 print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
@@ -1832,6 +1886,25 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
+
+    # remove failed frames from list
+    for bd in bdlist :
+        print('removing: ', bd)
+        del speclist[bd]
+        print(len(info))
+        info = np.delete(info,bd)
+        print(len(info))
+        nspec-=1
+
+    if len(speclist) == 1 :
+        # if we only have one image, we are done, create summary structure and return
+        sumstr['medsnr'] = info['snr'][0]
+        sumstr['totsnr'] = info['snr'][0]
+        sumstr['vhelio'] = info['vhelio'][0]
+        sumstr['verr'] = info['vrelerr'][0]
+        for key in ['teff','tefferr','logg','loggerr','feh','feherr','chisq'] :
+            sumstr[key] = info[key][0]
+        return 0, sumstr, info, modlist, specmlist, time.time()-t0
 
         
     # Step 2) find weighted stellar parameters
@@ -1853,6 +1926,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
             # Unweighted
             else:
                 wtpars[i] = np.mean(p)
+            # weighted by S/N
+            wtpars[i] = dln.wtmean(p,info['snr'][gd])
         if verbose is True:
             print('Initial weighted parameters are:')
             printpars(wtpars)
@@ -1871,17 +1946,18 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     initpar1 = np.zeros(3+nspec,float)
     initpar1[0:3] = wtpars[0:3]
     # the default is to use mean vhelio + BC for all visit spectra
+    print(len(initpar1),len(info))
     initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
     # Use the Vrel values from the initial fitting if they are accurate enough
     gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
     if ngdinit>0:
         initpar1[gdinit+3] = info['vrel'][gdinit]
 
-    
     # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #3: Fitting all spectra simultaneously')
+        print('initpar1: ', initpar1)
     out1, fmodels1 = multifit_lsq(specmlist,modlist,initpar1)
     stelpars1 = out1['pars'][0,0:3]
     stelparerr1 = out1['parerr'][0,0:3]    
@@ -1905,11 +1981,11 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     for i,spm in enumerate(specmlist):
         bestm = modlist[i](stelpars1,rv=vrel1[i])
         # Tweak the continuum normalization
-        spm = tweakcontinuum(spm,bestm)
+        if tweak : spm = tweakcontinuum(spm,bestm)
         # Mask out very discrepant pixels when compared to the best-fit model
         spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
         specmlist[i] = spm.copy()
-        
+
     # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
@@ -1917,6 +1993,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
 
     # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
     initpar2 = out1['pars'][0]
+    del out1, fmodels1
     out2, fmodels2 = multifit_lsq(specmlist,modlist,initpar2)
     stelpars2 = out2['pars'][0,0:3]
     stelparerr2 = out2['parerr'][0,0:3]    
@@ -1924,7 +2001,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     vrelerr2 = out2['parerr'][0,3:]
     vhelio2 = vrel2+info['bc']
     medvhelio2 = np.median(vhelio2)
-    vscatter2 = dln.mad(vhelio2)
+    #vscatter2 = dln.mad(vhelio2)
+    vscatter2 = vhelio2.std(ddof=1)
     verr2 = vscatter2/np.sqrt(nspec)
     if verbose is True:
         print('Final parameters:')
@@ -1956,14 +2034,16 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         totchisq += np.sum(((sp.flux-m.flux)/sp.err)**2)
         totnpix += sp.npix*sp.norder
         final['chisq'][i] = chisq
+        outstr = specxcorr(m.wave,m.flux,sp.flux,sp.err,maxlag,plot=plot)
+        final['x_ccf'][i] = (np.arange(nlag)-maxlag)*(np.log(m.wave[1,0])-np.log(m.wave[0,0]))*3.e5+vr1
+        final['ccf'][i] = outstr['ccf']
+        final['xcorr_vrel'][i] = outstr['vrel']+vr1
+        final['xcorr_vrelerr'][i] = outstr['vrelerr']
+        final['xcorr_vhelio'][i] = outstr['vrel']+vr1+info['bc'][i]
         bmodel.append(m)
     totchisq = np.sqrt(totchisq/totnpix)
         
     # Average values
-    sumdt = np.dtype([('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float),
-                      ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
-                      ('feherr',float),('chisq',float)])
-    sumstr = np.zeros(1,dtype=sumdt)
     sumstr['medsnr'] = np.median(info['snr'])
     sumstr['totsnr'] = np.sqrt(np.sum(info['snr']**2))
     sumstr['vhelio'] = medvhelio2
@@ -1980,4 +2060,4 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
-    return sumstr, final, bmodel, specmlist
+    return sumstr, final, bmodel, specmlist, time.time()-t0
