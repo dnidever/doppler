@@ -1653,8 +1653,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     t0 = time.time()
 
     # Make internal copy
-    #spec = spectrum.copy()
-    spec = copy.deepcopy(spectrum)
+    spec = spectrum.copy()
     
     # Step 1: Prepare the spectrum
     #-----------------------------
@@ -1852,7 +1851,6 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
-    pdb.set_trace()
     nspec = len(speclist)
     t0 = time.time()
 
@@ -1890,8 +1888,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     modlist = []
     bdlist = []
     for i in range(len(speclist)):
-        #spec = speclist[i].copy()
-        spec = copy.deepcopy(speclist[i])
+        spec = speclist[i].copy()
         if verbose is True:
             print('Fitting spectrum '+str(i+1))
             print(speclist[i].filename)
