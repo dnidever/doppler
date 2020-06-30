@@ -472,7 +472,7 @@ def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False
     return cross
 
 
-def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,gfilt=0,errccf=False,prior=None,plot=False):
+def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=[-200,200],gfilt=0,errccf=False,prior=None,plot=False):
     """This measures the radial velocity of a spectrum vs. a template using cross-correlation.
 
     This program measures the cross-correlation shift between
@@ -527,10 +527,12 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,gfilt=
     
     # Set up the cross-correlation parameters
     #  this only gives +/-450 km/s with 2048 pixels, maybe use larger range
-    nlag = 2*np.round(np.abs(maxlag))+1
+    #nlag = 2*np.round(np.abs(maxlag))+1
+    nlag=maxlag[1]-maxlag[0]+1
     if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
     dlag = 1
-    minlag = -np.int(np.ceil(nlag/2))
+    #minlag = -np.int(np.ceil(nlag/2))
+    minlag=maxlag[0]
     lag = np.arange(nlag)*dlag+minlag+1
 
     # Initialize the output structure
@@ -648,8 +650,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,gfilt=
     # Some CCF peaks are SOOO wide that they span the whole width
     # do the first one without background subtraction
     estimates0 = [ccf_diff[best_shiftind0], best_xshift0, 4.0, 0.0]
-    lbounds0 = [1e-3, np.min(lag), 0.1, -np.inf]
-    ubounds0 =  [np.inf, np.max(lag), np.max(lag), np.inf]
+    lbounds0 = [1e-6, np.min(lag), 0.1, -np.inf]
+    ubounds0 =  [np.inf, np.max(lag), np.max(lag)-np.min(lag), np.inf]
     pars0, cov0 = dln.gaussfit(lag,ccf_diff,estimates0,ccferr,bounds=(lbounds0,ubounds0))
     perror0 = np.sqrt(np.diag(cov0))
 
@@ -665,7 +667,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,gfilt=
     yfit1 = dln.gaussian(lag[lo1:hi1],*pars1)
     perror1 = np.sqrt(np.diag(cov1))
     
-    # Fefit and let constant vary more, keep width constrained
+    # Refit and let constant vary more, keep width constrained
     estimates2 = pars1
     estimates2[1] = dln.limit(estimates2[1],np.min(lag),np.max(lag))    # must be in range
     estimates2[3] = np.median(ccf_diff[lo1:hi1]-yfit1) + pars1[3]
@@ -1075,7 +1077,7 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0,plot=False,usepeak=False):
+def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=[-1000.,1000],plot=False,usepeak=False):
     """
     Fit spectrum using cross-correlation with models sampled in the parameter space.
     
@@ -1138,8 +1140,9 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0,plot
     #------------------------------------------------------------------------------------------------
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
-    maxlag = np.maximum(maxlag,50)
+    maxlag = np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog).astype(int)
+    #maxlag = np.int(np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog))
+    #maxlag = np.maximum(maxlag,50)
     if samples is None:
         #teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
         #logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
@@ -1186,7 +1189,7 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0,plot
     return beststr, bestmodel
 
 
-def fit_lsq(spec,models=None,initpar=None,verbose=False,maxvel=1000):
+def fit_lsq(spec,models=None,initpar=None,verbose=False,maxvel=[-1000,1000]):
     """
     Least Squares fitting with forward modeling of the spectrum.
     
@@ -1238,8 +1241,8 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False,maxvel=1000):
     for p in models:
         lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
         ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
-    lbounds[3] = -maxvel
-    ubounds[3] = maxvel
+    lbounds[3] = maxvel[0]
+    ubounds[3] = maxvel[1]
     bounds = (lbounds, ubounds)
     initpar = np.minimum(ubounds-0.01,np.maximum(lbounds+0.01,initpar))
     
@@ -1380,7 +1383,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     return out,mcmodel
 
 
-def multifit_lsq(speclist,modlist,initpar=None,verbose=False,maxvel=1000):
+def multifit_lsq(speclist,modlist,initpar=None,verbose=False,maxvel=[-1000,1000]):
     """
     Least Squares fitting with forward modeling of multiple spectra simultaneously.
     
@@ -1438,8 +1441,8 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False,maxvel=1000):
     for p in modlist[0]:
         lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
         ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
-    lbounds[3:] = -maxvel
-    ubounds[3:] = maxvel    
+    lbounds[3:] = maxvel[0]
+    ubounds[3:] = maxvel[1]
     bounds = (lbounds, ubounds)
     initpar = np.minimum(ubounds-0.01,np.maximum(lbounds+0.01,initpar))
     
@@ -1598,7 +1601,7 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False,maxvel=1000):
     return out, lsmodel
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,plot=False,tweak=True,usepeak=False,maxvel=1000) :
+def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,plot=False,tweak=True,usepeak=False,maxvel=[-1000,1000]) :
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -1650,7 +1653,8 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     t0 = time.time()
 
     # Make internal copy
-    spec = spectrum.copy()
+    #spec = spectrum.copy()
+    spec = copy.deepcopy(spectrum)
     
     # Step 1: Prepare the spectrum
     #-----------------------------
@@ -1716,8 +1720,9 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     m = pmodels.get_best_model(labels).interp(wavelog)(labels,rv=0)
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
-    maxlag = np.maximum(maxlag,50)
+    maxlag = np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog).astype(int)
+    #maxlag = np.int(np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog))
+    #maxlag = np.maximum(maxlag,50)
     outstr2 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
     outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrel0',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
                          ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
@@ -1843,10 +1848,11 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,plot=False,tweak=True,maxlag=200,maxvel=500,usepeak=True) :
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,plot=False,tweak=True,maxlag=200,maxvel=[-500,500],usepeak=True) :
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
+    pdb.set_trace()
     nspec = len(speclist)
     t0 = time.time()
 
@@ -1884,7 +1890,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     modlist = []
     bdlist = []
     for i in range(len(speclist)):
-        spec = speclist[i].copy()
+        #spec = speclist[i].copy()
+        spec = copy.deepcopy(speclist[i])
         if verbose is True:
             print('Fitting spectrum '+str(i+1))
             print(speclist[i].filename)
@@ -1991,7 +1998,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
             print('No good fits.  Using these as intial guesses:')
             printpars(wtpars)
         
-    # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    # Make initial guesses for all the parameters, 3 stellar parameters and Nspec relative RVs
     initpar1 = np.zeros(3+nspec,float)
     initpar1[0:3] = wtpars[0:3]
     # the default is to use mean vhelio + BC for all visit spectra
@@ -2098,13 +2105,18 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         m = modlist[i](pars1,rv=vr1,wave=wavelog)
         mcont = polynorm(m.flux,obs.mask)
         m.flux /= mcont
+        dwlog = np.median(dln.slope(np.log10(wavelog)))
+        maxlag = np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog).astype(int)
+        nlag = maxlag[1]-maxlag[0]+1
+        if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
         outstr = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag,plot=plot)
         if usepeak : rv=outstr['vrel0']
         else : rv=outstr['vrel']
         if plot : pdb.set_trace()
-        final['x_ccf'][i] = (np.arange(nlag)-maxlag)*(np.log(m.wave[1,0])-np.log(m.wave[0,0]))*3.e5+vr1
-        final['ccf'][i] = outstr['ccf']
-        final['ccferr'][i] = outstr['ccferr']
+        #final['x_ccf'][i] = (np.arange(nlag)-maxlag)*(np.log(m.wave[1,0])-np.log(m.wave[0,0]))*3.e5+vr1
+        final['x_ccf'][i][0:nlag] = maxlag[0]+np.arange(nlag)*dwlog*3.e5+vr1
+        final['ccf'][i][0:nlag] = outstr['ccf']
+        final['ccferr'][i][0:nlag] = outstr['ccferr']
         final['xcorr_vrel'][i] = rv+vr1
         final['xcorr_vrelerr'][i] = outstr['vrelerr']
         final['xcorr_vhelio'][i] = rv+vr1+info['bc'][i]
@@ -2133,11 +2145,17 @@ def polynorm(flux,mask,order=4) :
     """ simple polynomial continuum
     """
     x = np.arange(flux.shape[0])
-    norder = flux.shape[1]
     cont = np.full_like(flux,1.)
-    for iorder in range(norder) :
-        gd=np.where(~mask[:,iorder] & np.isfinite(flux[:,iorder]))[0]
-        if len(gd) > norder :
-            coef = np.polyfit(x[gd],flux[gd,iorder],order)
-            cont[:,iorder] = np.polyval(coef,x)
+    if len(flux.shape) > 1 :
+        norder = flux.shape[1]
+        for iorder in range(norder) :
+            gd=np.where(~mask[:,iorder] & np.isfinite(flux[:,iorder]))[0]
+            if len(gd) > order :
+                coef = np.polyfit(x[gd],flux[gd,iorder],order)
+                cont[:,iorder] = np.polyval(coef,x)
+    else :
+            gd=np.where(~mask & np.isfinite(flux))[0]
+            if len(gd) > order :
+                coef = np.polyfit(x[gd],flux[gd],order)
+                cont = np.polyval(coef,x)
     return cont
