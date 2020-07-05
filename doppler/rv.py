@@ -47,8 +47,8 @@ cspeed = 2.99792458e5  # speed of light in km/s
 def xcorr_dtype(nlag):
     """Return the dtype for the xcorr structure"""
     dtype = np.dtype([("xshift0",float),("ccp0",float),("vrel0",float),("xshift",float),("xshifterr",float),
-                      ("xshift_interp",float),("ccf",(float,nlag)),("ccferr",(float,nlag)),("ccnlag",int),
-                      ("cclag",(int,nlag)),("ccpeak",float),("ccpfwhm",float),("ccp_pars",(float,4)),
+                      ("xshift_interp",float), ("ccf",(float,nlag)),("ccferr",(float,nlag)),("ccnlag",int),
+                      ("cclag",(int,nlag)),("ccvlag",(float,nlag)),("ccpeak",float),("ccpfwhm",float),("ccp_pars",(float,4)),
                       ("ccp_perror",(float,4)),("ccp_polycoef",(float,4)),("vrel",float),
                       ("vrelerr",float),("w0",float),("dw",float),("chisq",float)])
     return dtype
@@ -1957,7 +1957,22 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         sumstr['verr'] = info['vrelerr'][0]
         for key in ['teff','tefferr','logg','loggerr','feh','feherr','chisq'] :
             sumstr[key] = info[key][0]
-        return 0, sumstr, info, modlist, specmlist, time.time()-t0
+
+        pars1 = [info['teff'][0], info['logg'][0], info['feh'][0]]
+        vr1 = info['vrel'][0]
+        outstr = final_xcorr(specmlist[0],modlist[0],pars1,vr1,maxvel=maxvel,plot=plot)
+        if usepeak : rv=outstr['vrel0']
+        else : rv=outstr['vrel']
+        if plot : pdb.set_trace()
+        final = info.copy()
+        nlag = len(outstr['ccf'][0])
+        final['x_ccf'][0][0:nlag] = outstr['ccvlag']
+        final['ccf'][0][0:nlag] = outstr['ccf']
+        final['ccferr'][0][0:nlag] = outstr['ccferr']
+        final['xcorr_vrel'][0] = rv+vr1
+        final['xcorr_vrelerr'][0] = outstr['vrelerr']
+        final['xcorr_vhelio'][0] = rv+vr1+info['bc'][i]
+        return sumstr, final, modlist, specmlist, time.time()-t0
 
         
     # Step 2) find weighted stellar parameters
@@ -2097,26 +2112,19 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         bmodel.append(m)
 
         # final cross-correlation
-        wavelog = utils.make_logwave_scale(sp.wave,vel=0.0)  # get new wavelength solution
-        obs = sp.interp(wavelog)
-        m = modlist[i](pars1,rv=vr1,wave=wavelog)
-        mcont = polynorm(m.flux,obs.mask)
-        m.flux /= mcont
-        dwlog = np.median(dln.slope(np.log10(wavelog)))
-        maxlag = np.ceil(np.log10(1+np.array(maxvel)/cspeed)/dwlog).astype(int)
-        nlag = maxlag[1]-maxlag[0]+1
-        if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
-        outstr = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag,plot=plot)
+        outstr = final_xcorr(sp,modlist[i],pars1,vr1,maxvel=maxvel,plot=plot)
         if usepeak : rv=outstr['vrel0']
         else : rv=outstr['vrel']
         if plot : pdb.set_trace()
         #final['x_ccf'][i] = (np.arange(nlag)-maxlag)*(np.log(m.wave[1,0])-np.log(m.wave[0,0]))*3.e5+vr1
-        final['x_ccf'][i][0:nlag] = maxlag[0]+np.arange(nlag)*dwlog*3.e5+vr1
+        nlag = len(outstr['ccf'][0])
+        final['x_ccf'][i][0:nlag] = outstr['ccvlag']
         final['ccf'][i][0:nlag] = outstr['ccf']
         final['ccferr'][i][0:nlag] = outstr['ccferr']
         final['xcorr_vrel'][i] = rv+vr1
         final['xcorr_vrelerr'][i] = outstr['vrelerr']
         final['xcorr_vhelio'][i] = rv+vr1+info['bc'][i]
+
     totchisq = np.sqrt(totchisq/totnpix)
         
     # Average values
@@ -2137,6 +2145,22 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
     return sumstr, final, bmodel, specmlist, time.time()-t0
+
+def final_xcorr(sp,model,pars,rv,maxvel=[-500,500],usepeak=False,plot=False) :
+    """ Get a final cross correlation with best fit spectrum
+    """
+    wavelog = utils.make_logwave_scale(sp.wave,vel=0.0)  # get new wavelength solution
+    m = model(pars,rv=rv,wave=wavelog)
+    obs = sp.interp(wavelog)
+    mcont = polynorm(m.flux,obs.mask)
+    m.flux /= mcont
+    dwlog = np.median(dln.slope(np.log10(wavelog)))
+    maxlag = np.ceil(np.log10(1+np.array(maxvel-rv)/cspeed)/dwlog).astype(int)
+    nlag = maxlag[1]-maxlag[0]+1
+    if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
+    outstr = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag,plot=plot)
+    outstr['ccvlag'] = maxvel[0]+np.arange(nlag)*dwlog*cspeed*np.log(10)
+    return outstr
 
 def polynorm(flux,mask,order=4) :
     """ simple polynomial continuum
