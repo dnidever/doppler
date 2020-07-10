@@ -1241,6 +1241,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False,maxvel=[-1000,1000]):
     for p in models:
         lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
         ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
+    print('fit_lsq: ', maxvel)
     lbounds[3] = maxvel[0]
     ubounds[3] = maxvel[1]
     bounds = (lbounds, ubounds)
@@ -1758,13 +1759,16 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],bestrv]
     initpar = np.array(initpar).flatten()
-    lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose)
+    lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose,maxvel=maxvel)
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
     
     # Step 8: Run fine grid in RV, forward modeling
     #----------------------------------------------
-    maxv = np.maximum(bestrv,20.0)
+    #maxv = np.maximum(bestrv,20.0)
+    # with maxv=bestrv that can be a big range! What is the point anyway,
+    #    after doing the least squares?
+    maxv=20.
     vel = dln.scale_vector(np.arange(30),lspars[3]-maxv,lspars[3]+maxv)
     chisq = np.zeros(len(vel))
     for i,v in enumerate(vel):
@@ -1847,7 +1851,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,plot=False,tweak=True,maxlag=200,maxvel=[-500,500],usepeak=True) :
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,plot=False,tweak=True,maxlag=400,maxvel=[-500,500],usepeak=True) :
     """This fits a Cannon model to multiple spectra of the same star."""
     # speclist is list of Spec1D objects.
 
@@ -1903,12 +1907,29 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
             try :
-                out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True,plot=plot,tweak=tweak,usepeak=usepeak,maxvel=maxvel)
+                print('calling fit: ', maxvel)
+                out, model, specm, pmodels = \
+                    fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True,
+                        plot=plot,tweak=tweak,usepeak=usepeak,maxvel=maxvel)
             except RuntimeError as err :
                 print('Exception raised for: ', speclist[i].filename)
                 print("Runtime error: {0}".format(err))
-                print('removing from list ....')
-                bdlist.append(i)
+                # if we had a failure in fit, treat it as lower S/N object and see if
+                #  we can fit it in the multifit_lsq step
+                #print('removing from list ....')
+                #bdlist.append(i)
+                modlist.append(cannon.models.prepare(speclist[i]).copy())
+                sp = speclist[i].copy()
+                sp.normalized = True
+                sp = utils.specprep(sp)   # mask and normalize
+                sp.cont = polynorm(sp.flux,sp.mask)
+                sp.flux /= sp.cont
+                sp.err /= sp.cont
+                # Mask outliers
+                sp = utils.maskoutliers(sp)
+                specmlist.append(sp)
+                # at least need BC
+                info['bc'][i] = speclist[i].barycorr()
                 continue
 
             modlist.append(pmodels.copy())
@@ -1961,6 +1982,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         pars1 = [info['teff'][0], info['logg'][0], info['feh'][0]]
         vr1 = info['vrel'][0]
         outstr = final_xcorr(specmlist[0],modlist[0],pars1,vr1,maxvel=maxvel,plot=plot)
+        m = [modlist[0](pars1,rv=vr1)]
         if usepeak : rv=outstr['vrel0']
         else : rv=outstr['vrel']
         if plot : pdb.set_trace()
@@ -1972,7 +1994,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         final['xcorr_vrel'][0] = rv+vr1
         final['xcorr_vrelerr'][0] = outstr['vrelerr']
         final['xcorr_vhelio'][0] = rv+vr1+info['bc'][i]
-        return sumstr, final, modlist, specmlist, time.time()-t0
+        return sumstr, final, m, specmlist, time.time()-t0
 
         
     # Step 2) find weighted stellar parameters
@@ -2014,7 +2036,6 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     initpar1 = np.zeros(3+nspec,float)
     initpar1[0:3] = wtpars[0:3]
     # the default is to use mean vhelio + BC for all visit spectra
-    print(len(initpar1),len(info))
     initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
     # Use the Vrel values from the initial fitting if they are accurate enough
     gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
@@ -2146,7 +2167,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     
     return sumstr, final, bmodel, specmlist, time.time()-t0
 
-def final_xcorr(sp,model,pars,rv,maxvel=[-500,500],usepeak=False,plot=False) :
+def final_xcorr(sp,model,pars,rv,maxvel=[-500,500],plot=False) :
     """ Get a final cross correlation with best fit spectrum
     """
     wavelog = utils.make_logwave_scale(sp.wave,vel=0.0)  # get new wavelength solution
@@ -2159,7 +2180,7 @@ def final_xcorr(sp,model,pars,rv,maxvel=[-500,500],usepeak=False,plot=False) :
     nlag = maxlag[1]-maxlag[0]+1
     if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
     outstr = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag,plot=plot)
-    outstr['ccvlag'] = maxvel[0]+np.arange(nlag)*dwlog*cspeed*np.log(10)
+    outstr['ccvlag'] = rv+(maxlag[0]+np.arange(nlag))*dwlog*cspeed*np.log(10)
     return outstr
 
 def polynorm(flux,mask,order=4) :
