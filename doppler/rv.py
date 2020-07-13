@@ -1982,7 +1982,9 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         pars1 = [info['teff'][0], info['logg'][0], info['feh'][0]]
         vr1 = info['vrel'][0]
         outstr = final_xcorr(specmlist[0],modlist[0],pars1,vr1,maxvel=maxvel,plot=plot)
-        m = [modlist[0](pars1,rv=vr1)]
+        m = modlist[0](pars1,rv=vr1)
+        cont = polynorm(m.flux,specmlist[0].mask)
+        m.flux /= cont
         if usepeak : rv=outstr['vrel0']
         else : rv=outstr['vrel']
         if plot : pdb.set_trace()
@@ -1994,7 +1996,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         final['xcorr_vrel'][0] = rv+vr1
         final['xcorr_vrelerr'][0] = outstr['vrelerr']
         final['xcorr_vhelio'][0] = rv+vr1+info['bc'][i]
-        return sumstr, final, m, specmlist, time.time()-t0
+        return sumstr, final, [m], specmlist, time.time()-t0
 
         
     # Step 2) find weighted stellar parameters
