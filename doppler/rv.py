@@ -1907,7 +1907,6 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
             try :
-                print('calling fit: ', maxvel)
                 out, model, specm, pmodels = \
                     fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True,
                         plot=plot,tweak=tweak,usepeak=usepeak,maxvel=maxvel)
