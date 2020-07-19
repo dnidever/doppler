@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 
 # Load a spectrum
-def read(filename=None,format=None):
+def read(filename=None,format=None,badval=None):
     '''
     This reads in a SDSS-IV MWM training set spectrum and returns an
     object that is guaranteed to have certain information.
@@ -82,7 +82,7 @@ def read(filename=None,format=None):
         if format.lower() not in _readers.keys():
             raise ValueError('reader '+format+' not found')
         # Use the requested reader/format
-        out = _readers[format](filename)
+        out = _readers[format](filename,badval=badval)
         if out is not None: return out
         
     # Loop over all readers until we get a spectrum out
@@ -99,7 +99,7 @@ def read(filename=None,format=None):
 
 
 # Load APOGEE apVisit/asVisit spectra
-def apvisit(filename):
+def apvisit(filename,badval=20735):
     """
     Read a SDSS APOGEE apVisit spectrum.
 
@@ -168,7 +168,7 @@ def apvisit(filename):
         #   badflag = [1,1,1,1,1,1,1,1,
         #              0,0,0,0,0,0,1,0]
         #mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
-        mask = (np.bitwise_and(spec.bitmask,20735)!=0) | (np.isfinite(spec.flux)==False)
+        mask = (np.bitwise_and(spec.bitmask,badval)!=0) | (np.isfinite(spec.flux)==False)
         # Extra masking for bright skylines
         x = np.arange(spec.npix)
         nsky = 4
@@ -206,7 +206,7 @@ def apvisit(filename):
 
 
 # Load APOGEE apStar/asStar spectra    
-def apstar(filename):
+def apstar(filename,badval=20735):
     """
     Read an SDSS APOGEE apStar spectrum.
 
@@ -290,7 +290,7 @@ def apstar(filename):
         #           'LITTROW_GHOST','PERSIST_HIGH','PERSIST_MED','PERSIST_LOW','SIG_SKYLINE','SIG_TELLURIC','NOT_ENOUGH_PSF','']
         #   badflag = [1,1,1,1,1,1,1,1,
         #              0,0,0,0,0,0,1,0]
-        mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
+        mask = (np.bitwise_and(spec.bitmask,badval)!=0) | (np.isfinite(spec.flux)==False)
         # Extra masking for bright skylines
         x = np.arange(spec.npix)
         nsky = 4
@@ -318,7 +318,7 @@ def apstar(filename):
 
 
 # Load SDSS BOSS spectra    
-def boss(filename):
+def boss(filename,badval=0):
     """
     Read a SDSS BOSS spectrum.
 
@@ -386,7 +386,7 @@ def boss(filename):
 
     
 # Load SDSS MaStar spectra
-def mastar(filename):
+def mastar(filename,badval=0):
     """
     Read a SDSS MaStar spectrum.
 
@@ -450,7 +450,7 @@ def mastar(filename):
 
     
 # Load IRAF-style spectra
-def iraf(filename):
+def iraf(filename,badval=0):
     """
     Read an IRAF-style spectrum.
 

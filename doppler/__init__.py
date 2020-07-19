@@ -13,8 +13,8 @@ from . import reader
 models = cannon.load_models()
 cannon.models = models
 
-def read(filename=None,format=None):
-    return reader.read(filename=filename,format=None)
+def read(filename=None,format=None,badval=None):
+    return reader.read(filename=filename,format=None,badval=None)
 
 def fit(*args,**kwargs):
     return rv.fit(*args,**kwargs)
