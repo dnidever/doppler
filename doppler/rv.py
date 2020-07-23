@@ -596,8 +596,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=[-200,200]
             ccf *= np.exp(-0.5*(((lag-prior[0])/prior[1])**4))*0.8+np.exp(-0.5*(((lag-prior[0])/150)**2))*0.2
         
     else:   # no good pixels
-        ccf = np.float(lag)*0.0
-        if (errccf is True) | (nofit is False): ccferr=ccf
+        ccf = lag.astype(float)*0.0
+        if (errccf is True) : ccferr=ccf
 
     # Remove the median
     ccf -= np.median(ccf)
@@ -1880,7 +1880,9 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
 
     # Make sure some spectra pass the S/N cut
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
-    if nhisnr < np.ceil(0.25*nspec):
+    if nspec == 1 :
+        snrcut=0
+    elif nhisnr < np.ceil(0.25*nspec):
         snr = np.flip(np.sort(info['snr']))
         snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
         if verbose is True:
@@ -2070,6 +2072,8 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
         print('Step #4: Tweaking continuum and masking outliers')
     for i,spm in enumerate(specmlist):
         bestm = modlist[i](stelpars1,rv=vrel1[i])
+        if bestm is None:
+            raise RuntimeError('No valid model found for: ',stelpars1)
         cont = polynorm(bestm.flux,specmlist[i].mask)
         bestm.flux /= cont
         # Tweak the continuum normalization
@@ -2173,6 +2177,8 @@ def final_xcorr(sp,model,pars,rv,maxvel=[-500,500],plot=False) :
     """
     wavelog = utils.make_logwave_scale(sp.wave,vel=0.0)  # get new wavelength solution
     m = model(pars,rv=rv,wave=wavelog)
+    if m is None:
+        raise RuntimeError('No valid model found for: ',pars)
     obs = sp.interp(wavelog)
     mcont = polynorm(m.flux,obs.mask)
     m.flux /= mcont
