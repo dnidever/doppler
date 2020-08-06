@@ -121,7 +121,7 @@ def apvisit(filename,badval=20735):
     """
 
     base, ext = os.path.splitext(os.path.basename(filename))
-    
+   
     # APOGEE apVisit, visit-level spectrum
     if (base.find("apVisit") > -1) | (base.find("asVisit") > -1):
         # HISTORY AP1DVISIT:  HDU0 = Header only                                          
@@ -170,21 +170,22 @@ def apvisit(filename,badval=20735):
         #mask = (np.bitwise_and(spec.bitmask,16639)!=0) | (np.isfinite(spec.flux)==False)
         mask = (np.bitwise_and(spec.bitmask,badval)!=0) | (np.isfinite(spec.flux)==False)
         # Extra masking for bright skylines
-        x = np.arange(spec.npix)
-        nsky = 4
-        #plt.clf()
-        for i in range(spec.norder):
-            sky = spec.sky[:,i]
-            medsky = median_filter(sky,201,mode='reflect')
-            medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
-            medsky2 = dln.poly(x,medcoef)*np.median(medsky)
-            skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
-            #mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
-            #plt.plot(spec.wave[:,i],sky)
-            #plt.plot(spec.wave[:,i],nsky*medsky2)
-            #plt.plot(spec.wave[:,i],spec.flux[:,i])
-        #plt.draw()
-        #pdb.set_trace()
+        # Commented out in favor of using SIG_SKYLINE in bitmask
+        # This can also mask too many pixels
+        #x = np.arange(spec.npix)
+        #nsky = 4
+        ##plt.clf()
+        #for i in range(spec.norder):
+        #    sky = spec.sky[:,i]
+        #    medsky = median_filter(sky,201,mode='reflect')
+        #    medcoef = dln.poly_fit(x,medsky/np.nanmedian(medsky),2)
+        #    medsky2 = dln.poly(x,medcoef)*np.nanmedian(medsky)
+        #    skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
+        #    #mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+        #    #plt.plot(spec.wave[:,i],sky)
+        #    #plt.plot(spec.wave[:,i],nsky*medsky2)
+        #    #plt.plot(spec.wave[:,i],spec.flux[:,i])
+        ##plt.draw()
         spec.mask = mask
         # Fix NaN pixels
         for i in range(spec.norder):
