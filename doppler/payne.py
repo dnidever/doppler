@@ -188,8 +188,8 @@ class PayneModel(object):
         return new
     
     def read(mfile):
-        model = load_payne_model(mfile)
-        return PayneModel(model)
+        coeffs, wavelength, labels = load_payne_model(mfile)
+        return PayneModel(coeffs, wavelength, labels)
 
 
 
