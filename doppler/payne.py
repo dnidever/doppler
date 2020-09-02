@@ -53,8 +53,8 @@ def load_model():
     nfiles = len(files)
     if nfiles==0:
         raise Exception("No Payne model files in "+datadir)
-    coeffs, wavelength, labels = load_payne_model(files[0])
-    return PayneModel(coeffs, wavelength, labels)
+    coeffs, wavelength, labels, wavevac = load_payne_model(files[0])
+    return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
 
 
 # Load a single or list of Payne models
@@ -97,26 +97,61 @@ def load_payne_model(mfile):
     else:
         print('WARNING: No label array')
         labels = [None] * w_array_0.shape[1]
+    if 'wavevac' in tmp.files:
+        wavevac = bool(tmp["wavevac"])
+    else:
+        print('WARNING: No wavevac')
+        wavevac = False
     coeffs = (w_array_0, w_array_1, w_array_2, b_array_0, b_array_1, b_array_2, x_min, x_max)
     tmp.close()
-    return coeffs, wavelength, labels
+    return coeffs, wavelength, labels, wavevac
 
 
 class PayneModel(object):
 
-    def __init__(self,coeffs,wavelength,labels):
+    def __init__(self,coeffs,wavelength,labels,wavevac=False):
         self._coeffs = coeffs
         self._dispersion = wavelength
         self.labels = labels
-
-    #@property
-    #def ranges(self):
-    #    return self._data[0].ranges
+        self._wavevac = wavevac
+        wr = np.zeros(2,np.float64)
+        wr[0] = np.min(wavelength)
+        wr[1] = np.max(wavelength)
+        self.wr = wr
+        self.npix = len(self._dispersion)
 
     @property
     def dispersion(self):
         return self._dispersion
-        
+
+    @dispersion.setter
+    def dispersion(self,disp):
+        if len(disp) != len(self._dispersion):
+            raise ValueError('Input dispersion array not of the right length')
+        self._dispersion = disp
+    
+    @property
+    def wavevac(self):
+        return self._wavevac
+    
+    @wavevac.setter
+    def wavevac(self,wavevac):
+        """ Set wavelength wavevac value."""
+    
+        # Convert wavelength from air->vacuum or vice versa
+        if self._wavevac != wavevac:
+            # Air -> Vacuum
+            if wavevac is True:
+                self._dispersion = astro.airtovac(self._dispersion)
+                self._wavevac = True
+            # Vacuum -> Air
+            else:
+                self._dispersion = astro.vactoair(self._dispersion)
+                self._wavevac = False
+        self.wr[0] = np.min(self._dispersion)
+        self.wr[1] = np.max(self._dispersion)        
+
+
     def __call__(self,labels,wr=None,fluxonly=False):
 
         '''
@@ -134,11 +169,10 @@ class PayneModel(object):
 
         # Trim
         if wr is not None:
-            lo, = np.where(self.dispersion >= wr[0])
-            hi, = np.where(self.dispersion <= wr[1])            
-            if (len(lo)==0) | (len(hi)==0):
+            gd, = np.where( (self.dispersion >= wr[0]) & (self.dispersion <= wr[1]) )
+            if len(gd)==0:
                 raise Exception('No pixels between '+str(wr[0])+' and '+str(wr[1]))
-            spectrum = spectrum[lo[0]:hi[0]+1]
+            spectrum = spectrum[gd]
 
         # Return as spectrum object with wavelengths
         if fluxonly is False:
@@ -148,8 +182,7 @@ class PayneModel(object):
             
         return mspec
 
-
-    def label_dict2array(self,labeldict):
+    def label_arrayize(self,labeldict):
         """ Convert labels from a dictionary or numpy structured array to array."""
         arr = np.zeros(len(self.labels),np.float64)
         for i in range(len(self.labels)):
@@ -160,33 +193,27 @@ class PayneModel(object):
         return arr
     
         
-    def test(self,spec):
-        # Fit a spectrum using this Payne Model
-        # Outputs: labels, cov, meta
-        
-        # Flatten if multiple orders
-        if self.norder>1:
-            pmodel_flat = pmodel.flatten()
-            flux = spec.flux.T.reshape(spec.npix*spec.norder)
-            err = spec.err.T.reshape(spec.npix*spec.norder)
-            cmodel = pmodel_flat._data[0]
-            with mute():
-                out = cmodel.test(flux, 1/err**2)
-            return out
-        else:
-            flux = spec.flux
-            err = spec.err
-            cmodel = pmodel._data[0]
-            with mute():
-                out = cmodel.test(flux, 1/err**2)
-            return out
+    #def test(self,spec):
+    #    # Fit a spectrum using this Payne Model
+    #    # Outputs: labels, cov, meta
+    #    
+    #    # Flatten if multiple orders
+    #    if self.norder>1:
+    #        pmodel_flat = pmodel.flatten()
+    #        flux = spec.flux.T.reshape(spec.npix*spec.norder)
+    #        err = spec.err.T.reshape(spec.npix*spec.norder)
+    #        cmodel = pmodel_flat._data[0]
+    #        with mute():
+    #            out = cmodel.test(flux, 1/err**2)
+    #        return out
+    #    else:
+    #        flux = spec.flux
+    #        err = spec.err
+    #        cmodel = pmodel._data[0]
+    #        with mute():
+    #            out = cmodel.test(flux, 1/err**2)
+    #        return out
 
-    #def __setitem__(self,index,data):
-    #    self._data[index] = data
-    
-    #def __getitem__(self,index):
-    #    return self._data[index]
-    
 
     def copy(self):
         # Make copies of the _data list of payne models
@@ -195,49 +222,87 @@ class PayneModel(object):
             new_coeffs.append(c.copy())
         new = PayneModel(new_coeffs,self._dispersion.copy(),self.labels.copy())
         return new
+
     
     def read(mfile):
-        coeffs, wavelength, labels = load_payne_model(mfile)
-        return PayneModel(coeffs, wavelength, labels)
+        """ Read in a single Payne Model."""
+        coeffs, wavelength, labels, wavevac = load_payne_model(mfile)
+        return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
 
 
+    def prepare(self,labels,spec):
+        return prepare_payne_model(self,labels,spec)
 
+        
 class PayneModelSet(object):
 
     ## Set of Payne models that each cover a different "chunk" of wavelength
     
     def __init__(self,models):
-        if type(models) is list:
-            self.nmodel = len(models)
-            self._data = models
-            wr = np.zeros((len(models),2),np.float64)
-            disp = []
-            for i in range(len(models)):
-                wr[i,0] = np.min(models[i].dispersion)
-                wr[i,1] = np.max(models[i].dispersion)
-                disp += list(models[i].dispersion)
-            self._wr = wr
-            self._dispersion = np.array(disp)
-        else:
-            self.nmodel = 1
-            self._data = [models]    # make it a list so it is iterable
-            wr = np.zeros(2,np.float64)
-            wr[0] = np.min(models.dispersion)
-            wr[1] = np.min(models.dispersion)            
-            self._wr = wr
-            self._dispersion = models._dispersion.copy()
-        self.labels = models[0].labels
+        # Make sure it's a list
+        if type(models) is not list:
+            models = [models]
+        # Check that the input is Payne models
+        if not isinstance(models[0],PayneModel):
+            raise ValueError('Input must be list of Payne models')
+            
+        self.nmodel = len(models)
+        self._data = models
+        wrarray = np.zeros((2,len(models)),np.float64)
+        disp = []
+        for i in range(len(models)):
+            wrarray[0,i] = np.min(models[i].dispersion)
+            wrarray[1,i] = np.max(models[i].dispersion)
+            disp += list(models[i].dispersion)
+        self._wrarray = wrarray
+        self._dispersion = np.array(disp)
 
-    #@property
-    #def ranges(self):
-    #    return self._data[0].ranges
+        self._wavevac = self._data[0]._wavevac
+        self.npix = len(self._dispersion)
+        wr = np.zeros(2,np.float64)
+        wr[0] = np.min(self._dispersion)
+        wr[1] = np.max(self._dispersion)
+        self.wr = wr   # global wavelength range
 
+        
     @property
     def dispersion(self):
         return self._dispersion
-        
-    def __call__(self,labels,wr=None):
 
+    #@dispersion.setter
+    #def dispersion(self,disp):
+    #    if len(disp) != len(self._dispersion):
+    #        raise ValueError('Input dispersion array not of the right length')
+    #    self._dispersion = disp
+    
+    @property
+    def wavevac(self):
+        return self._wavevac
+    
+    @wavevac.setter
+    def wavevac(self,wavevac):
+        """ Set wavelength wavevac value."""
+    
+        # Convert wavelength from air->vacuum or vice versa
+        if self._wavevac != wavevac:
+            wrarray = np.zeros((2,self.nmodel),np.float64)
+            disp = np.zeros(self.npix,np.float64)
+            count = 0
+            for i in range(self.nmodel):
+                self._data[i].wavevac = wavevac    # convert the chunk model
+                wrarray[:,i] = self._data[i].wr
+                disp[count:count+self._data[i].npix] = self._data[i]._dispersion
+                count += self._data[i].npix
+            self._wrarray = wrarray
+            self._dispersion = disp
+            self._wavevac = wavevac
+            # Recalculate global wavelength range
+            wr = np.zeros(2,np.float64)
+            wr[0] = np.min(wrarray)
+            wr[1] = np.max(wrarray)
+            self.wr = wr
+    
+    def __call__(self,labels,wr=None):
         '''
         Predict the rest-frame spectrum (normalized) of a single star.
         We input the scaled stellar labels (not in the original unit).
@@ -252,32 +317,31 @@ class PayneModelSet(object):
             if (len(lo)==0) | (len(hi)==0):
                 raise Exception('No pixels between '+str(wr[0])+' and '+str(wr[1]))
             # Get the chunks that we need
-            gg, = np.where( (self._wr[:,0] >= wr[0]) & (self._wr[:,1] <= wr[1]) )
+            gg, = np.where( (self._wrarray[0,:] >= wr[0]) & (self._wrarray[1,:] <= wr[1]) )
             ngg = len(gg)
             npix = 0
             for i in range(ngg):
-                npix += len(models[gg[i]].dispersion)
+                npix += self._data[gg[i]].npix
             spectrum = np.zeros(npix,np.float64)
             wave = np.zeros(npix,np.float64)
             cnt = 0
             for i in range(ngg):
-                spec1 = models[gg[i]](labels,fluxonly=True)
+                spec1 = self._data[gg[i]](labels,fluxonly=True)
                 nspec1 = len(spec1)
                 spectrum[cnt:cnt+nspec1] = spec1
-                wave[cnt:cnt+nspec1] = models[gg[i]].dispersion               
+                wave[cnt:cnt+nspec1] = self._data[gg[i]].dispersion               
                 cnt += nspec1
             # Now trim a final time
-            lo, = np.where(wave >= wr[0])
-            hi, = np.where(wave <= wr[1])
-            wave = wave[lo[0]:hi[0]+1]
-            spectrum = spectrum[lo[0]:hi[0]+1]            
+            ggpix, = np.where( (wave >= wr[0]) & (wave <= wr[1]) )
+            wave = wave[ggpix]
+            spectrum = spectrum[ggpix]
                                
             # Return as spectrum object with wavelengths
             mspec = Spec1D(spectrum,wave=wave,lsfsigma=None,instrument='Model')
 
         # all pixels
         else:
-            spectrum = np.zeros(len(self._dispersion),np.float64)
+            spectrum = np.zeros(self.npix,np.float64)
             cnt = 0
             for i in range(self.nmodel):
                 spec1 = self._data[i](labels,fluxonly=True)
@@ -291,26 +355,26 @@ class PayneModelSet(object):
         return mspec
 
     
-    def test(self,spec):
-        # Fit a spectrum using this Payne Model
-        # Outputs: labels, cov, meta
-        
-        # Flatten if multiple orders
-        if self.norder>1:
-            pmodel_flat = pmodel.flatten()
-            flux = spec.flux.T.reshape(spec.npix*spec.norder)
-            err = spec.err.T.reshape(spec.npix*spec.norder)
-            cmodel = pmodel_flat._data[0]
-            with mute():
-                out = cmodel.test(flux, 1/err**2)
-            return out
-        else:
-            flux = spec.flux
-            err = spec.err
-            cmodel = pmodel._data[0]
-            with mute():
-                out = cmodel.test(flux, 1/err**2)
-            return out
+    #def test(self,spec):
+    #    # Fit a spectrum using this Payne Model
+    #    # Outputs: labels, cov, meta
+    #    
+    #    # Flatten if multiple orders
+    #    if self.norder>1:
+    #        pmodel_flat = pmodel.flatten()
+    #        flux = spec.flux.T.reshape(spec.npix*spec.norder)
+    #        err = spec.err.T.reshape(spec.npix*spec.norder)
+    #        cmodel = pmodel_flat._data[0]
+    #        with mute():
+    #            out = cmodel.test(flux, 1/err**2)
+    #        return out
+    #    else:
+    #        flux = spec.flux
+    #        err = spec.err
+    #        cmodel = pmodel._data[0]
+    #        with mute():
+    #            out = cmodel.test(flux, 1/err**2)
+    #        return out
 
     def __setitem__(self,index,data):
         self._data[index] = data
@@ -351,11 +415,128 @@ class PayneModelSet(object):
         def minwave(m):
             return m.dispersion[0]
         models.sort(key=minwave)
-            
         return PayneModelSet(models)
 
+    def prepare(self,labels,spec):
+        return prepare_payne_model(self,labels,spec)
+        
     
-    
-def prepare():
+def prepare_payne_model(model,labels,spec):
     """ Prepare a Payne spectrum for a given observed spectrum."""
-    pass
+
+    
+    # Convert wavelength from air->vacuum or vice versa
+    if model.wavevac != spec.wavevac:
+        model.wavevac = spec.wavevac   # this will set things behind the scenes
+
+    # Get full wavelength range and total wavelength coverage in the orders
+    owr = dln.minmax(spec.wave)
+    owavefull = dln.valrange(spec.wave)
+    owavechunks = 0.0
+    odw = np.zeros(spec.norder,np.float64)
+    specwave = np.atleast_2d(spec.wave.copy()).T
+    for o in range(spec.norder):
+        owavechunks += dln.valrange(specwave[:,o])
+        odw[o] = np.median(dln.slope(specwave[:,o]))
+    # Get model spectrum for the entire wavelength range, across all orders
+    # Or do them separately, if there are large gaps (e.g GALAH)
+    if owavechunks > 0.5*owavefull:
+        model_all_in_one = True
+        nextend = int(np.ceil(spec.wave.size*0.10))  # extend 10% on each end
+        w0 = np.maximum( owr[0]-nextend*np.median(odw), np.min(model.dispersion))
+        w1 = np.minimum( owr[1]+nextend*np.median(odw), np.max(model.dispersion))
+        modelspec_all = model(labels,wr=[w0,w1])
+    else:
+        model_all_in_one = False
+        
+    # Observed spectrum values
+    wave = spec.wave
+    ndim = wave.ndim
+    if ndim==2:
+        npix,norder = wave.shape
+    if ndim==1:
+        norder = 1
+        npix = len(wave)
+        wave = wave.reshape(npix,norder)
+    # Loop over the orders
+    outmodel = []
+    for o in range(norder):
+        w = wave[:,o]
+        w0 = np.min(w)
+        w1 = np.max(w)
+        dw = dln.slope(w)
+        dw = np.hstack((dw,dw[-1]))
+        dw = np.abs(dw)
+        meddw = np.median(dw)
+        npix = len(w)
+
+        if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
+                raise Exception('Model does not cover the observed wavelength range')
+            
+        # Trim
+        nextend = int(np.ceil(len(w)*0.25))  # extend 25% on each end
+        nextend = np.maximum(nextend,200)    # or 200 pixels
+        if model_all_in_one == True:
+            if (np.min(model.dispersion)<(w0-nextend*meddw)) | (np.max(model.dispersion)>(w1+nextend*meddw)):            
+                gd, = np.where( (modelspec_all.wave >= (w0-nextend*meddw)) |
+                                (modelspec_all.wave <= (w1+nextend*meddw)) )
+                ngd = len(gd)
+                tmodelflux = modelspec_all.flux[gd]
+                tmodelwave = modelspec_all.wave[gd]
+            else:
+                tmodelflux = modelspec_all.flux
+                tmodelwave = modelspec_all.wave                
+        else:
+            modelspec = model(labels,wr=[w0-nextend*meddw,w1+nextend*meddw])
+            tmodelflux = modelspec.flux
+            tmodelwave = modelspec.wave
+
+        # Rebin
+        #  get LSF FWHM (A) for a handful of positions across the spectrum
+        xp = np.arange(npix//20)*20
+        fwhm = spec.lsf.fwhm(w[xp],xtype='Wave',order=o)
+        # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
+        if spec.lsf.xtype.lower().find('pix')>-1:
+            dw1 = dln.interp(w,dw,w[xp],assume_sorted=False)
+            fwhm *= dw1
+        #  convert FWHM (A) in number of model pixels at those positions
+        dwmod = dln.slope(tmodelwave)
+        dwmod = np.hstack((dwmod,dwmod[-1]))
+        xpmod = interp1d(tmodelwave,np.arange(len(tmodelwave)),kind='cubic',bounds_error=False,
+                         fill_value=(np.nan,np.nan),assume_sorted=False)(w[xp])
+        xpmod = np.round(xpmod).astype(int)
+        fwhmpix = fwhm/dwmod[xpmod]
+        # need at least ~4 pixels per LSF FWHM across the spectrum
+        #  using 3 affects the final profile shape
+        nbin = np.round(np.min(fwhmpix)//4).astype(int)
+        if nbin==0:
+            raise Exception('Model has lower resolution than the observed spectrum')
+        if nbin>1:
+            npix2 = np.round(len(tmodelflux) // nbin).astype(int)
+            rmodelflux = dln.rebin(tmodelflux[0:npix2*nbin],npix2)
+            rmodelwave = dln.rebin(tmodelwave[0:npix2*nbin],npix2)
+        else:
+            rmodelflux = tmodelflux
+            rmodelwave = tmodelwave
+                
+        # Convolve
+        lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o)
+        cmodelflux = utils.convolve_sparse(rmodelflux,lsf)
+            
+        # Interpolate
+        omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
+                              fill_value=(np.nan,np.nan),assume_sorted=True)(w)
+                
+        # Order information
+        omodel = Spec1D(omodelflux,wave=w)
+        omodel.norder = norder
+        omodel.order = o
+                
+        # Append to final output
+        outmodel.append(omodel)
+
+    # Single-element list
+    if (type(outmodel) is list) & (len(outmodel)==1):
+        outmodel = outmodel[0] 
+            
+    return outmodel
