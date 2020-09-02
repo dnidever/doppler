@@ -87,9 +87,16 @@ def load_payne_model(mfile):
     b_array_2 = tmp["b_array_2"]
     x_min = tmp["x_min"]
     x_max = tmp["x_max"]
-    wavelength = tmp["wavelength"]
-    labels = tmp["labels"]
-    #wavelength = np.arange(150001).astype(np.float64)*0.1+3000
+    if 'wavelength' in tmp.files:
+        wavelength = tmp["wavelength"]
+    else:
+        print('WARNING: No wavelength array')
+        wavelength = np.arange(w_array_2.shape[0]).astype(np.float64)  # dummy wavelengths        
+    if 'labels' in tmp.files:
+        labels = tmp["labels"]
+    else:
+        print('WARNING: No label array')
+        labels = [None] * w_array_0.shape[1]
     coeffs = (w_array_0, w_array_1, w_array_2, b_array_0, b_array_1, b_array_2, x_min, x_max)
     tmp.close()
     return coeffs, wavelength, labels
@@ -141,6 +148,17 @@ class PayneModel(object):
             
         return mspec
 
+
+    def label_dict2array(self,labeldict):
+        """ Convert labels from a dictionary or numpy structured array to array."""
+        arr = np.zeros(len(self.labels),np.float64)
+        for i in range(len(self.labels)):
+            val = labeldict.get(self.labels[i])
+            if val == None:
+                raise ValueError(self.labels[i]+' NOT FOUND')
+            arr[i] = val
+        return arr
+    
         
     def test(self,spec):
         # Fit a spectrum using this Payne Model
@@ -172,19 +190,10 @@ class PayneModel(object):
 
     def copy(self):
         # Make copies of the _data list of payne models
-        new_data = []
-        for d in self._data:
-            new_data.append(payne_copy(d))
-        new = PayneModel(new_data[0])
-        new._data = new_data
-        new.norder = len(new_data)
-        if (self.prepared is True) & (self.flattened is False):
-            new_data_nointerp = []
-            for d in self._data_nointerp:
-                new_data_nointerp.append(payne_copy(d))
-            new._data_nointerp = new_data_nointerp
-        new.prepared = self.prepared
-        new.flattened = self.flattened
+        new_coeffs = []
+        for c in self._coeffs:
+            new_coeffs.append(c.copy())
+        new = PayneModel(new_coeffs,self._dispersion.copy(),self.labels.copy())
         return new
     
     def read(mfile):
@@ -270,8 +279,8 @@ class PayneModelSet(object):
         else:
             spectrum = np.zeros(len(self._dispersion),np.float64)
             cnt = 0
-            for i in range(self.nmodels):
-                spec1 = models[i](labels,fluxonly=True)
+            for i in range(self.nmodel):
+                spec1 = self._data[i](labels,fluxonly=True)
                 nspec1 = len(spec1)
                 spectrum[cnt:cnt+nspec1] = spec1
                 cnt += nspec1
@@ -309,29 +318,40 @@ class PayneModelSet(object):
     def __getitem__(self,index):
         # Return one of the Payne models in the set
         return self._data[index]
+
+    def __len__(self):
+        return self.nmodel
     
+    def __iter__(self):
+        self._count = 0
+        return self
+        
+    def __next__(self):
+        if self._count < self.nmodel:
+            self._count += 1            
+            return self._data[self._count-1]
+        else:
+            raise StopIteration
 
     def copy(self):
-        # Make copies of the _data list of payne models
-        new_data = []
+        """ Make a copy of the PayneModelSet."""
+        new_models = []
         for d in self._data:
-            new_data.append(payne_copy(d))
-        new = PayneModel(new_data[0])
-        new._data = new_data
-        new.norder = len(new_data)
-        if (self.prepared is True) & (self.flattened is False):
-            new_data_nointerp = []
-            for d in self._data_nointerp:
-                new_data_nointerp.append(payne_copy(d))
-            new._data_nointerp = new_data_nointerp
-        new.prepared = self.prepared
-        new.flattened = self.flattened
+            new_models.append(d.copy())
+        new = PayneModelSet(new_models)
         return new
     
     def read(mfiles):
+        """ Read a set of Payne model files."""
         n = len(mfiles)
         models = []
-        for i in range(n): models += load_payne_model(mfiles[i])
+        for i in range(n):
+            models.append(PayneModel.read(mfiles[i]))
+        # Sort by wavelength
+        def minwave(m):
+            return m.dispersion[0]
+        models.sort(key=minwave)
+            
         return PayneModelSet(models)
 
     
