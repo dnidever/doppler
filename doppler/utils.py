@@ -197,6 +197,137 @@ def convolve_sparse(spec,lsf):
         out[ii] = np.sum(spec[npix-len(lsf1):]*lsf1)
     return out
 
+def gausskernel(wave,vgauss):
+    # Create a 2D Gaussian broadening kernel array
+    npix = len(np.atleast_1d(wave))
+    dw = np.diff(wave)
+    dw = np.hstack((dw,dw[-1]))
+
+    # Vgauss is the velocity FWHM
+    gsigma = np.float64(vgauss*wave/(cspeed*dw*2.3548))
+    
+    # How many pixels to we need to capture the rotational profile
+    minhalfpix = gsigma*3
+    if np.max(minhalfpix) < 0.1:
+        return np.ones(npix).astype(np.float64)
+    else:
+        nkernel = np.int(np.max(np.ceil(minhalfpix)))*2 + 1
+    
+    xkernel = np.arange(nkernel)-nkernel//2
+    xkernel2 = np.repeat(xkernel,npix).reshape((nkernel,npix)).T
+    gsigma2 = np.repeat(gsigma,nkernel).reshape((npix,nkernel))
+    kernel = np.exp(-0.5*xkernel2**2 / gsigma2**2) / (np.sqrt(2*np.pi)*gsigma2)
+    kernel[kernel<0.] = 0.
+    kernel /= np.tile(np.sum(kernel,axis=1),(nkernel,1)).T
+
+    return kernel
+
+
+def rotkernel(wave,vsini,eps=0.6):
+    # Create a 2D Rotational broadening kernel array
+
+    # G(dlambda) = 2*(1-eps)*sqrt(1-(dlambda/dlambdaL)^2) + 0.5*pi*eps*(1-(dlambda/dlambdaL)^2)
+    #              ----------------------------------------------------------------------------
+    #                                  pi*dlambdaL*(1-epsilon/3)
+    # dlambda = offset from line center (A)
+    # dlambdaL = vsini in wavelength units (A)
+    
+    npix = len(np.atleast_1d(wave))
+    dw = np.diff(wave)
+    dw = np.hstack((dw,dw[-1]))
+
+    # How many pixels to we need to capture the rotational profile
+    minhalfpix = np.ceil(wave*vsini/(cspeed*dw))
+    nkernel = np.int(np.max( 2*minhalfpix+1 ))
+    
+    # Vsini in units of pixels
+    xvsini = wave*vsini/(cspeed*dw)
+    xvsini2 = np.repeat(xvsini,nkernel).reshape((npix,nkernel))
+
+    xkernel = np.arange(nkernel)-nkernel//2    
+    xkernel2 = np.repeat(xkernel,npix).reshape((nkernel,npix)).T
+
+    vfrac = xkernel2/xvsini2
+    kernel = np.where(np.abs(vfrac) <= 1,
+                      2*(1-eps)*np.sqrt(1-vfrac**2) + 0.5*np.pi*eps*(1-vfrac**2), 0)
+    kernel /= np.pi*xvsini2*(1-eps/3.0)
+
+    kernel[kernel<0.] = 0.
+    kernel /= np.tile(np.sum(kernel,axis=1),(nkernel,1)).T
+    
+    return kernel
+
+
+#def combine_kernels(kernels):
+#    # Combine mulitple 2D kernels, convolve them with each other
+#    # input list or tuple of kernels
+#
+#    n = len(kernels)
+#    npix = kernels[0].shape[0]
+#    nkernelarr = np.zeros(n,int)
+#    for i,k in enumerate(kernels):
+#        ndim = k.ndim
+#        if ndim>1: nkernelarr[i]=k.shape[1]
+#
+#    nkernel = np.int(np.max(nkernelarr))
+#    kernel = np.zeros((npix,nkernel),np.float64)
+#    for i,k in enumerate(kernels):
+#        if nkernelarr[i]>1:
+#            kernel1 = np.zeros((npix,nkernel),np.float64)            
+#            off = (nkernel-nkernelarr[i])//2
+#            kernel1[:,off:off+nkernelarr[i]] = k
+#            # Convolve them with each other
+#            kernel += kernel1**2    # add in quadrature
+#    # Take sqrt() or quadrature
+#    kernel = np.sqrt(kernel)
+#    # Normalize
+#    # Make sure it's normalized
+#    kernel /= np.tile(np.sum(kernel,axis=1),(nkernel,1)).T
+#
+#    return kernel
+
+# Rotational and Gaussian broaden a spectrum
+def broaden(wave,flux,vgauss=None,vsini=None):
+    # Create the 2D broadening kernel array
+    npix = len(wave)
+    # Are the wavelengths logarithmically spaced
+    logwave = False
+    if dln.valrange(np.diff(np.log(wave))) < 1e-7: logwave=True
+
+    # If the wavelengths are on a logarithmic wavelength scale
+    #  then just convolve with a 1D kernel with np.convolve(flux,kernel,mode='same')
+    
+    # Initializing output flux
+    oflux = flux.copy()
+    
+    # Add Gaussian broadening
+    if vgauss is not None:
+        # 2D kernel
+        if logwave==False:
+            gkernel = gausskernel(wave,vgauss)
+            # Don't use this if it's not going to do anything!!!
+            if gkernel.ndim==2:
+                oflux = convolve_sparse(oflux,gkernel)
+        # 1D kernel, log wavelengths
+        else:
+            gkernel = gausskernel(wave[0:2],vgauss)
+            oflux = np.convolve(oflux,gkernel[0,:],mode='same')
+            
+    # Add Rotational broadening
+    if vsini is not None:
+        # 2D kernel
+        if logwave==False:
+            rkernel = rotkernel(wave,vsini)
+            # Don't use this if it's not going to do anything!!!
+            if rkernel.ndim==2:
+                oflux = convolve_sparse(oflux,rkernel)
+        # 1D kernel, log wavelengths
+        else:
+            rkernel = rotkernel(wave[0:2],vsini)
+            oflux = np.convolve(oflux,rkernel[0,:],mode='same')
+                
+    return oflux
+
 
 # Make logaritmic wavelength scale
 def make_logwave_scale(wave,vel=1000.0):

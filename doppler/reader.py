@@ -440,6 +440,69 @@ def mastar(filename):
         return spec        
 
     
+# Load IMACS spectra
+def imacs(filename):
+    """
+    Read IMACS spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = imacs('spec.fits')
+
+    """
+
+    base, ext = os.path.splitext(os.path.basename(filename))
+    
+    # Generic IRAF spectrum
+    # BANDID1 = 'spectrum: background median, weights variance, clean yes' /          
+    # BANDID2 = 'sigma - background median, weights variance, clean yes' /            
+    # BANDID3 = 'mask - 0:good, 1:bad' / 
+    data,head = fits.getdata(filename,0,header=True)
+    ndim = data.ndim
+    # often the 2nd dimension is unnecessary, e.g. [3, 1, 1649]
+    if (ndim==3):
+        if data.shape[1]==1: data = data[:,0,:]
+        ndim = data.ndim
+    flux = data[0,:]
+    npix = len(flux)    
+    sigma = data[1,:]
+    badmask = data[2,:]
+    mask = np.zeros(npix,bool)
+    mask[badmask==1] = True
+    # Get wavelength
+    # NWPAR   =                    4 / Number of Wavelength solution parameters       
+    # WPAR1   =        4301.64021493 / Wavelength solution parameter                  
+    # WPAR2   =        1.70043816611 / Wavelength solution parameter                  
+    # WPAR3   =   -3.92469453122E-06 / Wavelength solution parameter                  
+    # WPAR4   =    1.99202801624E-09 / Wavelength solution parameter                  
+    # WSIG    =       0.125175450918 / Sigma of wavelenth solution in Ang             
+    # WCSDIM  =                    3 /    
+    nwpar = head['nwpar']
+    wpar = np.zeros(nwpar,np.float64)
+    for i in range(nwpar):
+        wpar[i] = head['WPAR'+str(i+1)]
+    wpar = wpar[::-1]    # reverse
+    wave = np.poly1d(wpar)(np.arange(npix))
+
+    spec = Spec1D(flux,err=sigma,wave=wave,mask=mask)
+    spec.filename = filename
+    spec.sptype = "IMACS"
+    spec.head = head
+
+    return spec
+
+    
 # Load IRAF-style spectra
 def iraf(filename):
     """
@@ -507,4 +570,4 @@ def iraf(filename):
     return spec
 
 # List of readers
-_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf}
+_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf, 'imacs':imacs}

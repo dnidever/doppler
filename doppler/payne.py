@@ -49,12 +49,14 @@ def load_model():
     """
 
     datadir = utils.datadir()
-    files = glob(datadir+'*_NN_*.npz')
+    files = glob(datadir+'payne_coolhot_*.npz')
     nfiles = len(files)
     if nfiles==0:
         raise Exception("No Payne model files in "+datadir)
-    coeffs, wavelength, labels, wavevac = load_payne_model(files[0])
-    return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
+    if nfiles>1:
+        return PayneModelSet.read(files)
+    else:
+        return PayneModel.read(files)
 
 
 # Load a single or list of Payne models
@@ -152,14 +154,21 @@ class PayneModel(object):
         self.wr[1] = np.max(self._dispersion)        
 
 
-    def __call__(self,labels,wr=None,fluxonly=False):
+    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False):
+
+        # Prepare the spectrum
+        if spec is not None:
+            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro)
+            if fluxonly is True:
+                return out.flux
+            return out
 
         '''
         Predict the rest-frame spectrum (normalized) of a single star.
         We input the scaled stellar labels (not in the original unit).
         Each label ranges from -0.5 to 0.5
         '''
-    
+        
         # assuming your NN has two hidden layers.
         w_array_0, w_array_1, w_array_2, b_array_0, b_array_1, b_array_2, x_min, x_max = self._coeffs
         scaled_labels = (labels-x_min)/(x_max-x_min) - 0.5
@@ -174,14 +183,27 @@ class PayneModel(object):
                 raise Exception('No pixels between '+str(wr[0])+' and '+str(wr[1]))
             spectrum = spectrum[gd]
 
+
+        # Apply Vmacro broadening and Vsini broadening (km/s)
+        if (vmacro is not None) | (vsini is not None):
+            spectrum = utils.broaden(self._dispersion,spectrum,vgauss=vmacro,vsini=vsini)
+            
         # Return as spectrum object with wavelengths
         if fluxonly is False:
             mspec = Spec1D(spectrum,wave=self._dispersion.copy(),lsfsigma=None,instrument='Model')
         else:
             mspec = spectrum
+
+        # Apply Radial Velocity
+        if rv is not None:
+            if rv != 0.0:
+                wave = mspec.wave
+                wave *= (1+rv/cspeed)
+                mspec.wave = wave
             
         return mspec
 
+    
     def label_arrayize(self,labeldict):
         """ Convert labels from a dictionary or numpy structured array to array."""
         arr = np.zeros(len(self.labels),np.float64)
@@ -192,28 +214,6 @@ class PayneModel(object):
             arr[i] = val
         return arr
     
-        
-    #def test(self,spec):
-    #    # Fit a spectrum using this Payne Model
-    #    # Outputs: labels, cov, meta
-    #    
-    #    # Flatten if multiple orders
-    #    if self.norder>1:
-    #        pmodel_flat = pmodel.flatten()
-    #        flux = spec.flux.T.reshape(spec.npix*spec.norder)
-    #        err = spec.err.T.reshape(spec.npix*spec.norder)
-    #        cmodel = pmodel_flat._data[0]
-    #        with mute():
-    #            out = cmodel.test(flux, 1/err**2)
-    #        return out
-    #    else:
-    #        flux = spec.flux
-    #        err = spec.err
-    #        cmodel = pmodel._data[0]
-    #        with mute():
-    #            out = cmodel.test(flux, 1/err**2)
-    #        return out
-
 
     def copy(self):
         # Make copies of the _data list of payne models
@@ -230,8 +230,9 @@ class PayneModel(object):
         return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
 
 
-    def prepare(self,labels,spec):
-        return prepare_payne_model(self,labels,spec)
+    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None):
+        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini)
+
 
         
 class PayneModelSet(object):
@@ -302,13 +303,20 @@ class PayneModelSet(object):
             wr[1] = np.max(wrarray)
             self.wr = wr
     
-    def __call__(self,labels,wr=None):
+    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False):
         '''
         Predict the rest-frame spectrum (normalized) of a single star.
         We input the scaled stellar labels (not in the original unit).
         Each label ranges from -0.5 to 0.5
         '''
 
+        # Prepare the spectrum
+        if spec is not None:
+            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro)
+            if fluxonly is True:
+                return out.flux
+            return out
+            
         # Only a subset of wavelenths requested
         if wr is not None:
             # Check that we have pixels in this range
@@ -352,29 +360,20 @@ class PayneModelSet(object):
             # Return as spectrum object with wavelengths
             mspec = Spec1D(spectrum,wave=self._dispersion.copy(),lsfsigma=None,instrument='Model')
 
+        # Apply Vmacro broadening and Vsini broadening (km/s)
+        if (vmacro is not None) | (vsini is not None):
+            oflux = utils.broaden(mspec.wave,mspec.flux,vgauss=vmacro,vsini=vsini)
+            mspec.flux = oflux
+            
+        # Apply Radial Velocity
+        if rv is not None:
+            if rv != 0.0:
+                wave = mspec.wave
+                wave *= (1+rv/cspeed)
+                mspec.wave = wave
+            
         return mspec
 
-    
-    #def test(self,spec):
-    #    # Fit a spectrum using this Payne Model
-    #    # Outputs: labels, cov, meta
-    #    
-    #    # Flatten if multiple orders
-    #    if self.norder>1:
-    #        pmodel_flat = pmodel.flatten()
-    #        flux = spec.flux.T.reshape(spec.npix*spec.norder)
-    #        err = spec.err.T.reshape(spec.npix*spec.norder)
-    #        cmodel = pmodel_flat._data[0]
-    #        with mute():
-    #            out = cmodel.test(flux, 1/err**2)
-    #        return out
-    #    else:
-    #        flux = spec.flux
-    #        err = spec.err
-    #        cmodel = pmodel._data[0]
-    #        with mute():
-    #            out = cmodel.test(flux, 1/err**2)
-    #        return out
 
     def __setitem__(self,index,data):
         self._data[index] = data
@@ -417,11 +416,11 @@ class PayneModelSet(object):
         models.sort(key=minwave)
         return PayneModelSet(models)
 
-    def prepare(self,labels,spec):
-        return prepare_payne_model(self,labels,spec)
+    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None):
+        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini)
         
     
-def prepare_payne_model(model,labels,spec):
+def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
     """ Prepare a Payne spectrum for a given observed spectrum."""
 
     
@@ -519,14 +518,22 @@ def prepare_payne_model(model,labels,spec):
             rmodelflux = tmodelflux
             rmodelwave = tmodelwave
                 
-        # Convolve
-        lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o)
+        # Convolve with LSF, Vsini and Vmacro kernels
+        lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o,original=False)
         cmodelflux = utils.convolve_sparse(rmodelflux,lsf)
+        # Apply Vmacro broadening and Vsini broadening (km/s)
+        if (vmacro is not None) | (vsini is not None):
+            cmodelflux = utils.broaden(rmodelwave,cmodelflux,vgauss=vmacro,vsini=vsini)
             
+        # Apply Radial Velocity
+        if rv is not None:
+            if rv != 0.0: rmodelwave *= (1+rv/cspeed)
+        
         # Interpolate
         omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
                               fill_value=(np.nan,np.nan),assume_sorted=True)(w)
-                
+
+        
         # Order information
         omodel = Spec1D(omodelflux,wave=w)
         omodel.norder = norder
@@ -535,6 +542,7 @@ def prepare_payne_model(model,labels,spec):
         # Append to final output
         outmodel.append(omodel)
 
+        
     # Single-element list
     if (type(outmodel) is list) & (len(outmodel)==1):
         outmodel = outmodel[0] 

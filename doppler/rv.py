@@ -1523,7 +1523,9 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     return out, lsmodel
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None):
+
+def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
+               retpmodels=False,nthreads=None):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -1566,7 +1568,7 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
 
     .. code-block:: python
 
-         out, model = doppler.rv.fit(spec)
+         out, model = fit_cannon(spec)
 
     """
 
@@ -1766,9 +1768,249 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     
     return out, fmodel, specm
 
+
+
+def fit_payne(spectrum,model=None,verbose=False,mcmc=False,figfile=None,cornername=None,
+              retpmodels=False,nthreads=None):
+    """
+    Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
+
+    Parameters
+    ----------
+    spectrum : Spec1D object
+         The observed spectrum to match.
+    model: Payne model, optional
+         Payne model to use.  The default is to load the Payne model
+         in the data/ directory and use those.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is False by default.
+    figfile : string, optional
+         The filename for a diagnostic plot showing the observed spectrum, model
+         spectrum and the best-fit parameters.
+    cornername : string, optional
+         The filename for a "corner" plot showing the posterior distributions from
+         the MCMC run.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    model : Spec1D object
+         The best-fitting Payne model spectrum (as Spec1D object).
+    specm : Spec1D object
+         The observed spectrum with discrepant and outlier pixels masked.
+
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, model = fit_payne(spec)
+
+    """
+
+
+    # Set threads
+    if nthreads is not None:
+        os.environ["OMP_NUM_THREADS"] = str(nthreads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
+        os.environ["MKL_NUM_THREADS"] = str(nthreads)
+        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
+    
+    t0 = time.time()
+
+    # Make internal copy
+    spec = spectrum.copy()
+    
+    # Step 1: Prepare the spectrum
+    #-----------------------------
+    # Normalize and mask the spectrum
+    spec = utils.specprep(spec)         
+    # Mask out any large positive outliers, e.g. badly subtracted sky lines
+    specm = utils.maskoutliers(spec,verbose=verbose)
+    
+    # Step 2: Load the Payne model
+    #------------------------------
+    if model is None: model = payne.load_model()
+
+
+    # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+    #------------------------------------------------------------------------------------------------
+    beststr, xmodel = fit_xcorrgrid(specm,pmodels,verbose=verbose,maxvel=1000.0)  
+    
+    # Step 4: Get better Cannon stellar parameters using initial RV
+    #--------------------------------------------------------------
+    # put observed spectrum on rest wavelength scale
+    # get cannon model for "best" teff/logg/feh values
+    # run cannon.test() on the spectrum and variances
+    # just shift the observed wavelengths to rest, do NOT interpolate the spectrum
+    #restwave = obs.wave*(1-beststr['vrel']/cspeed)
+    restwave = specm.wave*(1-beststr['vrel']/cspeed)    
+    bestmodel = pmodels.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
+    bestmodelinterp = bestmodel.interp(restwave)
+    labels0, cov0, meta0 = bestmodelinterp.test(specm)
+
+    # Make sure the labels are within the ranges
+    labels0 = labels0.flatten()
+    for i in range(3): labels0[i]=dln.limit(labels0[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])
+    bestmodelspec0 = bestmodelinterp(labels0)
+    if verbose is True:
+        print('Initial Cannon stellar parameters using initial RV')
+        printpars(labels0) 
+        
+    # Tweak the continuum normalization
+    specm = tweakcontinuum(specm,bestmodelspec0)
+    # Mask out very discrepant pixels when compared to the best-fit model
+    specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
+    
+    # Refit the Cannon
+    labels, cov, meta = bestmodelinterp.test(specm)
+    # Make sure the labels are within the ranges
+    labels = labels.flatten()
+    for i in range(3): labels[i]=dln.limit(labels[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])
+    bestmodelspec = bestmodelinterp(labels)
+    if verbose is True:
+        print('Initial Cannon stellar parameters using initial RV and Tweaking the normalization')
+        printpars(labels)
+    
+    # Step 5: Improved RV using better Cannon template
+    #-------------------------------------------------
+    wavelog = utils.make_logwave_scale(specm.wave,vel=0.0)  # get new wavelength solution
+    obs = specm.interp(wavelog)
+    m = pmodels.get_best_model(labels).interp(wavelog)(labels,rv=0)
+    dwlog = np.median(dln.slope(np.log10(wavelog)))
+    # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
+    maxlag = np.int(np.ceil(np.log10(1+1000.0/cspeed)/dwlog))
+    maxlag = np.maximum(maxlag,50)
+    outstr2 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
+    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
+    beststr2= np.zeros(1,dtype=outdtype)
+    for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: beststr2[n] = outstr2[n]
+    beststr2['teff'] = labels[0]
+    beststr2['logg'] = labels[1]
+    beststr2['feh'] = labels[2]
+
+    
+    # Step 6: Improved Cannon stellar parameters
+    #-------------------------------------------
+    restwave = specm.wave*(1-beststr['vrel']/cspeed)    
+    bestmodel = pmodels.get_best_model([beststr2['teff'],beststr2['logg'],beststr2['feh']])
+    bestmodelinterp = bestmodel.interp(restwave)
+    labels2, cov2, meta2 = bestmodelinterp.test(specm)
+    # Make sure the labels are within the ranges
+    labels2 = labels2.flatten()
+    for i in range(3): labels2[i]=dln.limit(labels2[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])
+    bestmodelspec2 = bestmodelinterp(labels2)
+    if verbose is True:
+        print('Improved RV and Cannon stellar parameters:')
+        printpars(np.concatenate((labels2,beststr2['vrel'])),[None,None,None,beststr2['vrelerr']])
+    
+    # Step 7: Least Squares fitting with forward modeling
+    #----------------------------------------------------
+    # Get best model so far
+    m = pmodels(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
+    # Tweak the continuum
+    specm = tweakcontinuum(specm,m)
+
+    # Get initial estimates
+    initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
+    initpar = np.array(initpar).flatten()
+    lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose)
+    lspars = lsout['pars'][0]
+    lsperror = lsout['parerr'][0]    
+    
+    # Step 8: Run fine grid in RV, forward modeling
+    #----------------------------------------------
+    maxv = np.maximum(beststr2['vrel'][0],20.0)
+    vel = dln.scale_vector(np.arange(30),lspars[3]-maxv,lspars[3]+maxv)
+    chisq = np.zeros(len(vel))
+    for i,v in enumerate(vel):
+        m = pmodels(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=v)
+        chisq[i] = np.sqrt(np.sum(((specm.flux-m.flux)/specm.err)**2)/(specm.npix*specm.norder))
+    vel2 = dln.scale_vector(np.arange(300),lspars[3]-maxv,lspars[3]+maxv)
+    chisq2 = dln.interp(vel,chisq,vel2)
+    bestind = np.argmin(chisq2)
+    finerv = vel2[bestind]
+    finechisq = chisq2[bestind]
+    if verbose is True:
+        print('Fine grid best RV = %5.2f km/s' % finerv)
+        print('chisq = %5.2f' % finechisq)
+    
+    # Final parameters and uncertainties (so far)
+    fpars = lspars
+    fperror = lsperror
+    fpars[3] = finerv
+    fchisq = finechisq
+    fmodel = pmodels(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=finerv)                            
+    
+    # Step 9: MCMC
+    #--------------
+    if (mcmc is True) | (cornername is not None):
+        mcout, mcmodel = fit_mcmc(specm,pmodels,fpars,verbose=verbose,cornername=cornername)
+        # Use these parameters
+        fpars = mcout['pars'][0]
+        fperror = mcout['parerr'][0]
+        fchisq = mcout['chisq'][0]
+        fmodel = mcmodel
+        
+    # Construct the output
+    #---------------------
+    bc = specm.barycorr()
+    vhelio = fpars[3] + bc
+    if verbose is True:
+        print('Final parameters:')
+        printpars(fpars[0:3],fperror[0:3])
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (vhelio,fperror[3]))
+        print('BC = %5.2f km/s' % bc)
+        print('chisq = %5.2f' % fchisq)
+    dtype = np.dtype([('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32),
+                      ('teff',np.float32),('tefferr',np.float32),('logg',np.float32),('loggerr',np.float32),
+                      ('feh',np.float32),('feherr',np.float32),('chisq',np.float32),('bc',np.float32)])
+    out = np.zeros(1,dtype=dtype)
+    out['vhelio'] = vhelio
+    out['vrel'] = fpars[3]
+    out['vrelerr'] = fperror[3]    
+    out['teff'] = fpars[0]
+    out['tefferr'] = fperror[0]    
+    out['logg'] = fpars[1]
+    out['loggerr'] = fperror[1]        
+    out['feh'] = fpars[2]
+    out['feherr'] = fperror[2]    
+    out['chisq'] = fchisq
+    out['bc'] = bc
+
+    # Make diagnostic figure
+    if figfile is not None:
+        # Apply continuum tweak to original spectrum as well
+        cratio = specm.cont/spec.cont
+        orig = spec.copy()
+        orig.flux /= cratio
+        orig.err /= cratio
+        orig.cont *= cratio    
+        # Make the diagnostic figure
+        specfigure(figfile,specm,fmodel,out,original=orig,verbose=verbose)
+
+    # How long did this take
+    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
+    
+    # Return the prpared models
+    if retpmodels is True:
+        return out, fmodel, specm, pmodels
+    
+    return out, fmodel, specm
+
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,outdir=None,nthreads=None):
+def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,
+                    outdir=None,nthreads=None):
     """
     This fits a Cannon model to multiple spectra of the same star.
 
@@ -1810,7 +2052,7 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
 
     .. code-block:: python
 
-         sumstr, final, bmodel, specmlist = doppler.rv.joingfit(speclist)
+         sumstr, final, bmodel, specmlist = jointfit_cannon(speclist)
 
     """
     
@@ -2043,3 +2285,128 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
     return sumstr, final, bmodel, specmlist
+
+
+
+def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
+        retpmodels=False,nthreads=None,payne=False):
+    """
+    Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
+
+    Parameters
+    ----------
+    spectrum : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models or Payne model, optional
+         A list of Cannon models or a Payne model to use.  The default is to load
+         the models in the data/ directory and use those.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is False by default.
+    figfile : string, optional
+         The filename for a diagnostic plot showing the observed spectrum, model
+         spectrum and the best-fit parameters.
+    cornername : string, optional
+         The filename for a "corner" plot showing the posterior distributions from
+         the MCMC run.
+    retpmodels : bool, optional
+         Return the prepared models (only if Cannon models used).
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+    payne : bool, optional
+         Fit a Payne model.  By default, a Cannon model is used.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    model : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+    specm : Spec1D object
+         The observed spectrum with discrepant and outlier pixels masked.
+    pmodels : DopplerCannonModelSet
+         The prepared Doppler Cannon models, only if retpmodels=True.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, model = fit(spec)
+
+    """
+    
+    # Cannon model
+    if payne == False:
+        return fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
+                          cornername=cornername,retpmodels=retpmodels,nthreads=nthreads)
+    # Payne model
+    else:
+        return fit_payne(spectrum,model=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
+                         cornername=cornername,nthreads=nthreads)
+
+
+    
+
+def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,
+             verbose=False,outdir=None,nthreads=None,payne=False):
+    """
+    This fits a Cannon or Payne model to multiple spectra of the same star.
+
+    Parameters
+    ----------
+    speclist : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models, optional
+         A list of Cannon models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is only run the individual spectra are being fit.
+         This is False by default.
+    snrcut : int, optional
+         S/N cut to fit individual spectra in the first step.  The default is snrcut=10.
+    saveplot : bool, optional
+         Save output plots.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    outdir : str, optional
+         The directory for output files.  The default is to use the current directory.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+    payne : bool, optional
+         Fit a Payne model.  By default, a Cannon model is used.
+
+    Returns
+    -------
+    sumstr : numpy structured array
+         Summary catalog of final best-fit values.
+    final : 
+         Final best-fit values for each individual spectrum.
+    bmodel : List of Spec1D object
+         List of best-fitting model spectra.
+    specmlist : list of Spec1D object
+         List of the observed spectrua with discrepant and outlier pixels masked.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         sumstr, final, bmodel, specmlist = jointfit(speclist)
+
+    """
+
+    
+    # Cannon model
+    if payne == False:
+        return jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=sncrut,
+                               saveplot=saveplot,verbose=verbose,outdir=outdir,
+                               nthreads=nthreads)
+    # Payne model
+    else:
+        return jointfit_payne(speclist,models=models,mcmc=mcmc,snrcut=sncrut,
+                              saveplot=saveplot,verbose=verbose,outdir=outdir,
+                              nthreads=nthreads)    

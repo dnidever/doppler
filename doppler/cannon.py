@@ -845,7 +845,7 @@ def rebin_cannon_model(model,binsize):
     Examples
     --------
 
-    omodel = rebin_cannon_model(model,4
+    omodel = rebin_cannon_model(model,4)
 
     """
     
@@ -1155,7 +1155,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 rmodel.rebin = False
                 
             # Convolve
-            lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=o)
+            lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=o,original=False)
             
             #import pdb; pdb.set_trace()
             cmodel = convolve_cannon_model(rmodel,lsf)

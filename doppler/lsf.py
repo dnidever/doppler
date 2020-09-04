@@ -1280,7 +1280,7 @@ class GaussHermiteLsf(Lsf):
 
     
     # Return the LSF values for specific locations
-    def anyarray(self,x,xtype='pixels',nlsf=15,order=0):
+    def anyarray(self,x,xtype='pixels',nlsf=15,order=0,**kwargs):
         """
         Return the LSF of the spectrum at specific locations.
 
