@@ -95,7 +95,7 @@ def load_payne_model(mfile):
         print('WARNING: No wavelength array')
         wavelength = np.arange(w_array_2.shape[0]).astype(np.float64)  # dummy wavelengths        
     if 'labels' in tmp.files:
-        labels = tmp["labels"]
+        labels = list(tmp["labels"])
     else:
         print('WARNING: No label array')
         labels = [None] * w_array_0.shape[1]
@@ -246,7 +246,7 @@ class PayneModel(object):
     def __init__(self,coeffs,wavelength,labels,wavevac=False):
         self._coeffs = coeffs
         self._dispersion = wavelength
-        self.labels = labels
+        self.labels = list(labels)
         self._wavevac = wavevac
         wr = np.zeros(2,np.float64)
         wr[0] = np.min(wavelength)
@@ -288,6 +288,9 @@ class PayneModel(object):
 
     def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False):
 
+        if len(labels) != len(self.labels):
+            raise ValueError('labels must have '+str(len(self.labels))+' elements')
+        
         # Prepare the spectrum
         if spec is not None:
             out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro)
@@ -396,7 +399,7 @@ class PayneModelSet(object):
         wr[0] = np.min(self._dispersion)
         wr[1] = np.max(self._dispersion)
         self.wr = wr   # global wavelength range
-
+        self.labels = self._data[0].labels
         
     @property
     def dispersion(self):
@@ -435,6 +438,9 @@ class PayneModelSet(object):
         We input the scaled stellar labels (not in the original unit).
         Each label ranges from -0.5 to 0.5
         '''
+
+        if len(labels) != len(self.labels):
+            raise ValueError('labels must have '+str(len(self.labels))+' elements')
 
         # Prepare the spectrum
         if spec is not None:
@@ -547,7 +553,7 @@ class PayneModelSet(object):
 
 
     
-def DopplerPayneModel(object):
+class DopplerPayneModel(object):
     """ Thin wrapper around PayneModel or PayneModelSet."""
 
     def __init__(self,model):
@@ -557,8 +563,8 @@ def DopplerPayneModel(object):
         self._data = model
         labels = list(model.labels.copy())
         # Add vsini, vmacro, rv
-        labels += ['vsini','vmacro','rv']
-        self._labels = labels
+        labels += ['VSINI','VMACRO','RV']
+        self.labels = labels
         self._spec = None
         self._prepared = False
         self._dispersion = self._data.dispersion
@@ -578,6 +584,10 @@ def DopplerPayneModel(object):
             return self._data(label,vsini=vsini,vmacro=vmacro,rv=rv)        
 
     @property
+    def dispersion(self):
+        return self._dispersion
+        
+    @property
     def wavevac(self):
         return self._data.wavevac
     
@@ -587,7 +597,7 @@ def DopplerPayneModel(object):
         self._data.wavevac = wavevac
 
     @property
-    def prepared:
+    def prepared(self):
         return self._prepared
 
     @prepared.setter
@@ -629,5 +639,5 @@ def DopplerPayneModel(object):
             model = PayneModel.read(mfiles)
         else:
             model = PayneModelSet.read(mfiles)
-        return DopplerPaynModel(model)
+        return DopplerPayneModel(model)
     

@@ -63,6 +63,7 @@ def mute():
     sys.stderr = saved_stderr
 
 
+    
 class DopplerCannonModelSet(object):
     def __init__(self,models):
         if type(models) is list:
@@ -73,7 +74,8 @@ class DopplerCannonModelSet(object):
             self._data = [models]    # make it a list so it is iterable
         self.prepared = False
         self.flattened = False
-
+        self.labels = self._data[0].labels
+        
     @property
     def has_continuum(self):
         return self._data[0].has_continuum
@@ -89,7 +91,8 @@ class DopplerCannonModelSet(object):
                 return m
         return None
     
-    def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,fluxonly=False,wave=None,rv=None):
+    def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,
+                 fluxonly=False,wave=None,rv=None):
         # This will return a model given a set of parameters
         if pars is None:
             pars = np.array([teff,logg,feh])
@@ -209,17 +212,25 @@ class DopplerCannonModelSet(object):
         else:
             raise StopIteration
 
-
     def prepare(self,spec):
         # Loop through the models and prepare them
+        self._original_model = self.copy()
         models = []
         for i,m in enumerate(self):
             newm = m.prepare(spec)
             models.append(newm)
-        new = DopplerCannonModelSet(models)
-        new.prepared = True
-        return new
+        self._data = models
+        self.prepared = True
 
+    def unprepare(self):
+        """ Set back to original."""
+        # Copy the original model back
+        self.nmodel = self._original_model.nmodel
+        self._data = self._original_model._data.copy()
+        self._original_model = None
+        self.prepared = False
+        self.flattened = False
+            
     def interp(self,wave):
         # Interpolate onto a new wavelength scale
         models = []
@@ -247,12 +258,12 @@ class DopplerCannonModelSet(object):
         new = DopplerCannonModelSet(models)
         return new
 
-
     def read(files):
         models = load_cannon_model(files)
         return DopplerCannonModelSet(models)
     
-        
+
+    
 class DopplerCannonModel(object):
 
     def __init__(self,model):
@@ -266,6 +277,7 @@ class DopplerCannonModel(object):
             self._data = [model]     # make it a list so it is iterable
         self.prepared = False
         self.flattened = False
+        self.labels = self._data[0].vectorizer.label_names
 
     @property
     def has_continuum(self):
@@ -408,10 +420,13 @@ class DopplerCannonModel(object):
     
     def prepare(self,spec):
         # prepare the models
-        # already prepared
+        # already prepared, unprepare, then prepare again
         if self.prepare is True:
-            print('Already prepared')
-            return self
+            self.unprepare()
+            self.prepare(spec)
+            return
+        # Copy a copy of the original models
+        self._original_model = self.copy()
         # Keep uninterpolated model in ._data_nointerp, and the interpolated
         #  data in ._data
         newm_nointerp = prepare_cannon_model(self._data[0],spec,dointerp=False)
@@ -425,13 +440,21 @@ class DopplerCannonModel(object):
             newm1.interp = True
             newm.append(newm1)
 
-        new = DopplerCannonModel(newm[0])
-        new._data = newm
-        new._data_nointerp = newm_nointerp
-        new.norder = len(newm)
-        new.prepared = True
-        return new
-
+        self._data = newm
+        self._data_nointerp = newm_nointerp
+        self.norder = len(newm)
+        self.prepared = True
+    
+    def unprepare(self):
+        """ Set back to original."""
+        # Copy the original model back
+        self.nmodel = self._original_model.nmodel
+        self._data = self._original_model._data.copy()
+        self._data_nointerp = None
+        self._original_model = None
+        self.prepared = False
+        self.flattened = False
+    
     def interp(self,wave):
         # Interpolate model onto new wavelength grid
         if wave.ndim==1:
@@ -617,6 +640,7 @@ def hstack(models):
         omodel.continuum = contstack
         
     return omodel
+
 
 # Load a single or list of Cannon models
 def load_cannon_model(files):
