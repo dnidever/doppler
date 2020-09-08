@@ -108,9 +108,31 @@ def load_payne_model(mfile):
     tmp.close()
     return coeffs, wavelength, labels, wavevac
 
+def load_models():
+    """
+    Load all Payne models from the Doppler data/ directory
+    and return as a DopplerPayneMode.
 
-        
-    
+    Returns
+    -------
+    models : DopplerPayneModel
+        DopplerPayneModel for all Payne models in the
+        Doppler /data directory.
+
+    Examples
+    --------
+    models = load_models()
+
+    """    
+    datadir = utils.datadir()
+    files = glob(datadir+'payne_coolhot_*.npz')
+    nfiles = len(files)
+    if nfiles==0:
+        raise Exception("No Payne model files in "+datadir)
+    return DopplerPayneModel.read(files)
+
+
+
 def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
     """ Prepare a Payne spectrum for a given observed spectrum."""
 

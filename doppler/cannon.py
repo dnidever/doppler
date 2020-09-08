@@ -72,9 +72,10 @@ class DopplerCannonModelSet(object):
         else:
             self.nmodel = 1
             self._data = [models]    # make it a list so it is iterable
-        self.prepared = False
+        self._prepared = False
         self.flattened = False
-        self.labels = self._data[0].labels
+        self.labels = list(self._data[0].labels)
+        self.wavevac = self._data[0].wavevac
         
     @property
     def has_continuum(self):
@@ -90,6 +91,10 @@ class DopplerCannonModelSet(object):
             if inside:
                 return m
         return None
+
+    @property
+    def dispersion(self):
+        return self._data[0].dispersion
     
     def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,
                  fluxonly=False,wave=None,rv=None):
@@ -215,20 +220,29 @@ class DopplerCannonModelSet(object):
     def prepare(self,spec):
         # Loop through the models and prepare them
         self._original_model = self.copy()
-        models = []
         for i,m in enumerate(self):
-            newm = m.prepare(spec)
-            models.append(newm)
-        self._data = models
-        self.prepared = True
+            m.prepare(spec)
+        self._prepared = True
+        self.wavevac = self._data[0].wavevac
 
+    @property
+    def prepared(self):
+        return self._prepared
+
+    @prepared.setter
+    def prepared(self,value):
+        """ Can be used to unprepare() the model."""
+        if (value==0) | (value==False):
+            self.unprepare()
+        
     def unprepare(self):
         """ Set back to original."""
         # Copy the original model back
         self.nmodel = self._original_model.nmodel
         self._data = self._original_model._data.copy()
+        self.wavevac = self._original_model.wavevac
         self._original_model = None
-        self.prepared = False
+        self._prepared = False
         self.flattened = False
             
     def interp(self,wave):
@@ -275,10 +289,11 @@ class DopplerCannonModel(object):
             self._data = model
         else:
             self._data = [model]     # make it a list so it is iterable
-        self.prepared = False
+        self._prepared = False
         self.flattened = False
-        self.labels = self._data[0].vectorizer.label_names
-
+        self.labels = list(self._data[0].vectorizer.label_names)
+        self.wavevac = self._data[0].wavevac
+        
     @property
     def has_continuum(self):
         if hasattr(self._data[0],'continuum'):
@@ -443,16 +458,27 @@ class DopplerCannonModel(object):
         self._data = newm
         self._data_nointerp = newm_nointerp
         self.norder = len(newm)
-        self.prepared = True
-    
+        self._prepared = True
+        self.wavevac = self._data[0].wavevac
+
+    @property
+    def prepared(self):
+        return self._prepared
+
+    @prepared.setter
+    def prepared(self,value):
+        """ Can be used to unprepare() the model."""
+        if (value==0) | (value==False):
+            self.unprepare()
+        
     def unprepare(self):
         """ Set back to original."""
         # Copy the original model back
-        self.nmodel = self._original_model.nmodel
         self._data = self._original_model._data.copy()
         self._data_nointerp = None
+        self.wavevac = self._original_model.wavevac
         self._original_model = None
-        self.prepared = False
+        self._prepared = False
         self.flattened = False
     
     def interp(self,wave):
@@ -475,7 +501,7 @@ class DopplerCannonModel(object):
         for i in range(self.norder):
             newm_nointerp.append(cannon_copy(self._data_nointerp[i]))
         new._data_nointerp = newm_nointerp
-        new.prepared = self.prepared
+        new._prepared = self._prepared
         new.norder = len(newm)
         return new
             
@@ -491,7 +517,7 @@ class DopplerCannonModel(object):
         if self.prepared is True:
             new_data_nointerp = hstack(self._data_nointerp)
             new._data_nointerp = new_data_nointerp
-        new.prepared = self.prepared
+        new._prepared = self._prepared
         new.flattened = True
         return new
 
@@ -508,7 +534,7 @@ class DopplerCannonModel(object):
             for d in self._data_nointerp:
                 new_data_nointerp.append(cannon_copy(d))
             new._data_nointerp = new_data_nointerp
-        new.prepared = self.prepared
+        new._prepared = self._prepared
         new.flattened = self.flattened
         return new
     
@@ -516,6 +542,7 @@ class DopplerCannonModel(object):
         model = load_cannon_model(mfile)
         return DopplerCannonModel(model)
 
+    
     
 def cannon_copy(model):
     """ Make a new copy of a Cannon model."""
@@ -841,11 +868,13 @@ def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
         omodel.dispersion = model.dispersion[x0:x1+1]
         omodel.regularization = model.regularization
         if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
+        if hasattr(model,'fwhm') is True: omodel.fwhm=model.fwhm
+        if hasattr(model,'wavevac') is True: omodel.wavevac=model.wavevac
         
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
-        
+
     return omodel
 
 
@@ -898,7 +927,9 @@ def rebin_cannon_model(model,binsize):
             omodel.dispersion = dln.rebin(model.dispersion[0:npix2*binsize],npix2)
         omodel.regularization = model.regularization
         if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
-
+        if hasattr(model,'fwhm') is True: omodel.fwhm=model.fwhm        
+        if hasattr(model,'wavevac') is True: omodel.wavevac=model.wavevac
+        
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
@@ -975,7 +1006,9 @@ def interp_cannon_model(model,xout=None,wout=None):
                                          fill_value='extrapolate',assume_sorted=True)(xout)
         omodel.regularization = model.regularization
         if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
-
+        if hasattr(model,'fwhm') is True: omodel.fwhm=model.fwhm        
+        if hasattr(model,'wavevac') is True: omodel.wavevac=model.wavevac
+        
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
@@ -1043,7 +1076,9 @@ def convolve_cannon_model(model,lsf):
             omodel.dispersion = model.dispersion
         omodel.regularization = model.regularization
         if hasattr(model,'ranges') is True: omodel.ranges=model.ranges
-
+        if hasattr(model,'fwhm') is True: omodel.fwhm=model.fwhm        
+        if hasattr(model,'wavevac') is True: omodel.wavevac=model.wavevac
+        
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
