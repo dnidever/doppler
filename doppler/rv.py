@@ -1048,7 +1048,7 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
     return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
 
 
-def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
+def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
     """
     Fit spectrum using cross-correlation with models sampled in the parameter space.
     
@@ -1078,7 +1078,7 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
 
     .. code-block:: python
 
-         out, bmodel = fit_xcorrgrid(spec)
+         out, bmodel = fit_xcorrgrid_cannon(spec)
 
 
     """
@@ -1150,6 +1150,111 @@ def fit_xcorrgrid(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
         printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['vrel']],[None,None,None,beststr['vrelerr']])
 
     return beststr, bestmodel
+
+
+def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
+    """
+    Fit spectrum using cross-correlation with models sampled in the parameter space.
+    
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    models : list of Payne models, optional
+         A list of Payne models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    samples : numpy structured array, optional
+         Catalog of teff/logg/feh/alphafe parameters to use when sampling the parameter space.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    maxvel : float, optional
+         The maximum velocity to probe in the cross-correlation.  The default is 1000 km/s.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Payne model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = fit_xcorrgrid_payne(spec)
+
+
+    """
+    
+    # Check that the samples input has the right columns
+    if samples is not None:
+        for n in ['teff','logg','feh','alphafe']:
+            try:
+                dum = samples[n]
+            except:
+                raise ValueError(n+' not found in input SAMPLES')
+    
+    # Step 1: Prepare the spectrum
+    #-----------------------------
+    # normalize and mask spectrum
+    spec = utils.specprep(spec)
+
+    # Step 2: Load and prepare the Cannon models
+    #-------------------------------------------
+    if models is None:
+        models = payne.load_models()
+        models.prepare(spec)
+        
+    # Step 3: put on logarithmic wavelength grid
+    #-------------------------------------------
+    wavelog = utils.make_logwave_scale(spec.wave,vel=0.0)  # get new wavelength solution
+    obs = spec.interp(wavelog)
+    # The LSF information will not be correct if using Gauss-Hermite, it uses a Gaussian approximation
+    # it's okay because the "models" are prepared for the original spectra (above)
+    
+    # Step 4: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+    #------------------------------------------------------------------------------------------------
+    dwlog = np.median(dln.slope(np.log10(wavelog)))
+    # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
+    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
+    maxlag = np.maximum(maxlag,50)
+    if samples is None:
+        teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+        logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
+        feh = [-1.5, -0.5]
+        alphafe = [0.0, 0.3]
+        dt = np.dtype([('teff',float),('logg',float),('feh',float),('alphafe',float)])
+        samples = np.zeros(len(teff),dtype=dt)
+        samples['teff'][:] = teff
+        samples['logg'][:] = logg
+        samples['feh'][:] = feh
+    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
+    outstr = np.zeros(len(teff),dtype=outdtype)
+    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
+    for i in range(len(samples)):
+        m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
+        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
+        #if outstr1['chisq'] > 1000:
+        #    import pdb; pdb.set_trace()
+        if verbose is True:
+            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
+        for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
+        outstr['teff'][i] = teff[i]
+        outstr['logg'][i] = logg[i]
+        outstr['feh'][i] = feh
+    # Get best fit
+    bestind = np.argmin(outstr['chisq'])    
+    beststr = outstr[bestind]
+    bestmodel = models(teff=beststr['teff'],logg=beststr['logg'],feh=beststr['feh'],rv=beststr['vrel'])
+    
+    if verbose is True:
+        print('Initial RV fit:')
+        printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['vrel']],[None,None,None,beststr['vrelerr']])
+
+    return beststr, bestmodel
+
 
 
 def fit_lsq(spec,models=None,initpar=None,verbose=False):
@@ -1599,12 +1704,12 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
     if models is None: models = cannon.models
-    pmodels = models.prepare(specm)
+    models.prepare(specm)
     ##  NOT interpolated onto the observed wavelength scale
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid(specm,pmodels,verbose=verbose,maxvel=1000.0)  
+    beststr, xmodel = fit_xcorrgrid(specm,models,verbose=verbose,maxvel=1000.0)  
     
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
@@ -1614,7 +1719,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # just shift the observed wavelengths to rest, do NOT interpolate the spectrum
     #restwave = obs.wave*(1-beststr['vrel']/cspeed)
     restwave = specm.wave*(1-beststr['vrel']/cspeed)    
-    bestmodel = pmodels.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
+    bestmodel = models.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
     bestmodelinterp = bestmodel.interp(restwave)
     labels0, cov0, meta0 = bestmodelinterp.test(specm)
 
@@ -1645,7 +1750,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     #-------------------------------------------------
     wavelog = utils.make_logwave_scale(specm.wave,vel=0.0)  # get new wavelength solution
     obs = specm.interp(wavelog)
-    m = pmodels.get_best_model(labels).interp(wavelog)(labels,rv=0)
+    m = models.get_best_model(labels).interp(wavelog)(labels,rv=0)
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
     maxlag = np.int(np.ceil(np.log10(1+1000.0/cspeed)/dwlog))
@@ -1663,7 +1768,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Step 6: Improved Cannon stellar parameters
     #-------------------------------------------
     restwave = specm.wave*(1-beststr['vrel']/cspeed)    
-    bestmodel = pmodels.get_best_model([beststr2['teff'],beststr2['logg'],beststr2['feh']])
+    bestmodel = models.get_best_model([beststr2['teff'],beststr2['logg'],beststr2['feh']])
     bestmodelinterp = bestmodel.interp(restwave)
     labels2, cov2, meta2 = bestmodelinterp.test(specm)
     # Make sure the labels are within the ranges
@@ -1677,14 +1782,14 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Step 7: Least Squares fitting with forward modeling
     #----------------------------------------------------
     # Get best model so far
-    m = pmodels(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
+    m = models(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
     # Tweak the continuum
     specm = tweakcontinuum(specm,m)
 
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
     initpar = np.array(initpar).flatten()
-    lsout, lsmodel = fit_lsq(specm,pmodels,initpar=initpar,verbose=verbose)
+    lsout, lsmodel = fit_lsq(specm,models,initpar=initpar,verbose=verbose)
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
     
@@ -1694,7 +1799,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     vel = dln.scale_vector(np.arange(30),lspars[3]-maxv,lspars[3]+maxv)
     chisq = np.zeros(len(vel))
     for i,v in enumerate(vel):
-        m = pmodels(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=v)
+        m = models(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=v)
         chisq[i] = np.sqrt(np.sum(((specm.flux-m.flux)/specm.err)**2)/(specm.npix*specm.norder))
     vel2 = dln.scale_vector(np.arange(300),lspars[3]-maxv,lspars[3]+maxv)
     chisq2 = dln.interp(vel,chisq,vel2)
@@ -1710,12 +1815,12 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     fperror = lsperror
     fpars[3] = finerv
     fchisq = finechisq
-    fmodel = pmodels(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=finerv)                            
+    fmodel = models(teff=lspars[0],logg=lspars[1],feh=lspars[2],rv=finerv)                            
     
     # Step 9: MCMC
     #--------------
     if (mcmc is True) | (cornername is not None):
-        mcout, mcmodel = fit_mcmc(specm,pmodels,fpars,verbose=verbose,cornername=cornername)
+        mcout, mcmodel = fit_mcmc(specm,models,fpars,verbose=verbose,cornername=cornername)
         # Use these parameters
         fpars = mcout['pars'][0]
         fperror = mcout['parerr'][0]
@@ -1764,7 +1869,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     
     # Return the prpared models
     if retpmodels is True:
-        return out, fmodel, specm, pmodels
+        return out, fmodel, specm, models
     
     return out, fmodel, specm
 
@@ -1838,7 +1943,7 @@ def fit_payne(spectrum,model=None,verbose=False,mcmc=False,figfile=None,cornerna
     
     # Step 2: Load the Payne model
     #------------------------------
-    if model is None: model = payne.load_model()
+    if model is None: model = payne.load_models()
 
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
