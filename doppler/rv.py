@@ -1874,6 +1874,152 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     return out, fmodel, specm
 
 
+def check_payne_free_pars(model,pars):
+    """ Helper function that checks whether the parameters to fit
+        are okay."""
+
+    # Check that all pars are legitimate.
+    available_pars = models.labels.copy() + ['VSINI','VMACRO','RV','ALPHA_H']
+    available_pars = np.unique(np.char.array(available_pars).upper())
+    for p in pars:
+        if p.upper() not in available_pars:
+            raise ValueError(p+' is not a legitimate parameter')
+    
+    # If we are fitting alpha then none of the individual alpha
+    #  elements can be fit as well.
+    if 'ALPHA_H' in available_pars:
+        alphas = ['O_H','MG_H','SI_H','CA_H','TI_H','S_H']
+        for p in pars:
+            if p.upper() in alpha:
+                raise ValueError('Cannot fit individual alpha elements and [alpha/H]')
+
+            
+def make_payne_init_pars(model,pars,bounds=None,initpars=None,fixpars=None):
+    """ Helper function to make initial array of parameters."""
+
+    # Make array of initial parameters for ALL Payne labels
+    labels = np.char.array(model.labels.copy()).upper()
+    nlabels = len(model.labels)
+    initcoef = np.zeros(nlabels,np.float64)
+    lbounds = np.zeros(nlabels,np.float64)
+    ubounds = np.zeros(nlabels,np.float64)
+
+    # Initial guesses and bounds for the fitted parameters
+    if initpars is not None:
+        for i,par in enumerate(pars):
+            ind,nind = dln.where(labels==par.upper())
+            if nind==0:
+                raise ValueError(par.upper()+' NOT a label of this Payne Model')
+            initcoef[ind] = initpars[i]
+            if bounds is not None:
+                lbounds[ind] = bounds[0][i]
+                ubounds[ind] = bounds[1][i]
+            else:
+                if par.upper()=='TEFF':
+                    lbounds[ind] = np.maximum(initpars[i]-1000,3000)
+                    ubounds[ind] = initpars[i]+1000
+                if par.upper()=='LOGG':
+                    lbounds[ind] = np.maximum(initpars[i]-2,-1)
+                    ubounds[ind] = np.minimum(initpars[i]+2,6)
+                if par.upper()=='VTURB':
+                    lbounds[ind] = np.maximum(initpars[i]-2,0)
+                    ubounds[ind] = initpars[i]+2
+                if par.upper().endswith('_H'):
+                    lbounds[ind] = initpars[i]-0.5
+                    ubounds[ind] = initpars[i]-0.5
+                if par.upper()=='FE_H':
+                    lbounds[ind] = -3.0
+                    ubounds[ind] = 0.5
+                if par.upper()=='VSINI':
+                    lbounds[ind] = np.maximum(initpars[i]-10,0)
+                    ubounds[ind] = initpars[i]+50
+                if par.upper()=='VMACRO':
+                    lbounds[ind] = np.maximum(initpars[i]-2,0)
+                    ubounds[ind] = initpars[i]+2
+    
+    # Add initial values for the "fixed" pars
+    if fixpars is not None:
+        for par in fixpars.keys():
+            val = fixpars[par]
+            ind,nind = dln.where(labels==par.upper())
+            if nind==0:
+                raise ValueError(par.upper()+' NOT a label of this Payne Model')
+            initcoef[ind] = val
+
+    coefbounds = (lbounds,ubounds)
+    
+    return initcoef,coefbounds
+            
+
+def payne_model(model):
+    """ Function called by curvefit(). Wrapper for Payne() model."""
+    pass
+    
+    
+    
+def fit_payne_model(spec,model,pars=None,bounds=None,initpars=None,fixpars=None):
+    """
+    Fit a Payne model to an observation.
+
+    Parameters
+    ----------
+    spec        The observed spectrum.
+    model       Payne Model
+    pars        List of label names to fit.  'alpha_h' can be used for 
+                  all the alpha elements
+    bounds      Lower and lower bounds on PARS.
+    initpars    Initial guesses for PARS.
+    fixpars     Dictionary of values to use for the fixed parameters.
+                  By default, all fixed abundances are set to [X/H] = [Fe/H]
+                  and Vsini=VMacro=RV=0
+    
+    Returns
+    -------
+    coeffs      Best-fit parameters
+    coeffs_cov  Covariance matrix for bestpars
+
+    """
+
+    # Check the parameters to fit
+    check_payne_free_pars(model,pars)
+
+
+    # Fitting ALPHA_H
+    #   need to use a special class that constructs the
+    #   the label array with the right values
+    if 'ALPHA_H' in np.char.array(pars).upper():
+    
+        # Create a dummy class to use for passing information for fitting
+        class fitClass:
+            def __init__(self):
+                pass
+
+            def model(self, x, coef):
+                """ Make the model."""
+                val = Payne(pars)
+                
+                return val
+
+        inst = fitClass()
+        inst.pars = np.char.array(pars).upper()
+        inst.fixpars = np.char.array(fixpars).upper()
+        coeffs, coeffs_cov = curve_fit(inst.fitfun,spec.wave,spec.flux,sigma=spec,err,
+                                       p0=initpars,bounds=bounds)
+
+
+    # If we are NOT fitting ALPHA_H, then we can the Payne model
+    # directly with all the paramters with proper bounds (for "fixing").
+    else:
+
+        # Make the initial parameters and bounds
+        initcoef,coefbounds = make_payne_init_pars(model,pars,bounds,initpars,fixpars)
+    
+        # Do the fitting with curve_fit
+        coeffs, coeffs_cov = curve_fit(model,spec.wave,spec.flux,sigma=spec.err,
+                                       p0=initcoef,bounds=coefbounds)
+                                      
+    return coeffs, coeffs_cov
+
 
 def fit_payne(spectrum,model=None,verbose=False,mcmc=False,figfile=None,cornername=None,
               retpmodels=False,nthreads=None):
@@ -1945,6 +2091,26 @@ def fit_payne(spectrum,model=None,verbose=False,mcmc=False,figfile=None,cornerna
     #------------------------------
     if model is None: model = payne.load_models()
 
+
+
+
+    # Have a generic fit_payne_model() code that you give an observed spectrum
+    # a DopplerPayneModel and a list of parameter names that you want to fit
+    # (e.g., ['teff','logg','feh','mg_h']), and bounds for each.
+    # you also need values for the parameters we aren't fitting (although
+    # for abundances we can just set [X/Fe] = 0.
+    #
+    # then have a little function that checks that we have all the parameters
+    # we need and not more (if fitting [alpha/fe] then we can't fit individual
+    # alpha abundances).
+    #
+    # then have a little function that figures out the bounds for all the parameters.
+    #
+    # the default is to fit all the parameters
+    # if DopplerPayneModel then that includes Vsini/Vmacro.
+
+    
+    
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
