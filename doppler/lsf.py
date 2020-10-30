@@ -1284,11 +1284,6 @@ class GaussHermiteLsf(Lsf):
         """
         Return the LSF of the spectrum at specific locations.
 
-        Unlike for the GaussianLsf class, the GaussHermiteLsf
-        anyarray() method can currently only return the LSF
-        at specific locations and NOT on a completely new
-        wavelength array.
-
         Parameters
         ----------
         x : array
