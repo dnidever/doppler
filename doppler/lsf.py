@@ -1280,7 +1280,7 @@ class GaussHermiteLsf(Lsf):
 
     
     # Return the LSF values for specific locations
-    def anyarray(self,x,xtype='pixels',nlsf=15,order=0,**kwargs):
+    def anyarray(self,x,xtype='pixels',nlsf=15,order=0,original=True,**kwargs):
         """
         Return the LSF of the spectrum at specific locations.
 
@@ -1300,6 +1300,11 @@ class GaussHermiteLsf(Lsf):
            The order for which to retrn the LSF array.  The default is 0.
         nlsf : int, optional
            The number of pixels to use the LSF dimension.  The default is 15.
+        original : bool, optional
+           If original=True, then the LSFs are returned on the original
+           wavelength scale but at the centers given in "x".
+           If the LSF is desired on a completely new wavelength scale
+           (given by "x"), then orignal=False should be used instead.
 
         Returns
         -------
@@ -1312,14 +1317,30 @@ class GaussHermiteLsf(Lsf):
 
         """
         
+        # Make sure nLSF is odd
+        if nlsf % 2 == 0: nlsf+=1
+
         nx = len(x)
-        # Only pixels supported, convert wavelength to pixels
+        # Gauss-Hermite xtype is always in pixels, convert wavelength to pixels
         if xtype.lower().find('wave') > -1:
             w = x.copy()
             x = self.wave2pix(w,order=order)
-        # Make LSF array
-        xlsf = np.arange(nlsf)-nlsf//2
+
+        # Make xLSF array
+        
+        # New pixel scale
+        if original==False:
+            dx = x[1:]-x[0:-1]
+            dx = np.hstack((dx,dx[-1]))
+            xlsf = np.arange(nlsf)-nlsf//2
+            xlsf2 = np.outer(dx,xlsf)
+        # Original pixel scale
+        else:
+            xlsf = np.arange(nlsf)-nlsf//2
+        # Make the LSF using ghlsf()
         lsf = ghlsf(xlsf,x,self.pars[:,order])
+        
+        # Make sure it's normalized
         lsf[lsf<0.] = 0.
         lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
         
