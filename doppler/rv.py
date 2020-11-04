@@ -2003,7 +2003,7 @@ def fit_payne_model(spec,model,pars=None,bounds=None,initpars=None,fixpars=None)
         inst = fitClass()
         inst.pars = np.char.array(pars).upper()
         inst.fixpars = np.char.array(fixpars).upper()
-        coeffs, coeffs_cov = curve_fit(inst.fitfun,spec.wave,spec.flux,sigma=spec,err,
+        coeffs, coeffs_cov = curve_fit(inst.fitfun,spec.wave,spec.flux,sigma=spec.err,
                                        p0=initpars,bounds=bounds)
 
 

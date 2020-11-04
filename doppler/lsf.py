@@ -687,7 +687,11 @@ class Lsf:
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
         self.wave = wave
-        self.pars = pars
+        # Make sure pars are 2D
+        if pars.ndim==1:
+            self.pars = np.atleast_2d(pars).T   # 2D with order dimension at 2nd
+        else:
+            self.pars = pars
         self.lsftype = lsftype
         self.xtype = xtype
         if wave.ndim==1:
@@ -1169,7 +1173,7 @@ class GaussHermiteLsf(Lsf):
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
         super().__init__(wave=wave,pars=pars,xtype='pixel',lsftype='Gauss-Hermite',sigma=sigma,verbose=False)
-
+        
         
     # Return Gaussian sigma
     def sigma(self,x=None,xtype='pixels',order=0,extrapolate=True):
