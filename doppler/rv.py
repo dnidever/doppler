@@ -1098,7 +1098,9 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
 
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
-    if models is None: models = cannon.models.prepare(spec)
+    if models is None:
+        models = cannon.models.copy()
+        models.prepare(spec)
     
     # Step 3: put on logarithmic wavelength grid
     #-------------------------------------------
@@ -1203,7 +1205,7 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
     if models is None:
-        models = payne.load_models()
+        models = payne.load_models().copy()
         models.prepare(spec)
         
     # Step 3: put on logarithmic wavelength grid
@@ -1296,7 +1298,9 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
 
     # Load and prepare the Cannon models
     #-------------------------------------------
-    if models is None: models = cannon.models.prepare(spec)
+    if models is None:
+        models = cannon.models.copy()
+        models.prepare(spec)
     
     # Get initial estimates
     if initpar is None:
@@ -1391,7 +1395,9 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
 
     # Load and prepare the Cannon models
     #-------------------------------------------
-    if models is None: models = cannon.models.prepare(spec)
+    if models is None:
+        models = cannon.models.copy()
+        models.prepare(spec)
 
     # Initial estimates
     if initpar is None:
@@ -1703,7 +1709,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
-    if models is None: models = cannon.models
+    if models is None: models = cannon.models.copy()
     models.prepare(specm)
     ##  NOT interpolated onto the observed wavelength scale
 
@@ -2398,7 +2404,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         else:
             if verbose is True:
                 print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
-            modlist.append(cannon.models.prepare(speclist[i]).copy())
+            modlist.append(cannon.models.copy().prepare(speclist[i]))
             sp = speclist[i].copy()
             sp = utils.specprep(sp)   # mask and normalize
             # Mask outliers
