@@ -1709,7 +1709,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid(specm,models,verbose=verbose,maxvel=1000.0)  
+    beststr, xmodel = fit_xcorrgrid_cannon(specm,models,verbose=verbose,maxvel=1000.0)  
     
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------

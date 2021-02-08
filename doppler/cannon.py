@@ -157,7 +157,7 @@ class DopplerCannonModelSet(object):
             sigma[:,o] = sigma1
         
         # Create Spec1D object
-        mspec = Spec1D(model_spec,wave=model_wave,lsfsigma=sigma,instrument='Model')
+        mspec = Spec1D(model_spec,err=model_spec*0.0,wave=model_wave,lsfsigma=sigma,instrument='Model')
         mspec.teff = teff
         mspec.logg = logg
         mspec.feh = feh
@@ -387,7 +387,7 @@ class DopplerCannonModel(object):
             omask = omask.flatten()            
         
         # Create Spec1D object
-        mspec = Spec1D(oflux,wave=owave,mask=omask,lsfsigma=None,instrument='Model')
+        mspec = Spec1D(oflux,err=oflux*0.0,wave=owave,mask=omask,lsfsigma=None,instrument='Model')
         mspec.teff = labels[0]
         mspec.logg = labels[1]
         mspec.feh = labels[2]
@@ -665,6 +665,9 @@ def hstack(models):
             cmodels.append(models[i].continuum)
         contstack = hstack(cmodels)
         omodel.continuum = contstack
+
+    if hasattr(model,'fwhm') is True: omodel.fwhm=models[0].fwhm
+    if hasattr(model,'wavevac') is True: omodel.wavevac=models[0].wavevac
         
     return omodel
 
@@ -1333,7 +1336,7 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
         sigma[:,o] = sigma1
         
     # Create Spec1D object
-    mspec = Spec1D(model_spec,wave=model_wave,lsfsigma=sigma,instrument='Model')
+    mspec = Spec1D(model_spec,err=model_spec*0.0,wave=model_wave,lsfsigma=sigma,instrument='Model')
     mspec.teff = teff
     mspec.logg = logg
     mspec.feh = feh
