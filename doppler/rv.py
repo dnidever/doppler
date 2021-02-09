@@ -1539,7 +1539,7 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
         return flux
 
     def multispec_interp_jac(x,*argv):
-        """ Computie the Jacobian matrix (an m-by-n matrix, where element (i, j)
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
             is the partial derivative of f[i] with respect to x[j]). """
         # We only have to recompute the full model if teff/logg/feh are being modified
         # otherwise we just modify one spectrum's model

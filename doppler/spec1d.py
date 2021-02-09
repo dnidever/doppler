@@ -167,6 +167,8 @@ class Spec1D:
         self.err = err
         self.wave = wave
         self.mask = mask
+        if mask is None:
+            self.mask = np.zeros(flux.shape,bool)
         self.bitmask = bitmask
         if lsftype.lower() not in lsfclass.keys():
             raise ValueError(lsftype+' not supported yet')
