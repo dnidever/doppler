@@ -489,7 +489,19 @@ class Spec1D:
         else:
             newlsfpars = None
         newlsf = self.lsf.copy()
-        new = Spec1D(self.flux.copy(),err=self.err.copy(),wave=self.wave.copy(),mask=self.mask.copy(),
+        if self.err is not None:
+            newerr = self.err.copy()
+        else:
+            newerr = None
+        if self.wave is not None:
+            newwave = self.wave.copy()
+        else:
+            newwave = None
+        if self.mask is not None:
+            newmask = self.mask.copy()
+        else:
+            newmask = None
+        new = Spec1D(self.flux.copy(),err=newerr,wave=newwave,mask=newmask,
                      lsfpars=newlsfpars,lsftype=newlsf.lsftype,lsfxtype=newlsf.xtype,
                      lsfsigma=newlsf.sigma,instrument=self.instrument,filename=self.filename)
         new.lsf = newlsf  # make sure all parts of Lsf are copied over
