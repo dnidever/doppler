@@ -302,29 +302,31 @@ def broaden(wave,flux,vgauss=None,vsini=None):
     
     # Add Gaussian broadening
     if vgauss is not None:
-        # 2D kernel
-        if logwave==False:
-            gkernel = gausskernel(wave,vgauss)
-            # Don't use this if it's not going to do anything!!!
-            if gkernel.ndim==2:
-                oflux = convolve_sparse(oflux,gkernel)
-        # 1D kernel, log wavelengths
-        else:
-            gkernel = gausskernel(wave[0:2],vgauss)
-            oflux = np.convolve(oflux,gkernel[0,:],mode='same')
+        if vgauss != 0.0:
+            # 2D kernel
+            if logwave==False:
+                gkernel = gausskernel(wave,vgauss)
+                # Don't use this if it's not going to do anything!!!
+                if gkernel.ndim==2:
+                    oflux = convolve_sparse(oflux,gkernel)
+            # 1D kernel, log wavelengths
+            else:
+                gkernel = gausskernel(wave[0:2],vgauss)
+                oflux = np.convolve(oflux,gkernel[0,:],mode='same')
             
     # Add Rotational broadening
     if vsini is not None:
-        # 2D kernel
-        if logwave==False:
-            rkernel = rotkernel(wave,vsini)
-            # Don't use this if it's not going to do anything!!!
-            if rkernel.ndim==2:
-                oflux = convolve_sparse(oflux,rkernel)
-        # 1D kernel, log wavelengths
-        else:
-            rkernel = rotkernel(wave[0:2],vsini)
-            oflux = np.convolve(oflux,rkernel[0,:],mode='same')
+        if vsini != 0.0:
+            # 2D kernel
+            if logwave==False:
+                rkernel = rotkernel(wave,vsini)
+                # Don't use this if it's not going to do anything!!!
+                if rkernel.ndim==2:
+                    oflux = convolve_sparse(oflux,rkernel)
+            # 1D kernel, log wavelengths
+            else:
+                rkernel = rotkernel(wave[0:2],vsini)
+                oflux = np.convolve(oflux,rkernel[0,:],mode='same')
                 
     return oflux
 
