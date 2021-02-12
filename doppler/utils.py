@@ -202,6 +202,7 @@ def gausskernel(wave,vgauss):
     npix = len(np.atleast_1d(wave))
     dw = np.diff(wave)
     dw = np.hstack((dw,dw[-1]))
+    dw = np.abs(dw)
 
     # Vgauss is the velocity FWHM
     gsigma = np.float64(vgauss*wave/(cspeed*dw*2.3548))
@@ -235,6 +236,7 @@ def rotkernel(wave,vsini,eps=0.6):
     npix = len(np.atleast_1d(wave))
     dw = np.diff(wave)
     dw = np.hstack((dw,dw[-1]))
+    dw = np.abs(dw)
 
     # How many pixels to we need to capture the rotational profile
     minhalfpix = np.ceil(wave*vsini/(cspeed*dw))
@@ -327,7 +329,7 @@ def broaden(wave,flux,vgauss=None,vsini=None):
             else:
                 rkernel = rotkernel(wave[0:2],vsini)
                 oflux = np.convolve(oflux,rkernel[0,:],mode='same')
-                
+
     return oflux
 
 
