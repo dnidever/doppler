@@ -237,7 +237,7 @@ def rotkernel(wave,vsini,eps=0.6):
     dw = np.diff(wave)
     dw = np.hstack((dw,dw[-1]))
     dw = np.abs(dw)
-
+    
     # How many pixels to we need to capture the rotational profile
     minhalfpix = np.ceil(wave*vsini/(cspeed*dw))
     nkernel = np.int(np.max( 2*minhalfpix+1 ))

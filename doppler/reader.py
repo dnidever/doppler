@@ -12,6 +12,7 @@ __version__ = '20200111'  # yyyymmdd
 import os
 import numpy as np
 import warnings
+import astropy
 from astropy.io import fits
 from astropy.table import Table
 from scipy.ndimage.filters import median_filter
@@ -22,6 +23,7 @@ from .spec1d import Spec1D
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
+astropy.io.fits.Conf.use_memmap = False  # load into memory
 
 # Load a spectrum
 def read(filename=None,format=None):
@@ -138,7 +140,7 @@ def apvisit(filename):
         hdulist = fits.open(filename)
         nhdu = len(hdulist)
         hdulist.close()
-
+        
         # flux, err, sky, skyerr are in units of 1e-17
         flux = fits.getdata(filename,1).T * 1e-17   # [Npix,Norder]
         wave = fits.getdata(filename,4).T
