@@ -207,7 +207,7 @@ def gausskernel(wave,vgauss):
     # Vgauss is the velocity FWHM
     gsigma = np.float64(vgauss*wave/(cspeed*dw*2.3548))
     
-    # How many pixels to we need to capture the rotational profile
+    # How many pixels do we need to capture the profile
     minhalfpix = gsigma*3
     if np.max(minhalfpix) < 0.1:
         return np.ones(npix).astype(np.float64)
@@ -238,7 +238,7 @@ def rotkernel(wave,vsini,eps=0.6):
     dw = np.hstack((dw,dw[-1]))
     dw = np.abs(dw)
     
-    # How many pixels to we need to capture the rotational profile
+    # How many pixels do we need to capture the rotational profile
     minhalfpix = np.ceil(wave*vsini/(cspeed*dw))
     nkernel = np.int(np.max( 2*minhalfpix+1 ))
     
@@ -259,6 +259,15 @@ def rotkernel(wave,vsini,eps=0.6):
     
     return kernel
 
+
+def check_rotkernel(wave,vsini,eps=0.6):
+    """ Check if the rotational kernel will have any effect."""
+    # it will return True if it will have an effect and False if not
+    kernel = rotkernel(wave,vsini,eps=eps)
+    if kernel.shape[1]==3 and np.sum(kernel[:,1]>0.99)==kernel.shape[0]:
+        return False
+    return True
+    
 
 #def combine_kernels(kernels):
 #    # Combine mulitple 2D kernels, convolve them with each other
@@ -298,7 +307,21 @@ def broaden(wave,flux,vgauss=None,vsini=None):
 
     # If the wavelengths are on a logarithmic wavelength scale
     #  then just convolve with a 1D kernel with np.convolve(flux,kernel,mode='same')
-    
+
+
+    # Check the rotational kernel to see if it will have any effect
+    #  this can happen if vsini is low (<~ 3.5 km/s).
+    # If it has no effect, then use Vgauss instead
+    #  note that this will also have a small (but nonzero) effect
+    if vsini is not None:
+        if vsini>0.0:
+            if check_rotkernel(wave,vsini) is False:
+                if vgauss is None:
+                    vgauss = vsini
+                else:
+                    vgauss = sqrt(vgauss**2+vsini**2)  # add in quadrature
+                vsini = 0.0
+                
     # Initializing output flux
     oflux = flux.copy()
     
