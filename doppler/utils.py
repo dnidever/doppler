@@ -319,7 +319,7 @@ def broaden(wave,flux,vgauss=None,vsini=None):
                 if vgauss is None:
                     vgauss = vsini
                 else:
-                    vgauss = sqrt(vgauss**2+vsini**2)  # add in quadrature
+                    vgauss = np.sqrt(vgauss**2+vsini**2)  # add in quadrature
                 vsini = 0.0
                 
     # Initializing output flux
