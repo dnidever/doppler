@@ -576,7 +576,10 @@ def hydra(filename):
     spec.filename = filename
     spec.sptype = "HYDRA"
     spec.head = head
-
+    observat = head.get('OBSERVAT')
+    if observat is not None:
+        spec.observatory = observat.lower()
+    
     # Modify continuum parameters
     spec.continuum_func = functools.partial(spec1d.continuum,norder=4,perclevel=75.0,binsize=0.15,interp=True)
     # Mask last 100 pixels and first 75 that are below 0.8 of the continuum
@@ -585,6 +588,7 @@ def hydra(filename):
     bd, = np.where((spec.flux/cont < 0.85) & ((x > (spec.npix-100)) | (x<75)))
     if len(bd)>0:
         spec.mask[bd] = True
+        spec.err[bd] = 1e30
     
     return spec
 
