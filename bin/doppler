@@ -86,6 +86,7 @@ if __name__ == "__main__":
                     print('%s  S/N=%6.1f ' % (f,spec.snr))
 
             # Save the figure
+            figfile = None
             if (nfiles==1) & (inpfigfile!=''):
                 figfile = inpfigfile
             if (inpfigfile=='') & (saveplot is True):

@@ -83,7 +83,7 @@ def read(filename=None,format=None):
             raise ValueError('reader '+format+' not found')
         # Use the requested reader/format
         out = _readers[format](filename)
-        if out is not None: return out
+        return out
         
     # Loop over all readers until we get a spectrum out
     for k in _readers.keys():
@@ -146,8 +146,9 @@ def apvisit(filename):
         wave = fits.getdata(filename,4).T
         lsfcoef = fits.getdata(filename,10).T
         spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
+        spec.reader = 'apvisit'
         spec.filename = filename
-        spec.sptype = "Visit"
+        spec.sptype = "apVisit"
         spec.waveregime = "NIR"
         spec.instrument = "APOGEE"        
         spec.head = fits.getheader(filename,0)
@@ -262,6 +263,7 @@ def apstar(filename):
         flux = fits.getdata(filename,1).T * 1e-17
         lsfcoef = fits.getdata(filename,8).T
         spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
+        spec.reader = 'apstar'
         spec.filename = filename
         spec.sptype = "apStar"
         spec.waveregime = "NIR"
@@ -358,6 +360,7 @@ def boss(filename):
             err = 1.0/np.sqrt(ivar)
             mask = np.zeros(flux.shape,bool)
         spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Wave')
+        spec.reader = 'boss'
         spec.lsf.clean()   # clean up some bad LSF values
         spec.filename = filename
         spec.sptype = "spec"
@@ -420,6 +423,7 @@ def mastar(filename):
             err = 1.0/np.sqrt(ivar)
             mask = np.zeros(flux.shape,bool)
         spec = Spec1D(flux,wave=wave,err=err,mask=mask)
+        spec.reader = 'mastar'
         spec.filename = filename
         spec.sptype = "MaStar"
         spec.waveregime = "Optical"
@@ -498,8 +502,77 @@ def imacs(filename):
     wave = np.poly1d(wpar)(np.arange(npix))
 
     spec = Spec1D(flux,err=sigma,wave=wave,mask=mask)
+    spec.reader = 'imacs'
     spec.filename = filename
     spec.sptype = "IMACS"
+    spec.head = head
+
+    return spec
+
+# Load HYDRA spectra
+def hydra(filename):
+    """
+    Read HYDRA spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = hydra('spec.fits')
+
+    """
+
+    base, ext = os.path.splitext(os.path.basename(filename))
+    
+    # Generic IRAF spectrum
+    # BANDID1 = 'spectrum: background median, weights variance, clean yes' /          
+    # BANDID2 = 'sigma - background median, weights variance, clean yes' /            
+    # BANDID3 = 'mask - 0:good, 1:bad' / 
+    data,head = fits.getdata(filename,0,header=True)
+    ndim = data.ndim
+    # often the 2nd dimension is unnecessary, e.g. [3, 1, 1649]
+    if (ndim==3):
+        if data.shape[1]==1: data = data[:,0,:]
+        ndim = data.ndim
+    if (ndim==2):
+        flux = data[0,:]
+        npix = len(flux)            
+        sigma = data[1,:]
+        badmask = data[2,:]
+        mask = np.zeros(npix,bool)
+        mask[badmask==1] = True        
+    elif (ndim==1):
+        flux = data
+        npix = len(flux)        
+        sigma = np.sqrt(flux)  # assume gain~1
+        mask = np.zeros(npix,bool)
+    # Get wavelength
+    crval1 = head.get('CRVAL1')
+    crpix1 = head.get('CRPIX1')
+    cdelt1 = head.get('CDELT1')
+    if cdelt1 is None: cdelt1=head.get('CD1_1')
+    if (crval1 is not None) & (crpix1 is not None) & (cdelt1 is not None):
+        wave = (np.arange(npix)+1-crpix1) * np.float64(cdelt1) + np.float64(crval1)
+        wlogflag = head.get('DC-FLAG')
+        if (wlogflag is not None):
+            if wlogflag==1: wave = 10**wave
+    else:
+        print('No wavelength information')
+        wave = None
+
+    spec = Spec1D(flux,err=sigma,wave=wave,mask=mask)
+    spec.reader = 'hydra'
+    spec.filename = filename
+    spec.sptype = "HYDRA"
     spec.head = head
 
     return spec
@@ -548,7 +621,7 @@ def iraf(filename):
     crpix1 = head.get('crpix1')
     cdelt1 = head.get('cdelt1')
     if cdelt1 is None: cdelt1=head.get('cd1_1')
-    if (crval1 is not None) & (crpix1 is not None) & (cdelt is not None):
+    if (crval1 is not None) & (crpix1 is not None) & (cdelt1 is not None):
         wave = (np.arange(npix,int)+1-crpix1) * np.float64(cdelt1) + np.float64(crval1)
         wlogflag = head.get('DC-FLAG')
         if (wlogflag is not None):
@@ -557,6 +630,7 @@ def iraf(filename):
         print('No wavelength information')
         wave = None
     spec = Spec1D(flux,wave=wave)
+    spec.reader = 'iraf'
     spec.filename = filename
     spec.sptype = "IRAF"
     spec.head = head
@@ -572,4 +646,4 @@ def iraf(filename):
     return spec
 
 # List of readers
-_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf, 'imacs':imacs}
+_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf, 'imacs':imacs, 'hydra':hydra}
