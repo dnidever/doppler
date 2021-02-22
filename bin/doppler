@@ -96,29 +96,35 @@ if __name__ == "__main__":
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
                 
             # Run Doppler
-            out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,nthreads=nthreads)
-            
-            # Save the output
-            if inpoutfile!='':
-                outfile = inpoutfile
-            else:
-                fdir,base,ext = doppler.utils.splitfilename(f)
-                outfile = base+'_doppler.fits'
-                if outdir is not None: outfile = outdir+'/'+outfile
-                if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
-            if verbose is True:
-                print('Writing output to '+outfile)
-            if os.path.exists(outfile): os.remove(outfile)
-            Table(out).write(outfile)
-            # append best model
-            hdulist = fits.open(outfile)
-            hdu = fits.PrimaryHDU(model.flux)
-            hdulist.append(hdu)
-            hdulist.writeto(outfile,overwrite=True)
-            hdulist.close()
+            try:
+                out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,nthreads=nthreads)
+                
+                # Save the output
+                if inpoutfile!='':
+                    outfile = inpoutfile
+                else:
+                    fdir,base,ext = doppler.utils.splitfilename(f)
+                    outfile = base+'_doppler.fits'
+                    if outdir is not None: outfile = outdir+'/'+outfile
+                    if (outdir is None) & (fdir != ''): outfile = fdir+'/'+outfile
+                if verbose is True:
+                    print('Writing output to '+outfile)
+                if os.path.exists(outfile): os.remove(outfile)
+                Table(out).write(outfile)
+                # append best model
+                hdulist = fits.open(outfile)
+                hdu = fits.PrimaryHDU(model.flux)
+                hdulist.append(hdu)
+                hdulist.writeto(outfile,overwrite=True)
+                hdulist.close()
 
-            # Add SPECM??
+                # Add SPECM??
 
+            except Exception as e:
+                if verbose is True:
+                    print('Doppler failed on '+f+' '+str(e))
+
+                
     # Joint fitting
     #--------------
     else:
