@@ -33,6 +33,82 @@ cspeed = 2.99792458e5  # speed of light in km/s
 # LSF class dictionary
 lsfclass = {'gaussian': GaussianLsf, 'gauss-hermite': GaussHermiteLsf}
 
+def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
+    """
+    Measure the continuum of a spectrum.
+
+    Parameters
+    ----------
+    spec : Spec1D object
+           A spectrum object.  This at least needs
+                to have a FLUX and WAVE attribute.
+    norder : float, optional
+            Polynomial order to use for the continuum fitting.
+            The default is 6.
+    perclevel : float, optional
+            Percent level to use for the continuum value
+            in large bins.  Default is 90.
+    binsize : float, optional
+            Fraction of the wavelength range (scaled to -1 to +1) to bin.
+            Default is 0.1.
+    interp : bool, optional
+            Use interpolation of the binned values instead of a polynomial
+            fit.  Default is True.
+
+    Returns
+    -------
+    cont : numpy array
+            The continuum array, in the same shape as the input flux.
+
+    Examples
+    --------
+
+    cont = continuum(spec)
+
+    """
+
+    wave = spec.wave.copy().reshape(spec.npix,spec.norder)   # make 2D
+    flux = spec.flux.copy().reshape(spec.npix,spec.norder)   # make 2D
+    err = spec.err.copy().reshape(spec.npix,spec.norder)     # make 2D
+    mask = spec.mask.copy().reshape(spec.npix,spec.norder)   # make 2D
+    cont = err.copy()*0.0+1
+    for o in range(spec.norder):
+        w = wave[:,o].copy()
+        wr = [np.min(w),np.max(w)]
+        x = (w-np.mean(wr))/dln.valrange(wr)*2    # -1 to +1
+        y = flux[:,o].copy()
+        m = mask[:,o].copy()
+        # Divide by median
+        medy = np.nanmedian(y)
+        y /= medy
+        # Perform sigma clipping out large positive outliers
+        coef = dln.poly_fit(x,y,2,robust=True)
+        sig = dln.mad(y-dln.poly(x,coef))
+        bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
+        if nbd>0: m[bd]=True
+        gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
+        # Bin the data points
+        xr = [np.nanmin(x),np.nanmax(x)]
+        bins = int(np.ceil((xr[1]-xr[0])/binsize))
+        ybin, bin_edges, binnumber = bindata.binned_statistic(x[gdmask],y[gdmask],statistic='percentile',
+                                                              percentile=perclevel,bins=bins,range=None)
+        xbin = bin_edges[0:-1]+0.5*binsize
+        # Interpolate to full grid
+        if interp is True:
+            fnt = np.isfinite(ybin)
+            cont1 = dln.interp(xbin[fnt],ybin[fnt],x,kind='quadratic',extrapolate=True,exporder=1)
+        else:
+            coef = dln.poly_fit(x,y,norder)
+            cont1 = dln.poly(x,coef)
+        cont1 *= medy
+        cont[:,o] = cont1
+
+    # Flatten to 1D if norder=1
+    if spec.norder==1:
+        cont = cont.flatten()            
+
+    return cont
+
 
 # Combine multiple spectra
 def combine(speclist,wave=None,sum=False):
@@ -189,6 +265,8 @@ class Spec1D:
         self.ndim = flux.ndim
         self.npix = npix
         self.norder = norder
+        self.continuum_func = continuum
+        self._cont = None
         return
 
     
@@ -212,6 +290,19 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    
+    @property
+    def cont(self,**kwargs):
+        """ Return the continuum."""
+        if self._cont is None:
+            cont = self.continuum_func(self,**kwargs)
+            self._cont = cont
+        return self._cont
+
+    @cont.setter
+    def cont(self,inpcont):
+        """ Set the continuum."""
+        self._cont = inpcont
     
     def wave2pix(self,w,extrapolate=True,order=0):
         """
@@ -287,18 +378,13 @@ class Spec1D:
             return utils.p2w(self.wave,x,extrapolate=extrapolate)            
 
         
-    def normalize(self,ncorder=6,perclevel=0.95):
+    def normalize(self,**kwargs):
         """
-        Normalize the spectrum.
+        Normalize the spectrum using a specified continuum function.
 
         Parameters
         ----------
-        ncorder : float, optional
-              Polynomial order to use for the continuum fitting.
-              The default is 6.
-        perclevel : float, optional
-              Percent level (1.0 for 100%) to use for the continuum value
-              in large bins.  Default is 0.95.
+        **kwargs : arguments that are passed to the continuum function.
               
         Returns
         -------
@@ -313,58 +399,19 @@ class Spec1D:
 
         """
 
-        self._flux = self.flux  # Save the original
-        #nspec, cont, masked = normspec(self,ncorder=ncorder,perclevel=perclevel)
+        if self.normalized is True:
+            return
+        
+        self._flux = self.flux.copy()  # Save the original
 
-        binsize = 0.10
-        perclevel = 90.0
-        wave = self.wave.copy().reshape(self.npix,self.norder)   # make 2D
-        flux = self.flux.copy().reshape(self.npix,self.norder)   # make 2D
-        err = self.err.copy().reshape(self.npix,self.norder)     # make 2D
-        mask = self.mask.copy().reshape(self.npix,self.norder)   # make 2D
-        cont = err.copy()*0.0+1
-        for o in range(self.norder):
-            w = wave[:,o].copy()
-            x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
-            y = flux[:,o].copy()
-            m = mask[:,o].copy()
-            # Divide by median
-            medy = np.nanmedian(y)
-            y /= medy
-            # Perform sigma clipping out large positive outliers
-            coef = dln.poly_fit(x,y,2,robust=True)
-            sig = dln.mad(y-dln.poly(x,coef))
-            bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
-            if nbd>0: m[bd]=True
-            gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
-            # Bin the data points
-            xr = [np.nanmin(x),np.nanmax(x)]
-            bins = np.ceil((xr[1]-xr[0])/binsize)+1
-            ybin, bin_edges, binnumber = bindata.binned_statistic(x[gdmask],y[gdmask],statistic='percentile',
-                                                                  percentile=perclevel,bins=bins,range=None)
-            xbin = bin_edges[0:-1]+0.5*binsize
-            # Interpolate to full grid
-            fnt = np.isfinite(ybin)
-            cont1 = dln.interp(xbin[fnt],ybin[fnt],x,extrapolate=True)
-            cont1 *= medy
-            
-            flux[:,o] /= cont1
-            err[:,o] /= cont1
-            cont[:,o] = cont1
-
-        # Flatten to 1D if norder=1
-        if self.norder==1:
-            flux = flux.flatten()
-            err = err.flatten()
-            cont = cont.flatten()            
-
-        # Stuff back in
-        self.flux = flux
-        self.err = err
+        # Use the continuum_func to get the continuum
+        cont = self.cont
+        self.err /= cont
+        self.flux /= cont
         self.cont = cont
         self.normalized = True
         return
-
+        
     def interp(self,x=None,xtype='wave',order=None):
         """ Interpolate onto a new wavelength scale and/or shift by a velocity."""
         # if x is 2D and has multiple dimensions and the spectrum does as well

@@ -17,6 +17,8 @@ from astropy.io import fits
 from astropy.table import Table
 from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
+import functools
+from . import spec1d
 from .spec1d import Spec1D
 
 # Ignore these warnings, it's a bug
@@ -575,6 +577,15 @@ def hydra(filename):
     spec.sptype = "HYDRA"
     spec.head = head
 
+    # Modify continuum parameters
+    spec.continuum_func = functools.partial(spec1d.continuum,norder=4,perclevel=75.0,binsize=0.15,interp=True)
+    # Mask last 100 pixels and first 75 that are below 0.8 of the continuum
+    cont = spec.continuum_func(spec)
+    x = np.arange(spec.npix)
+    bd, = np.where((spec.flux/cont < 0.85) & ((x > (spec.npix-100)) | (x<75)))
+    if len(bd)>0:
+        spec.mask[bd] = True
+    
     return spec
 
     
