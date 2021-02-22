@@ -83,7 +83,7 @@ def read(filename=None,format=None):
             raise ValueError('reader '+format+' not found')
         # Use the requested reader/format
         out = _readers[format](filename)
-        return out
+        if out is not None: return out
         
     # Loop over all readers until we get a spectrum out
     for k in _readers.keys():
