@@ -34,7 +34,11 @@ if __name__ == "__main__":
     inpoutfile = dln.first_el(args.outfile)
     inpfigfile = dln.first_el(args.figfile)
     outdir = dln.first_el(args.outdir)
-    if outdir == '': outdir = None
+    if outdir == '':
+        outdir = None
+    else:
+        if os.path.exists(outdir) is False:
+            os.mkdir(outdir)
     joint = args.joint
     snrcut = args.snrcut
     verbose = args.verbose
