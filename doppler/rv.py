@@ -103,6 +103,10 @@ def tweakcontinuum(spec,model):
         ratio[0] = np.nanmedian(ratio[0:np.int(smlen/2)])
         ratio[-1] = np.nanmedian(ratio[-np.int(smlen/2):-1])
         sm = dln.gsmooth(ratio,smlen,boundary='extend')
+        # Deal with any remaining NaNs
+        bd, = np.where(np.isfinite(sm)==False)
+        if len(bd)>0:
+            sm[bd] = 1.0
         if spec.norder==1:
             spec.cont *= sm
             spec.flux /= sm
@@ -1739,7 +1743,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     if verbose is True:
         print('Initial Cannon stellar parameters using initial RV')
         printpars(labels0) 
-        
+
     # Tweak the continuum normalization
     specm = tweakcontinuum(specm,bestmodelspec0)
     # Mask out very discrepant pixels when compared to the best-fit model

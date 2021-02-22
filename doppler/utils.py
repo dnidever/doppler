@@ -615,6 +615,8 @@ def maskoutliers(spec,nsig=5,verbose=False):
         m = mask[:,o].copy()
         # Divide by median
         medy = np.nanmedian(y)
+        if medy <= 0.0:
+            medy = 1.0
         y /= medy
         # Perform sigma clipping out large positive outliers
         coef = dln.poly_fit(x,y,2,robust=True)
@@ -663,6 +665,8 @@ def maskdiscrepant(spec,model,nsig=10,verbose=False):
         my = mflux[:,o].copy()
         # Divide by median
         medy = np.nanmedian(y)
+        if medy <= 0.0:
+            medy = 1.0
         y /= medy
         my /= medy
         # Perform sigma clipping out large positive outliers
