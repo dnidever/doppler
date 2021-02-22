@@ -80,6 +80,8 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
         m = mask[:,o].copy()
         # Divide by median
         medy = np.nanmedian(y)
+        if medy <= 0.0:
+            medy = 1.0
         y /= medy
         # Perform sigma clipping out large positive outliers
         coef = dln.poly_fit(x,y,2,robust=True)

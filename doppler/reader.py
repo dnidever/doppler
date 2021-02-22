@@ -579,17 +579,30 @@ def hydra(filename):
     observat = head.get('OBSERVAT')
     if observat is not None:
         spec.observatory = observat.lower()
-    
+
+    # Deal with bad pixels
+    bdpix, = np.where(np.isfinite(spec.flux)==False)
+    if len(bdpix)>0:
+        spec.flux[bdpix] = 0
+        spec.err[bdpix] = 1e30
+        spec.mask[bdpix] = True
+        
     # Modify continuum parameters
     spec.continuum_func = functools.partial(spec1d.continuum,norder=4,perclevel=75.0,binsize=0.15,interp=True)
     # Mask last 100 pixels and first 75 that are below 0.8 of the continuum
-    cont = spec.continuum_func(spec)
-    x = np.arange(spec.npix)
-    bd, = np.where((spec.flux/cont < 0.85) & ((x > (spec.npix-100)) | (x<75)))
-    if len(bd)>0:
-        spec.mask[bd] = True
-        spec.err[bd] = 1e30
-    
+    try:
+        cont = spec.continuum_func(spec)
+        x = np.arange(spec.npix)
+        bd, = np.where((spec.flux/cont < 0.85) & ((x > (spec.npix-100)) | (x<75)))
+        if len(bd)>0:
+            spec.mask[bd] = True
+            spec.err[bd] = 1e30
+    except:
+        spec.mask[0:100] = True
+        spec.err[0:100] = 1e30
+        spec.mask[-100:] = True
+        spec.err[-100:] = 1e30        
+            
     return spec
 
     
