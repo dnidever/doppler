@@ -568,8 +568,12 @@ class Spec1D:
                 print('No observatory information.  Cannot calculate barycentric correction.')
                 return 0.0
             obs = EarthLocation.of_site(self.observatory)
-            ra = float(self.head.get('ra'))
-            dec = float(self.head.get('dec'))
+            ra = self.head.get('ra')
+            if type(ra) is str:
+                ra = dln.sexig2ten(ra)*15.0  # convert to degrees
+            dec = self.head.get('dec')
+            if type(dec) is str:
+                dec = dln.sexig2ten(dec)
             if (ra is None) | (dec is None):
                 print('No RA/DEC information in header.  Cannot calculate barycentric correction.')
                 return 0.0                
