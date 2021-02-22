@@ -553,7 +553,7 @@ def hydra(filename):
     elif (ndim==1):
         flux = data
         npix = len(flux)        
-        sigma = np.sqrt(flux)  # assume gain~1
+        sigma = np.sqrt(np.maximum(flux,1))  # assume gain~1
         mask = np.zeros(npix,bool)
     # Get wavelength
     crval1 = head.get('CRVAL1')
