@@ -1316,6 +1316,9 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     lbounds[3] = -1000
     ubounds[3] = 1000    
     bounds = (lbounds, ubounds)
+
+    # Make sure RV is in the boundaries
+    initpar[3] = dln.limit(initpar[3],-999,999)
     
     # function to use with curve_fit
     def spec_interp(x,teff,logg,feh,rv):
