@@ -89,6 +89,8 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
         bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
         if nbd>0: m[bd]=True
         gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
+        if np.sum(gdmask)==0:
+            continue
         # Bin the data points
         xr = [np.nanmin(x),np.nanmax(x)]
         bins = int(np.ceil((xr[1]-xr[0])/binsize))
