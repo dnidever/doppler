@@ -337,6 +337,8 @@ def broaden(wave,flux,vgauss=None,vsini=None):
             # 1D kernel, log wavelengths
             else:
                 gkernel = gausskernel(wave[0:2],vgauss)
+                if (gkernel.ndim==1) and (gkernel[0]>0.99):  # nothing happened
+                    return flux
                 oflux = np.convolve(oflux,gkernel[0,:],mode='same')
             
     # Add Rotational broadening
@@ -351,6 +353,8 @@ def broaden(wave,flux,vgauss=None,vsini=None):
             # 1D kernel, log wavelengths
             else:
                 rkernel = rotkernel(wave[0:2],vsini)
+                if (rkernel.ndim==1) and (rkernel[0]>0.99):  # nothing happened
+                    return flux                
                 oflux = np.convolve(oflux,rkernel[0,:],mode='same')
 
     return oflux
