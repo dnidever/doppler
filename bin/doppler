@@ -15,7 +15,7 @@ import traceback
 # Main command-line program
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Doppler fitting on spectra')
-    parser.add_argument('files', type=str, nargs='*', help='Spectrum FITS files')
+    parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files')
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
