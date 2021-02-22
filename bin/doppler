@@ -10,6 +10,7 @@ from astropy.table import Table
 from argparse import ArgumentParser
 from dlnpyutils import utils as dln
 import subprocess
+import traceback
 
 # Main command-line program
 if __name__ == "__main__":
@@ -123,6 +124,8 @@ if __name__ == "__main__":
             except Exception as e:
                 if verbose is True:
                     print('Doppler failed on '+f+' '+str(e))
+                    traceback.print_exc()
+
 
                 
     # Joint fitting
