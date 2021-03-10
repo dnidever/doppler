@@ -27,6 +27,32 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 astropy.io.fits.Conf.use_memmap = False  # load into memory
 
+# Register a new reader
+def register(format,reader):
+    '''
+    This registers a new spectral reader for the Doppler reader registry.
+
+    Parameters
+    ----------
+    format : str
+        The name of the new format.
+    reader : function
+        The function for the new reader.
+
+    Returns
+    -------
+    Nothing is returned.  The Doppler reader registry is updated.
+
+    Example
+    -------
+    doppler.reader.register('myformat',myformat)
+
+    '''
+
+    _readers[format] = reader
+
+    
+    
 # Load a spectrum
 def read(filename=None,format=None):
     '''
@@ -508,7 +534,9 @@ def imacs(filename):
     spec.filename = filename
     spec.sptype = "IMACS"
     spec.head = head
-
+    spec.observatory = 'LCO'
+    spec.wavevac = False
+    
     return spec
 
 # Load HYDRA spectra
@@ -576,6 +604,7 @@ def hydra(filename):
     spec.filename = filename
     spec.sptype = "HYDRA"
     spec.head = head
+    spec.wavevac = False
     observat = head.get('OBSERVAT')
     if observat is not None:
         spec.observatory = observat.lower()
