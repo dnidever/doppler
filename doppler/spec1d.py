@@ -241,7 +241,7 @@ class Spec1D:
 
     
     # Initialize the object
-    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,lsfpars=None,lsftype='Gaussian',
+    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
         self.flux = flux
         self.err = err
@@ -250,6 +250,7 @@ class Spec1D:
         if mask is None:
             self.mask = np.zeros(flux.shape,bool)
         self.bitmask = bitmask
+        self.head = head
         if lsftype.lower() not in lsfclass.keys():
             raise ValueError(lsftype+' not supported yet')
         self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
