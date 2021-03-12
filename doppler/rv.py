@@ -1452,7 +1452,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     # Corner plot
     if cornername is not None:
         matplotlib.use('Agg')
-        fig = corner.corner(samples, labels=["T$_eff$", "$\log{g}$", "[Fe/H]", "Vrel"], truths=fpars)        
+        fig = corner.corner(samples, labels=["T$_eff$", "$\log{g}$", "[Fe/H]", "Vrel"], truths=pars)
         plt.savefig(cornername)
         plt.close(fig)
         print('Corner plot saved to '+cornername)
@@ -1843,7 +1843,18 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Construct the output
     #---------------------
     bc = specm.barycorr()
-    vhelio = fpars[3] + bc
+    # Check if we should apply the barycentric correction
+    #  some spectra already this applied to the wavelength solution
+    nobc = False
+    if hasattr(spec,'nobc'):
+        nobc = spec.nobc
+    # Apply barycentric correction
+    if nobc is False:
+        vhelio = fpars[3] + bc
+    else:
+        vhelio = fpars[3]
+        if verbose is True:
+            print('NOT applying Barycentric Correction')
     if verbose is True:
         print('Final parameters:')
         printpars(fpars[0:3],fperror[0:3])

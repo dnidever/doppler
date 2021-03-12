@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 from dlnpyutils import utils as dln
 import subprocess
 import traceback
+import importlib as imp
 
 # Main command-line program
 if __name__ == "__main__":
@@ -65,6 +66,18 @@ if __name__ == "__main__":
     if (inpfigfile!='') & (nfiles>1) & (joint is False):
         raise ValueError('--figfile can only be used with a SINGLE input file or JOINT fitting')
 
+
+    # Register spectral reader
+    if reader is not None:
+        if os.path.exists(reader):
+            readerfile = reader
+            reader = os.path.basename(readerfile)[:-3]
+            spec = imp.util.spec_from_file_location(reader, readerfile)
+            readermodule = imp.util.module_from_spec(spec)
+            spec.loader.exec_module(readermodule)
+            readerfunc = getattr(readermodule,reader)
+            doppler.reader.register(reader,readerfunc)
+    
     # Fitting individual spectra
     #---------------------------
     if (joint is False) | (nfiles==1):
@@ -81,7 +94,6 @@ if __name__ == "__main__":
 
             # Load the spectrum
             spec = doppler.read(f,format=reader)
-            spec = doppler.utils.specprep(spec)  # mask and normalize            
     
             if (verbose is True):
                 if (nfiles>1):
@@ -89,7 +101,7 @@ if __name__ == "__main__":
                     print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
                 else:
                     print('%s  S/N=%6.1f ' % (f,spec.snr))
-
+                    
             # Save the figure
             figfile = None
             if (nfiles==1) & (inpfigfile!=''):
@@ -159,11 +171,10 @@ if __name__ == "__main__":
 
             # Load the spectrum
             spec = doppler.read(f,format=reader)
-            spec = doppler.utils.specprep(spec)  # mask and normalize
 
             if verbose is True:
                 print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
-          
+                
             # Append to the list
             speclist.append(spec)
     

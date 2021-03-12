@@ -260,7 +260,7 @@ class Spec1D:
         self.wavevac = wavevac
         self.snr = None
         if self.err is not None:
-            self.snr = np.nanmedian(flux)/np.nanmedian(err)
+            self.snr = np.nanmedian(self.flux[~self.mask])/np.nanmedian(self.err[~self.mask])
         self.normalized = False
         if flux.ndim==1:
             npix = len(flux)
@@ -271,7 +271,7 @@ class Spec1D:
         self.npix = npix
         self.norder = norder
         self.continuum_func = continuum
-        self._cont = None
+        self._cont = None        
         return
 
     
