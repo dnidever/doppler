@@ -16,11 +16,12 @@ import importlib as imp
 # Main command-line program
 if __name__ == "__main__":
     parser = ArgumentParser(description='Run Doppler fitting on spectra')
-    parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files')
+    parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files or list')
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
-    parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
+    parser.add_argument('-l','--list', action='store_true', help='Input is a list of FITS files')
+    #parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
     parser.add_argument('-j','--joint', action='store_true', help='Joint fit all the spectra')
     parser.add_argument('--snrcut', type=float, default=10.0, help='S/N threshold to fit spectrum separately')    
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
@@ -52,12 +53,12 @@ if __name__ == "__main__":
     if nthreads==0: nthreads = None
     
     # Load files from a list
-    if (len(files)==0) & (inlist!=''):
+    if inlist is True:
         # Check that file exists
-        if os.path.exists(inlist) is False:
-            raise ValueError(inlist+' NOT FOUND')
+        if os.path.exists(files[0]) is False:
+            raise ValueError(files[0]+' NOT FOUND')
         # Read in the list
-        files = dln.readlines(inlist)
+        files = dln.readlines(files[0])
     nfiles = len(files)
 
     # Outfile and figfile can ONLY be used with a SINGLE file or JOINT fitting

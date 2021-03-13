@@ -27,6 +27,24 @@ warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 astropy.io.fits.Conf.use_memmap = False  # load into memory
 
+# Check the data
+def datacheck(spec=None):
+    """ Check that there aren't any bad values in FLUX or ERR."""
+    if spec is None:
+        return
+    nanflux = np.sum(~np.isfinite(spec.flux))
+    if nanflux>0:
+        print('WARNING: Spectrum has '+str(nanflux)+' NaN/Inf FLUX pixels')
+    nanerr = np.sum(~np.isfinite(spec.err))
+    if nanerr>0:
+        print('WARNING: Spectrum has '+str(nanerr)+' NaN/Inf ERR pixels')
+    zeroerr = np.sum(spec.err<=0.0)
+    if zeroerr>0:
+        print('WARNING: Spectrum has '+str(zeroerr)+' pixels with ERR<=0')
+    if np.sum(spec.mask)==0:
+        print('WARNING: Entire spectrum is MASKED')
+        
+
 # Register a new reader
 def register(format,reader):
     '''
@@ -111,6 +129,7 @@ def read(filename=None,format=None):
             raise ValueError('reader '+format+' not found')
         # Use the requested reader/format
         out = _readers[format](filename)
+        datacheck(out)
         if out is not None: return out
         
     # Loop over all readers until we get a spectrum out
@@ -119,6 +138,7 @@ def read(filename=None,format=None):
             out = _readers[k](filename)
         except:
             out = None
+        datacheck(out)            
         if out is not None: return out
     # None found
     print('No reader recognized '+filename)

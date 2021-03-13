@@ -1094,7 +1094,7 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
                 dum = samples[n]
             except:
                 raise ValueError(n+' not found in input SAMPLES')
-    
+            
     # Step 1: Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
@@ -1328,7 +1328,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
     def spec_interp(x,teff,logg,feh,rv):
         """ This returns the interpolated model for a given spectrum."""
         # The "models" and "spec" must already exist outside of this function
-        m = models(teff=teff,logg=logg,feh=feh,rv=rv)   
+        m = models(teff=teff,logg=logg,feh=feh,rv=rv)
         if m is None:
             return np.zeros(spec.flux.shape,float).flatten()+1e30
         return m.flux.flatten()

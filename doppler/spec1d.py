@@ -84,7 +84,7 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
             medy = 1.0
         y /= medy
         # Perform sigma clipping out large positive outliers
-        coef = dln.poly_fit(x,y,2,robust=True)
+        coef = dln.poly_fit(x[~m],y[~m],2,robust=True)
         sig = dln.mad(y-dln.poly(x,coef))
         bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
         if nbd>0: m[bd]=True
@@ -102,11 +102,11 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
             fnt = np.isfinite(ybin)
             cont1 = dln.interp(xbin[fnt],ybin[fnt],x,kind='quadratic',extrapolate=True,exporder=1)
         else:
-            coef = dln.poly_fit(x,y,norder)
+            coef = dln.poly_fit(xbin,ybin,norder)
             cont1 = dln.poly(x,coef)
         cont1 *= medy
         cont[:,o] = cont1
-
+        
     # Flatten to 1D if norder=1
     if spec.norder==1:
         cont = cont.flatten()            
