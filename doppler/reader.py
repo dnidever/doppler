@@ -41,8 +41,8 @@ def datacheck(spec=None):
     zeroerr = np.sum(spec.err<=0.0)
     if zeroerr>0:
         print('WARNING: Spectrum has '+str(zeroerr)+' pixels with ERR<=0')
-    if np.sum(spec.mask)==0:
-        print('WARNING: Entire spectrum is MASKED')
+    if np.sum(~spec.mask)==0:
+        print('WARNING: Entire Spectrum is MASKED')
         
 
 # Register a new reader
