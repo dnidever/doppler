@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument('-j','--joint', action='store_true', help='Joint fit all the spectra')
     parser.add_argument('--snrcut', type=float, default=10.0, help='S/N threshold to fit spectrum separately')    
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
+    parser.add_argument('-c','--corner', action='store_true', help='Make corner plot with MCMC results')    
     parser.add_argument('-m','--mcmc', action='store_true', help='Run MCMC when fitting spectra individually')
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
     parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')
@@ -45,6 +46,7 @@ if __name__ == "__main__":
     snrcut = args.snrcut
     verbose = args.verbose
     mcmc = args.mcmc
+    corner = args.corner
     reader = dln.first_el(args.reader)
     if reader == '': reader = None
     saveplot = args.plot
@@ -112,10 +114,18 @@ if __name__ == "__main__":
                 figfile = base+'_dopfit.png'
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
+            # Save a corner plot
+            cornername = None
+            if corner is True:
+                fdir,base,ext = doppler.utils.splitfilename(f)
+                cornername = base+'_doppler_corner.png'
+                if outdir is not None: cornername = outdir+'/'+cornername
+                if (outdir is None) & (fdir != ''): cornername = fdir+'/'+cornername
                 
             # Run Doppler
             try:
-                out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,nthreads=nthreads)
+                out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,
+                                                cornername=cornername,nthreads=nthreads)
                 
                 # Save the output
                 if inpoutfile!='':
