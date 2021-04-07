@@ -1207,7 +1207,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
             # need at least ~4 pixels per LSF FWHM across the spectrum
             #  using 3 affects the final profile shape
             nbin = np.round(np.min(fwhmpix)//4).astype(int)
-            if nbin==0:
+            if np.min(fwhmpix) < 3.7:
                 raise Exception('Model has lower resolution than the observed spectrum')
             if nbin>1:
                 rmodel = rebin_cannon_model(tmodel,nbin)
