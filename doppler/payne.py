@@ -18,8 +18,10 @@ import warnings
 from glob import glob
 from scipy.interpolate import interp1d
 from dlnpyutils import (utils as dln, bindata, astro)
-from .spec1d import Spec1D
-from . import utils
+#from .spec1d import Spec1D
+#from . import utils
+from doppler.spec1d import Spec1D
+from doppler import utils
 import copy
 import logging
 import contextlib, io, sys
@@ -111,7 +113,7 @@ def load_payne_model(mfile):
 def load_models():
     """
     Load all Payne models from the Doppler data/ directory
-    and return as a DopplerPayneMode.
+    and return as a DopplerPayneModel.
 
     Returns
     -------
@@ -130,7 +132,6 @@ def load_models():
     if nfiles==0:
         raise Exception("No Payne model files in "+datadir)
     return DopplerPayneModel.read(files)
-
 
 
 def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
@@ -604,47 +605,25 @@ class DopplerPayneModel(object):
         # Dictionary input
         if isinstance(labels,dict):
             labels = self.mklabels(labels)  # convert dictionary to array of labels
+            
         if len(labels) != len(self.labels):
             raise ValueError('labels must have '+str(len(self.labels))+' elements')
         vsini,vmacro,rv = labels[-3:]
+        plabels = labels[0:-3]  # just the payne labels
         if self.prepared==True:
-            return self._data(labels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv)
+            return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv)
         else:
-            return self._data(label,vsini=vsini,vmacro=vmacro,rv=rv)        
-
-    def initpars(self):
-        """ Make initial set of parameters for labels."""
-
-        npars = len(self.labels)
-        pinit = np.zeros(npars,np.float64)        
-        # Loop over parameters
-        for k in range(npars):
-            if fitparams[k]=='RV':
-	        pinit[k] = 0.0
-            elif fitparams[k]=='VMICRO':
-		pinit[k] = 2.0
-            elif fitparams[k]=='VROT':
-                pinit[k] = 0.0
-            elif fitparams[k]=='TEFF':
-		pinit[k] = 5000.0
-            elif fitparams[k]=='LOGG':
-                pinit[k] = 3.0
-            elif fitparams[k].endswith('_H'):
-                # Abundances, use FE_H if possible
-                if 'FE_H' in params.keys():
-                    pinit[k] = params['FE_H']
-                else:
-                    pinit[k] = 0.0
-            else:
-                pinit[k] = 0.0
-
-        return pinit
+            return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv)        
         
     def mklabels(self,inputs):
         """ Convert input dictionary to labels."""
 
+        # This assumes ALL abundances are relative to H *not* FE!!!
+        
         params = dict((key.upper(), value) for (key, value) in inputs.items()) # all CAPS
         nparams = len(params)
+
+        labelnames = np.char.array(self.labels)
         
         # Minimum required inputs, TEFF, LOGG, FE_H
         minlabels = ['TEFF','LOGG','FE_H']
@@ -654,26 +633,29 @@ class DopplerPayneModel(object):
 
         # Initializing the labels array
         nlabels = len(self.labels)
-        labels = self.initpars()
-
+        #labels = self.initpars()
+        labels = np.zeros(nlabels,float)
+        # Set X_H = FE_H
+        labels[labelnames.endswith('_H')] = params['FE_H']
+        # Vmicro/Vturb=2.0 km/s by default
+        labels[(labelnames=='VTURB') | (labelnames=='VMICRO')] = 2.0
+        
+        # Deal with alpha abundances
+        # Individual alpha elements will overwrite the mean alpha below     
+        # Make sure ALPHA_H is *not* one of the labels:
+        if 'ALPHA_H' not in self.labels:
+            if 'ALPHA_H' in params.keys():
+                alpha = params['ALPHA_H']
+                alphaelem = ['O','MG','SI','S','CA','TI']                
+                for k in range(len(alphaelem)):
+                    # Only set the value if it was found in self.labels
+                    labels[labelnames==alphaelem[k]+'_H'] = alpha
+                
         # Loop over input parameters
         for name in params.keys():
-            # Deal with alpha abundances
-            #  only add the individual alpha abundance if it's not already there
-            #  sometimes we might fit a single alpha element but want to use
-            #  ALPHA_H to set the rest of them
-            if name=='ALPHA_H' and 'ALPHA_H' not in self.labels:
-                alpha = params['ALPHA_H']
-                elem = ['O','MG','SI','S','CA','TI']
-                for k in range(len(elem)):
-                    if params.get(elem[k]+'_H') is None:
-                        # Only set the value if it was found in self.labels
-                        labels[self.labels==elem[k]+'_H'] = alpha
-            # Deal with rest of the input values
-            else:
-                # Only set the value if it was found in self.labels
-                labels[self.labels==name] = params[name]
-                        
+            # Only set the value if it was found in self.labels
+            labels[labelnames==name] = params[name]
+            
         return labels
                 
     @property
@@ -733,4 +715,226 @@ class DopplerPayneModel(object):
         else:
             model = PayneModelSet.read(mfiles)
         return DopplerPayneModel(model)
+    
+
+
+class PayneSpecFitter:
+
+    def __init__(self,spec,pmodel,params,fitparams=None,verbose=False):
+        # spec - observed spectrum object
+        # pmodel - Payne model object
+        # params - initial/fixed parameters dictionary
+        # fitparams - parameter/label names to fit (default is all)
+        # "Prepare" the Payne model with the observed spectrum
+        pmodel.prepare(spec)
+        self._paynemodel = pmodel
+        labelnames = np.char.array(self._paynemodel.labels)        
+        self.params = dict((key.upper(), value) for (key, value) in params.items()) # all CAPS
+        self._initlabels = self.mkinitlabels(params)
+        if fitparams is not None:
+            self.fitparams = fitparams
+        else:
+            self.fitparams = paynemodel.labels # by default fit all Payne parameters
+        self._nfit = len(self.fitparams)
+
+        # Fixed labels
+        fixed = np.ones(self._nfit,bool)  # all fixed by default
+        for k,name in enumerate(labelnames):
+            # Alpha element
+            if name in ['O_H','MG_H','SI_H','S_H','CA_H','TI_H']:
+                # In FITPARAMS, NOT FIXED
+                if name in self.fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in PARAMS, FIXED                    
+                elif name in self.params.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS or PARAMS, but FE_H or ALPHA_H in FITPARAMS, NOT FIXED
+                elif 'FE_H' in self.fitparams or 'ALPHA_H' in self.fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS/PARAMS and FE_H/ALPHA_H not being fit, FIXED
+                else:
+                    fixed[k] = True
+            # Non-alpha element
+            elif name.endswith('_H'):
+                # In FITPARAMS, NOT FIXED
+                if name in self.fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in PARAMS, FIXED
+                elif name in self.params.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS or PARAMS, but FE_H in FITPARAMS, NOT FIXED
+                elif 'FE_H' in self.fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS/PARAMS and FE_H not being fit, FIXED
+                else:
+                    fixed[k] = True
+            # Other parameters (Teff, logg, RV, Vturb, Vsini, etc.)
+            else:
+                # In FITPARAMS, NOT FIXED
+                if name in self.fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in PARAMS, FIXED
+                elif name in self.params.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS/PARAMS, FIXED
+                else:
+                    fixed[k] = True
+        self._fixed = fixed
+        
+        import pdb; pdb.set_trace()
+
+        #if 'ALPHA_H' in self.fitparams:
+        #    self._fitalpha = True
+        #    self._fitalpha_argindex = np.where(np.char.array(self.fitparams)=='ALPHA_H')[0][0]
+        #    alphaelem = ['O','MG','SI','S','CA','TI']
+        #    alphaindex = []
+        #    for k in range(len(alphaelem)):
+        #        ind, = np.where(labelnames==alphaelem[k]+'_H')
+        #        if len(ind)>0:
+        #            alphaindex.append(ind[0])
+        #    if len(alphaindex)==0:
+        #        raise ValueError('Fitting ALPHA_H but not alpha elements in Payne model')
+        #    self._fitalpha_index = np.array(alphaindex)
+        #    # Non-alpha parameter index in ARGS/FITPARAM
+        #    fitindex = []
+        #    for k in range(self._nfit):
+        #        if self.fitparams[k] != 'ALPHA_H':
+        #            fitindex.append( np.where(labelnames==self.fitparams[k])[0][0] )
+        #    self._fitindex = np.array(fitindex)
+        #else:
+        #    self._fitalpha = False
+        #    fitindex = np.zeros(self._nfit,int)
+        #    for k in range(self._nfit):
+        #        fitindex[k] = np.where(labelnames==self.fitparams[k])[0][0]
+        #    self._fitindex = fitindex
+        self._spec = spec.copy()
+        self._flux = spec.flux.flatten()
+        self._err = spec.err.flatten()
+        self._wave = spec.wave.flatten()
+        self._lsf = spec.lsf.copy()
+        self._lsf.wavevac = spec.wavevac
+        self._wavevac = spec.wavevac
+        self._verbse = verbose
+        #self._norm = norm   # normalize
+        self._continuum_func = spec.continuum_func
+        # Figure out the wavelength parameters
+        npix = spec.npix
+        norder = spec.norder
+        # parameters to save
+        #self._all_pars = []
+        #self._all_model = []
+        #self._all_chisq = []
+        #self._jac_array = None
+
+    @property
+    def params(self):
+        return self._params
+
+    @params.setter
+    def params(self,params):
+        """ Dictionary, keys must be all CAPS."""
+        self._params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
+
+    @property
+    def fitparams(self):
+        return self._fitparams
+
+    @fitparams.setter
+    def fitparams(self,fitparams):
+        """ List, all CAPS."""
+        self._fitparams = [f.upper() for f in fitparams]
+
+    def mkinitlabels(self,inputs):
+        """ Convert input dictionary to Payne labels."""
+
+        # This assumes ALL abundances are relative to H *not* FE!!!
+        
+        params = dict((key.upper(), value) for (key, value) in inputs.items()) # all CAPS
+        nparams = len(params)
+
+        labelnames = np.char.array(self._paynemodel.labels)
+
+        # Defaults for main parameters
+        if 'TEFF' not in list(params.keys()):
+            params['TEFF'] = 4000.0
+        if 'LOGG' not in list(params.keys()):
+            params['LOGG'] = 3.0
+        if 'FE_H' not in list(params.keys()):
+            params['FE_H'] = 0.0            
+            
+            
+        # Initializing the labels array
+        nlabels = len(self._paynemodel.labels)
+        labels = np.zeros(nlabels,float)
+        # Set X_H = FE_H
+        labels[labelnames.endswith('_H')] = params['FE_H']
+        # Vmicro/Vturb=2.0 km/s by default
+        labels[(labelnames=='VTURB') | (labelnames=='VMICRO')] = 2.0
+        
+        # Deal with alpha abundances
+        # Individual alpha elements will overwrite the mean alpha below     
+        # Make sure ALPHA_H is *not* one of the labels:
+        if 'ALPHA_H' not in self._paynemodel.labels:
+            if 'ALPHA_H' in params.keys():
+                alpha = params['ALPHA_H']
+                alphaelem = ['O','MG','SI','S','CA','TI']                
+                for k in range(len(alphaelem)):
+                    # Only set the value if it was found in self.labels
+                    labels[labelnames==alphaelem[k]+'_H'] = alpha
+                
+        # Loop over input parameters
+        for name in params.keys():
+            # Only set the value if it was found in labelsnames
+            labels[labelnames==name] = params[name]
+            
+        return labels
+
+        
+    def mklabels(self,args):
+        """ Make labels for Payne model."""
+        # Start with initial labels and only modify the fitparams."""
+
+        # Initialize with init values
+        labels = self._initlabels.copy()
+        
+        # Loop over labels
+        labelnames = np.char.array(self._paynemodel.labels) 
+        for k,name in enumerate(labelnames):
+            # Label is NOT fixed, change it
+            if self._fixed[k] is False:
+                # Alpha element
+                if name in ['O_H','MG_H','SI_H','S_H','CA_H','TI_H']:                
+                    pass
+                # Non-alpha element
+                elif name.endswith('_H') is True:
+                    pass
+                # Other parameters
+                else:
+                    pass
+                
+        import pdb; pdb.set_trace()
+
+        
+        labels = self._initlabels.copy()
+        # Fitting ALPHA
+        if self._fitalpha is True:
+            # Alpha element labels
+            labels[self._fitalpha_index] = args[self._fitalpha_argindex]
+            # Non-alpha element labels
+            nonalpha_args = np.delete(args,self._fitalpha_argindex)
+            labels[self._fitindex] = nonalpha_args
+        # Not fitting ALPHA
+        else:
+            labels[self._fitindex] = args
+        return labels
+    
+    def chisq(self,model):
+        return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
+            
+    def model(self,xx,*args):
+        # Return model Payne spectrum given the input arguments."""
+        # Convert arguments to Payne model inputs
+        labels = self.mklabels(args)
+        return self.paynemodel(labels)
+
     
