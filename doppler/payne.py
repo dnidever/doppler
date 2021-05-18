@@ -593,10 +593,17 @@ class DopplerPayneModel(object):
         self._wavevac = self._data._wavevac
         self._original_wavevac = self._data._wavevac
         self.wr = self._data.wr
-
+        
+        
+    # Maybe the __call__ inputs should be a PARAM dictionary, so it's
+    # easier to specify what you want, and use "defaults" for the rest
+    # of the parameters
         
     def __call__(self,labels,wr=None):
         """ Create the model."""
+        # Dictionary input
+        if isinstance(labels,dict):
+            labels = self.mklabels(labels)  # convert dictionary to array of labels
         if len(labels) != len(self.labels):
             raise ValueError('labels must have '+str(len(self.labels))+' elements')
         vsini,vmacro,rv = labels[-3:]
@@ -605,6 +612,70 @@ class DopplerPayneModel(object):
         else:
             return self._data(label,vsini=vsini,vmacro=vmacro,rv=rv)        
 
+    def initpars(self):
+        """ Make initial set of parameters for labels."""
+
+        npars = len(self.labels)
+        pinit = np.zeros(npars,np.float64)        
+        # Loop over parameters
+        for k in range(npars):
+            if fitparams[k]=='RV':
+	        pinit[k] = 0.0
+            elif fitparams[k]=='VMICRO':
+		pinit[k] = 2.0
+            elif fitparams[k]=='VROT':
+                pinit[k] = 0.0
+            elif fitparams[k]=='TEFF':
+		pinit[k] = 5000.0
+            elif fitparams[k]=='LOGG':
+                pinit[k] = 3.0
+            elif fitparams[k].endswith('_H'):
+                # Abundances, use FE_H if possible
+                if 'FE_H' in params.keys():
+                    pinit[k] = params['FE_H']
+                else:
+                    pinit[k] = 0.0
+            else:
+                pinit[k] = 0.0
+
+        return pinit
+        
+    def mklabels(self,inputs):
+        """ Convert input dictionary to labels."""
+
+        params = dict((key.upper(), value) for (key, value) in inputs.items()) # all CAPS
+        nparams = len(params)
+        
+        # Minimum required inputs, TEFF, LOGG, FE_H
+        minlabels = ['TEFF','LOGG','FE_H']
+        for f in minlabels:
+            if f not in params.keys():
+                raise ValueError(f+' is a required input parameter')
+
+        # Initializing the labels array
+        nlabels = len(self.labels)
+        labels = self.initpars()
+
+        # Loop over input parameters
+        for name in params.keys():
+            # Deal with alpha abundances
+            #  only add the individual alpha abundance if it's not already there
+            #  sometimes we might fit a single alpha element but want to use
+            #  ALPHA_H to set the rest of them
+            if name=='ALPHA_H' and 'ALPHA_H' not in self.labels:
+                alpha = params['ALPHA_H']
+                elem = ['O','MG','SI','S','CA','TI']
+                for k in range(len(elem)):
+                    if params.get(elem[k]+'_H') is None:
+                        # Only set the value if it was found in self.labels
+                        labels[self.labels==elem[k]+'_H'] = alpha
+            # Deal with rest of the input values
+            else:
+                # Only set the value if it was found in self.labels
+                labels[self.labels==name] = params[name]
+                        
+        return labels
+                
     @property
     def dispersion(self):
         return self._dispersion

@@ -1208,7 +1208,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
             #  using 3 affects the final profile shape
             nbin = np.round(np.min(fwhmpix)//4).astype(int)
             if np.min(fwhmpix) < 3.7:
-                raise Exception('Model has lower resolution than the observed spectrum')
+                raise Exception('Model has lower resolution than the observed spectrum. Only '+str(np.min(fwhmpix))+' model pixels per resolution element')
             if nbin>1:
                 rmodel = rebin_cannon_model(tmodel,nbin)
                 rmodel.rebin = True

@@ -95,35 +95,36 @@ if __name__ == "__main__":
                 print(f+' NOT FOUND')
                 continue
 
-            # Load the spectrum
-            spec = doppler.read(f,format=reader)
-    
-            if (verbose is True):
-                if (nfiles>1):
-                    if (i>0): print('')
-                    print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
-                else:
-                    print('%s  S/N=%6.1f ' % (f,spec.snr))
-                    
-            # Save the figure
-            figfile = None
-            if (nfiles==1) & (inpfigfile!=''):
-                figfile = inpfigfile
-            if (inpfigfile=='') & (saveplot is True):
-                fdir,base,ext = doppler.utils.splitfilename(f)
-                figfile = base+'_dopfit.png'
-                if outdir is not None: figfile = outdir+'/'+figfile
-                if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
-            # Save a corner plot
-            cornername = None
-            if corner is True:
-                fdir,base,ext = doppler.utils.splitfilename(f)
-                cornername = base+'_doppler_corner.png'
-                if outdir is not None: cornername = outdir+'/'+cornername
-                if (outdir is None) & (fdir != ''): cornername = fdir+'/'+cornername
-                
-            # Run Doppler
             try:
+            
+                # Load the spectrum
+                spec = doppler.read(f,format=reader)
+    
+                if (verbose is True):
+                    if (nfiles>1):
+                        if (i>0): print('')
+                        print('Spectrum %3d:  %s  S/N=%6.1f ' % (i+1,f,spec.snr))
+                    else:
+                        print('%s  S/N=%6.1f ' % (f,spec.snr))
+                    
+                # Save the figure
+                figfile = None
+                if (nfiles==1) & (inpfigfile!=''):
+                    figfile = inpfigfile
+                if (inpfigfile=='') & (saveplot is True):
+                    fdir,base,ext = doppler.utils.splitfilename(f)
+                    figfile = base+'_dopfit.png'
+                    if outdir is not None: figfile = outdir+'/'+figfile
+                    if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile 
+                # Save a corner plot
+                cornername = None
+                if corner is True:
+                    fdir,base,ext = doppler.utils.splitfilename(f)
+                    cornername = base+'_doppler_corner.png'
+                    if outdir is not None: cornername = outdir+'/'+cornername
+                    if (outdir is None) & (fdir != ''): cornername = fdir+'/'+cornername
+                    
+                # Run Doppler
                 out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,
                                                 cornername=cornername,nthreads=nthreads)
                 
