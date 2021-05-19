@@ -50,7 +50,6 @@ def w2p(dispersion,w,extrapolate=True):
     x = w2p(disp,w)
 
     """
-
     x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
     # Need to extrapolate
     if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
@@ -62,14 +61,16 @@ def w2p(dispersion,w,extrapolate=True):
         npix = len(win)
         # At the beginning
         if (np.min(w)<np.min(dispersion)):
-            coef1 = dln.poly_fit(win[0:10], xin[0:10], 2)
+            #coef1 = dln.poly_fit(win[0:10], xin[0:10], 2)
+            coef1 = dln.quadratic_coefficients(win[0:10], xin[0:10])            
             bd1, nbd1 = dln.where(w < np.min(dispersion))
             x[bd1] = dln.poly(w[bd1],coef1)
         # At the end
         if (np.max(w)>np.max(dispersion)):
-            coef2 = dln.poly_fit(win[npix-10:], xin[npix-10:], 2)
+            #coef2 = dln.poly_fit(win[npix-10:], xin[npix-10:], 2)
+            coef2 = dln.quadratic_coefficients(win[npix-10:], xin[npix-10:])            
             bd2, nbd2 = dln.where(w > np.max(dispersion))
-            x[bd2] = dln.poly(w[bd2],coef2)                
+            x[bd2] = dln.poly(w[bd2],coef2)
     return x
 
 

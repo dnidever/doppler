@@ -62,7 +62,7 @@ def ghlsf(x,xcenter,params,nowings=False):
 
     2015-02-26 - Written based on Nidever's code in apogeereduce - Bovy (IAS)
     Heavily modified by D.Nidever to work with Nidever's translated IDL routines Jan 2020.
-    """
+    """    
     # Parse x
     if len(x.shape) == 1:
         x = np.tile(x,(len(xcenter),1))
@@ -119,7 +119,7 @@ def ghlsf(x,xcenter,params,nowings=False):
     for i in range(params['nWpar']+1):
         wingparams2[:,i] = np.repeat(wingparams1[i,:],nlsf)
     out += ghwingsbin(xlsf,wingparams2,params['binsize'],params['Wproftype'])
-
+    
     # Reshape it to [Npix,Nlsf]
     out = out.reshape(npix,nlsf)
     # Make sure it's positive and normalized
@@ -177,7 +177,6 @@ def gausshermitebin(x,par,binsize=1.0):
     # Parameters are:
     #  3 Gaussian parameters: height, center, sigma
     #  5 Hermite polynomial coefficients
-
     
     nx = x.shape[0]
     npar = par.shape[1]
@@ -257,19 +256,78 @@ def gausshermitebin(x,par,binsize=1.0):
     sqr40320 = np.sqrt(40320)
     sqr362880 = np.sqrt(362880)
 
+    # The block below is quite time-consuming, only use the Hermite parameters/columns that we need
+    
     # HH are the coefficients for the powers of X
     #   hpar will be zero for orders higher than are actually desired
-    hh = np.zeros((nx,10),np.float64)      # the coefficients for the powers of X
-    hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*105/sqr40320
-    hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120 - hpar[:,7]*105/sqr5040 + hpar[:,9]*945/sqr362880
-    hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24) + hpar[:,6]*45/sqr720 - hpar[:,8]*420/sqr40320
-    hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120 + hpar[:,7]*105/sqr5040 - hpar[:,9]*1260/sqr362880
-    hh[:,4] = hpar[:,4]/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*210/sqr40320
-    hh[:,5] = hpar[:,5]/sqr120 - hpar[:,7]*21/sqr5040 + hpar[:,9]*378/sqr362880
-    hh[:,6] = hpar[:,6]/sqr720 - hpar[:,8]*28/sqr40320
-    hh[:,7] = hpar[:,7]/sqr5040 - hpar[:,9]*36/sqr362880
-    hh[:,8] = hpar[:,8]/sqr40320
-    hh[:,9] = hpar[:,9]/sqr362880
+    if nherm==3:
+        hh = np.zeros((nx,3),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2
+        hh[:,1] = hpar[:,1]
+        hh[:,2] = hpar[:,2]/sqr2
+    elif nherm==4:
+        hh = np.zeros((nx,4),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6)
+        hh[:,2] = hpar[:,2]/sqr2
+        hh[:,3] = hpar[:,3]/np.sqrt(6)
+    elif nherm==5:
+        hh = np.zeros((nx,5),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6)
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24)
+        hh[:,3] = hpar[:,3]/np.sqrt(6)
+        hh[:,4] = hpar[:,4]/sqr24
+    elif nherm==6:
+        hh = np.zeros((nx,6),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24)
+        hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120
+        hh[:,4] = hpar[:,4]/sqr24
+        hh[:,5] = hpar[:,5]/sqr120
+    elif nherm==7:
+        hh = np.zeros((nx,10),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 - hpar[:,6]*15/sqr720
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24) + hpar[:,6]*45/sqr720
+        hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120
+        hh[:,4] = hpar[:,4]/sqr24 - hpar[:,6]*15/sqr720
+        hh[:,5] = hpar[:,5]/sqr120
+        hh[:,6] = hpar[:,6]/sqr720
+    elif nherm==8:
+        hh = np.zeros((nx,10),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 - hpar[:,6]*15/sqr720
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120 - hpar[:,7]*105/sqr5040
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24) + hpar[:,6]*45/sqr720
+        hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120 + hpar[:,7]*105/sqr5040
+        hh[:,4] = hpar[:,4]/sqr24 - hpar[:,6]*15/sqr720
+        hh[:,5] = hpar[:,5]/sqr120 - hpar[:,7]*21/sqr5040
+        hh[:,6] = hpar[:,6]/sqr720
+        hh[:,7] = hpar[:,7]/sqr5040
+    elif nherm==9:
+        hh = np.zeros((nx,10),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*105/sqr40320
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120 - hpar[:,7]*105/sqr5040
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24) + hpar[:,6]*45/sqr720 - hpar[:,8]*420/sqr40320
+        hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120 + hpar[:,7]*105/sqr5040
+        hh[:,4] = hpar[:,4]/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*210/sqr40320
+        hh[:,5] = hpar[:,5]/sqr120 - hpar[:,7]*21/sqr5040
+        hh[:,6] = hpar[:,6]/sqr720 - hpar[:,8]*28/sqr40320
+        hh[:,7] = hpar[:,7]/sqr5040
+        hh[:,8] = hpar[:,8]/sqr40320
+    else:
+        hh = np.zeros((nx,10),np.float64)      # the coefficients for the powers of X
+        hh[:,0] = hpar[:,0] - hpar[:,2]/sqr2 + hpar[:,4]*3/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*105/sqr40320
+        hh[:,1] = hpar[:,1] - hpar[:,3]*3/np.sqrt(6) + hpar[:,5]*15/sqr120 - hpar[:,7]*105/sqr5040 + hpar[:,9]*945/sqr362880
+        hh[:,2] = hpar[:,2]/sqr2 - hpar[:,4]*(6/sqr24) + hpar[:,6]*45/sqr720 - hpar[:,8]*420/sqr40320
+        hh[:,3] = hpar[:,3]/np.sqrt(6) - hpar[:,5]*10/sqr120 + hpar[:,7]*105/sqr5040 - hpar[:,9]*1260/sqr362880
+        hh[:,4] = hpar[:,4]/sqr24 - hpar[:,6]*15/sqr720 + hpar[:,8]*210/sqr40320
+        hh[:,5] = hpar[:,5]/sqr120 - hpar[:,7]*21/sqr5040 + hpar[:,9]*378/sqr362880
+        hh[:,6] = hpar[:,6]/sqr720 - hpar[:,8]*28/sqr40320
+        hh[:,7] = hpar[:,7]/sqr5040 - hpar[:,9]*36/sqr362880
+        hh[:,8] = hpar[:,8]/sqr40320
+        hh[:,9] = hpar[:,9]/sqr362880
 
     # Gaussian values at the edges
     eexp1 = np.exp(-0.5*w1**2)
@@ -291,14 +349,13 @@ def gausshermitebin(x,par,binsize=1.0):
     if nherm>2:
         for i in range(2,nherm-1):
             integ[:,i] = ( -w2**(i-1)*eexp2 + w1**(i-1)*eexp1 ) + (i-1)*integ[:,i-2]
-
+ 
     #  Now multiply times the polynomial coefficients and sum
     GHfunc = np.zeros(nx,np.float64)
     for i in range(0,nherm-1):
         GHfunc += hh[:,i]*integ[:,i]
     GHfunc *= par[:,0]/sqr2pi
-
-
+    
     return GHfunc
 
 
@@ -748,7 +805,6 @@ class Lsf:
             return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
         else:
             return utils.w2p(self.wave,w,extrapolate=extrapolate)
-
         
     def pix2wave(self,x,extrapolate=True,order=0):
         """
@@ -1321,13 +1377,13 @@ class GaussHermiteLsf(Lsf):
         
         # Make sure nLSF is odd
         if nlsf % 2 == 0: nlsf+=1
-
+        
         nx = len(x)
         # Gauss-Hermite xtype is always in pixels, convert wavelength to pixels
         if xtype.lower().find('wave') > -1:
             w = x.copy()
             x = self.wave2pix(w,order=order)
-
+        
         # Make xLSF array
         
         # New pixel scale
@@ -1339,6 +1395,7 @@ class GaussHermiteLsf(Lsf):
         # Original pixel scale
         else:
             xlsf = np.arange(nlsf)-nlsf//2
+            
         # Make the LSF using ghlsf()
         lsf = ghlsf(xlsf,x,self.pars[:,order])
         

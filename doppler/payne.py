@@ -25,6 +25,7 @@ from doppler import utils
 import copy
 import logging
 import contextlib, io, sys
+import time
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -147,21 +148,32 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
     owavefull = dln.valrange(spec.wave)
     owavechunks = 0.0
     odw = np.zeros(spec.norder,np.float64)
-    specwave = np.atleast_2d(spec.wave.copy()).T
+    specwave = spec.wave.copy()
+    if spec.wave.ndim==1:  # make 2D with order in second dimension
+        specwave = specwave.T
     for o in range(spec.norder):
         owavechunks += dln.valrange(specwave[:,o])
         odw[o] = np.median(dln.slope(specwave[:,o]))
+        
     # Get model spectrum for the entire wavelength range, across all orders
     # Or do them separately, if there are large gaps (e.g GALAH)
     if owavechunks > 0.5*owavefull:
         model_all_in_one = True
-        nextend = int(np.ceil(spec.wave.size*0.10))  # extend 10% on each end
-        w0 = np.maximum( owr[0]-nextend*np.median(odw), np.min(model.dispersion))
-        w1 = np.minimum( owr[1]+nextend*np.median(odw), np.max(model.dispersion))
+        wextend = 0.0
+        for o in range(spec.norder):
+            dw = dln.slope(spec.wave[:,o])
+            dw = np.hstack((dw,dw[-1]))
+            dw = np.abs(dw)
+            meddw = np.median(dw)
+            nextend = int(np.ceil(len(dw)*0.25))  # extend 25% on each end
+            nextend = np.maximum(nextend,200)     # or 200 pixels
+            wextend = np.max([wextend,nextend*meddw])
+        w0 = np.maximum( owr[0]-wextend, np.min(model.dispersion))
+        w1 = np.minimum( owr[1]+wextend, np.max(model.dispersion))
         modelspec_all = model(labels,wr=[w0,w1])
     else:
         model_all_in_one = False
-        
+
     # Observed spectrum values
     wave = spec.wave
     ndim = wave.ndim
@@ -172,7 +184,8 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
         npix = len(wave)
         wave = wave.reshape(npix,norder)
     # Loop over the orders
-    outmodel = []
+    outmodel = spec.copy()
+    outmodel.err *= 0
     for o in range(norder):
         w = wave[:,o]
         w0 = np.min(w)
@@ -182,7 +195,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
         dw = np.abs(dw)
         meddw = np.median(dw)
         npix = len(w)
-
+        
         if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
                 raise Exception('Model does not cover the observed wavelength range')
             
@@ -191,7 +204,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
         nextend = np.maximum(nextend,200)    # or 200 pixels
         if model_all_in_one == True:
             if (np.min(model.dispersion)<(w0-nextend*meddw)) | (np.max(model.dispersion)>(w1+nextend*meddw)):            
-                gd, = np.where( (modelspec_all.wave >= (w0-nextend*meddw)) |
+                gd, = np.where( (modelspec_all.wave >= (w0-nextend*meddw)) &
                                 (modelspec_all.wave <= (w1+nextend*meddw)) )
                 ngd = len(gd)
                 tmodelflux = modelspec_all.flux[gd]
@@ -203,7 +216,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
             modelspec = model(labels,wr=[w0-nextend*meddw,w1+nextend*meddw])
             tmodelflux = modelspec.flux
             tmodelwave = modelspec.wave
-
+            
         # Rebin
         #  get LSF FWHM (A) for a handful of positions across the spectrum
         xp = np.arange(npix//20)*20
@@ -247,18 +260,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
         omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
                               fill_value=(np.nan,np.nan),assume_sorted=True)(w)
         
-        # Order information
-        omodel = Spec1D(omodelflux,wave=w)
-        omodel.norder = norder
-        omodel.order = o
-                
-        # Append to final output
-        outmodel.append(omodel)
-
-        
-    # Single-element list
-    if (type(outmodel) is list) & (len(outmodel)==1):
-        outmodel = outmodel[0] 
+        outmodel.flux[:,o] = omodelflux
             
     return outmodel
 
@@ -480,7 +482,9 @@ class PayneModelSet(object):
             if (len(lo)==0) | (len(hi)==0):
                 raise Exception('No pixels between '+str(wr[0])+' and '+str(wr[1]))
             # Get the chunks that we need
-            gg, = np.where( (self._wrarray[0,:] >= wr[0]) & (self._wrarray[1,:] <= wr[1]) )
+            #gg, = np.where( (self._wrarray[0,:] >= wr[0]) & (self._wrarray[1,:] <= wr[1]) )
+            gg, = np.where( ((self._wrarray[1,:] >= wr[0]) & (self._wrarray[1,:] <= wr[1])) |
+                            ((self._wrarray[0,:] <= wr[1]) & (self._wrarray[0,:] >= wr[0])) )
             ngg = len(gg)
             npix = 0
             for i in range(ngg):
@@ -918,22 +922,7 @@ class PayneSpecFitter:
                 else:
                     ind, = np.where(fitnames==name)
                     labels[k] = args[ind[0]]
-                
-        #import pdb; pdb.set_trace()
-
-        
-        #labels = self._initlabels.copy()
-        ## Fitting ALPHA
-        #if self._fitalpha is True:
-        #    # Alpha element labels
-        #    labels[self._fitalpha_index] = args[self._fitalpha_argindex]
-        #    # Non-alpha element labels
-        #    nonalpha_args = np.delete(args,self._fitalpha_argindex)
-        #    labels[self._fitindex] = nonalpha_args
-        ## Not fitting ALPHA
-        #else:
-        #    labels[self._fitindex] = args
-        #return labels
+        return labels
     
     def chisq(self,model):
         return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
@@ -942,6 +931,6 @@ class PayneSpecFitter:
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
-        return self.paynemodel(labels)
+        return self._paynemodel(labels)
 
     

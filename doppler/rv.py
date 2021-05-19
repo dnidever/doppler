@@ -1262,7 +1262,6 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
     return beststr, bestmodel
 
 
-
 def fit_lsq(spec,models=None,initpar=None,verbose=False):
     """
     Least Squares fitting with forward modeling of the spectrum.
