@@ -728,7 +728,9 @@ class PayneSpecFitter:
         # "Prepare" the Payne model with the observed spectrum
         pmodel.prepare(spec)
         self._paynemodel = pmodel
+        self.labels = pmodel.labels
         labelnames = np.char.array(self._paynemodel.labels)        
+        nlabels = len(self._paynemodel.labels)
         self.params = dict((key.upper(), value) for (key, value) in params.items()) # all CAPS
         self._initlabels = self.mkinitlabels(params)
         if fitparams is not None:
@@ -737,11 +739,15 @@ class PayneSpecFitter:
             self.fitparams = paynemodel.labels # by default fit all Payne parameters
         self._nfit = len(self.fitparams)
 
-        # Fixed labels
-        fixed = np.ones(self._nfit,bool)  # all fixed by default
+        # Labels FIXED, ALPHAELEM, ELEM arrays
+        fixed = np.ones(nlabels,bool)  # all fixed by default
+        alphaelem = np.zeros(nlabels,bool)  # all False to start
+        elem = np.zeros(nlabels,bool)  # all False to start        
         for k,name in enumerate(labelnames):
             # Alpha element
             if name in ['O_H','MG_H','SI_H','S_H','CA_H','TI_H']:
+                alphaelem[k] = True
+                elem[k] = True
                 # In FITPARAMS, NOT FIXED
                 if name in self.fitparams:
                     fixed[k] = False
@@ -756,6 +762,7 @@ class PayneSpecFitter:
                     fixed[k] = True
             # Non-alpha element
             elif name.endswith('_H'):
+                elem[k] = True
                 # In FITPARAMS, NOT FIXED
                 if name in self.fitparams:
                     fixed[k] = False
@@ -779,34 +786,10 @@ class PayneSpecFitter:
                 # Not in FITPARAMS/PARAMS, FIXED
                 else:
                     fixed[k] = True
-        self._fixed = fixed
-        
-        import pdb; pdb.set_trace()
+        self._label_fixed = fixed
+        self._label_alphaelem = alphaelem
+        self._label_elem = elem        
 
-        #if 'ALPHA_H' in self.fitparams:
-        #    self._fitalpha = True
-        #    self._fitalpha_argindex = np.where(np.char.array(self.fitparams)=='ALPHA_H')[0][0]
-        #    alphaelem = ['O','MG','SI','S','CA','TI']
-        #    alphaindex = []
-        #    for k in range(len(alphaelem)):
-        #        ind, = np.where(labelnames==alphaelem[k]+'_H')
-        #        if len(ind)>0:
-        #            alphaindex.append(ind[0])
-        #    if len(alphaindex)==0:
-        #        raise ValueError('Fitting ALPHA_H but not alpha elements in Payne model')
-        #    self._fitalpha_index = np.array(alphaindex)
-        #    # Non-alpha parameter index in ARGS/FITPARAM
-        #    fitindex = []
-        #    for k in range(self._nfit):
-        #        if self.fitparams[k] != 'ALPHA_H':
-        #            fitindex.append( np.where(labelnames==self.fitparams[k])[0][0] )
-        #    self._fitindex = np.array(fitindex)
-        #else:
-        #    self._fitalpha = False
-        #    fitindex = np.zeros(self._nfit,int)
-        #    for k in range(self._nfit):
-        #        fitindex[k] = np.where(labelnames==self.fitparams[k])[0][0]
-        #    self._fitindex = fitindex
         self._spec = spec.copy()
         self._flux = spec.flux.flatten()
         self._err = spec.err.flatten()
@@ -897,36 +880,60 @@ class PayneSpecFitter:
         # Initialize with init values
         labels = self._initlabels.copy()
         
-        # Loop over labels
-        labelnames = np.char.array(self._paynemodel.labels) 
+        labelnames = np.char.array(self._paynemodel.labels)
+        fitnames = np.char.array(self.fitparams)
+        if 'FE_H' in self.fitparams:
+            fitfeh = True
+            fehind, = np.where(fitnames=='FE_H')
+        else:
+            fitfeh = False
+        if 'ALPHA_H' in self.fitparams:
+            fitalpha = True
+            alphaind, = np.where(fitnames=='ALPHA_H')
+        else:
+            fitalpha = False
+
+        # Loop over labels        
         for k,name in enumerate(labelnames):
             # Label is NOT fixed, change it
-            if self._fixed[k] is False:
+            if self._label_fixed[k] == False:
                 # Alpha element
-                if name in ['O_H','MG_H','SI_H','S_H','CA_H','TI_H']:                
-                    pass
+                if self._label_alphaelem[k] == True:
+                    # ALPHA_H in FITPARAMS
+                    if fitalpha is True:
+                        labels[k] = args[alphaind[0]]
+                    elif fitfeh is True:
+                        labels[k] = args[fehind[0]]
+                    else:
+                        print('THIS SHOULD NOT HAPPEN!')
+                        import pdb; pdb.set_trace()
                 # Non-alpha element
-                elif name.endswith('_H') is True:
-                    pass
+                elif self._label_elem[k] == True:
+                    if fitfeh is True:
+                        labels[k] = args[fehind[0]]
+                    else:
+                        print('THIS SHOULD NOT HAPPEN!')
+                        import pdb; pdb.set_trace()
                 # Other parameters
                 else:
-                    pass
+                    ind, = np.where(fitnames==name)
+                    labels[k] = args[ind[0]]
                 
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
         
-        labels = self._initlabels.copy()
-        # Fitting ALPHA
-        if self._fitalpha is True:
-            # Alpha element labels
-            labels[self._fitalpha_index] = args[self._fitalpha_argindex]
-            # Non-alpha element labels
-            nonalpha_args = np.delete(args,self._fitalpha_argindex)
-            labels[self._fitindex] = nonalpha_args
-        # Not fitting ALPHA
-        else:
-            labels[self._fitindex] = args
-        return labels
+        #labels = self._initlabels.copy()
+        ## Fitting ALPHA
+        #if self._fitalpha is True:
+        #    # Alpha element labels
+        #    labels[self._fitalpha_index] = args[self._fitalpha_argindex]
+        #    # Non-alpha element labels
+        #    nonalpha_args = np.delete(args,self._fitalpha_argindex)
+        #    labels[self._fitindex] = nonalpha_args
+        ## Not fitting ALPHA
+        #else:
+        #    labels[self._fitindex] = args
+        #return labels
     
     def chisq(self,model):
         return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
