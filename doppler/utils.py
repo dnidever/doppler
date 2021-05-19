@@ -109,12 +109,14 @@ def p2w(dispersion,x,extrapolate=True):
         win = dispersion
         # At the beginning
         if (np.min(x)<0):
-            coef1 = dln.poly_fit(xin[0:10], win[0:10], 2)
+            #coef1 = dln.poly_fit(xin[0:10], win[0:10], 2)
+            coef1 = dln.quadratic_coefficients(xin[0:10], win[0:10])            
             bd1, nbd1 = dln.where(x < 0)
             w[bd1] = dln.poly(x[bd1],coef1)
         # At the end
         if (np.max(x)>(npix-1)):
-            coef2 = dln.poly_fit(xin[npix-10:], win[npix-10:], 2)
+            #coef2 = dln.poly_fit(xin[npix-10:], win[npix-10:], 2)
+            coef2 = dln.quadratic_coefficients(xin[npix-10:], win[npix-10:])            
             bd2, nbd2 = dln.where(x > (npix-1))
             w[bd2] = dln.poly(x[bd2],coef2)                
     return w
