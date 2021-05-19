@@ -135,7 +135,7 @@ def load_models():
     return DopplerPayneModel.read(files)
 
 
-def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
+def prepare_payne_model(model,labels,spec,lsfinput=None,rv=None,vmacro=None,vsini=None,lsfout=False):
     """ Prepare a Payne spectrum for a given observed spectrum."""
 
     
@@ -186,6 +186,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
     # Loop over the orders
     outmodel = spec.copy()
     outmodel.err *= 0
+    lsf_list = []
     for o in range(norder):
         w = wave[:,o]
         w0 = np.min(w)
@@ -246,7 +247,11 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
             rmodelwave = tmodelwave
                 
         # Convolve with LSF, Vsini and Vmacro kernels
-        lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o,original=False)
+        if model._lsf is not None:
+            lsf = model._lsf[o]
+        else:
+            lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o,original=False)
+        lsf_list.append(lsf)
         cmodelflux = utils.convolve_sparse(rmodelflux,lsf)
         # Apply Vmacro broadening and Vsini broadening (km/s)
         if (vmacro is not None) | (vsini is not None):
@@ -261,9 +266,11 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None):
                               fill_value=(np.nan,np.nan),assume_sorted=True)(w)
         
         outmodel.flux[:,o] = omodelflux
-            
-    return outmodel
 
+    if lsfout is True:
+        return outmodel,lsf_list
+    else:
+        return outmodel
 
 
 class PayneModel(object):
@@ -278,7 +285,8 @@ class PayneModel(object):
         wr[1] = np.max(wavelength)
         self.wr = wr
         self.npix = len(self._dispersion)
-
+        self._lsf = None
+        
     @property
     def dispersion(self):
         return self._dispersion
@@ -425,6 +433,7 @@ class PayneModelSet(object):
         wr[1] = np.max(self._dispersion)
         self.wr = wr   # global wavelength range
         self.labels = self._data[0].labels
+        self._lsf = None
         
     @property
     def dispersion(self):
@@ -598,6 +607,7 @@ class DopplerPayneModel(object):
         self._wavevac = self._data._wavevac
         self._original_wavevac = self._data._wavevac
         self.wr = self._data.wr
+        self._data._lsf = None
         
         
     # Maybe the __call__ inputs should be a PARAM dictionary, so it's
@@ -693,7 +703,7 @@ class DopplerPayneModel(object):
         self._data.wavevac = self._original_wavevac  # reset to original
         self._wavevac = self._original_wavevac
         self.wr = self._data.wr
-
+        self._data._lsf = None
         
     def prepare(self,spec):
         """ Prepare the model.  Keep a copy of the spectrum."""
@@ -703,7 +713,12 @@ class DopplerPayneModel(object):
         self._data.wavevac = spec.wavevac   # switch air<->vac if necessary
         self._wavevac = spec.wavevac
         self.wr = dln.minmax(self._dispersion)
-
+        # Get the LSF array
+        tlabels = self.mklabels({'teff':5000,'logg':3.0,'fe_h':0.0})
+        tlabels = tlabels[0:33]
+        temp,lsf = prepare_payne_model(self._data,tlabels,self._spec,lsfout=True)
+        self._data._lsf = lsf
+        
     def copy(self):
         """ Make a copy of the DopplerPayneModel."""
         new_model = self._data.copy()
