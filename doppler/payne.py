@@ -162,7 +162,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
             wave = np.atleast_2d(wave).T
         else:
             wnorder = wave.shape[1]
-        if wnorder != self.norder:
+        if wnorder != spec.norder:
             raise ValueError('Wave must have same orders as Spectrum')
         
     # Get model spectrum for the entire wavelength range, across all orders
@@ -184,24 +184,16 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
     else:
         model_all_in_one = False
 
-    # Observed spectrum values
-    #wave = spec.wave
-    #ndim = specwave.ndim
-    #if ndim==2:
-    #    npix,norder = specwave.shape
-    #if ndim==1:
-    #    norder = 1
-    #    npix = len(wave)
-    #    wave = wave.reshape(npix,norder)
     # Loop over the orders
     outmodel = spec.copy()
-    outmodel.err *= 0
+    outmodel.err[:] = 0
+    outmodel.mask[:] = False
     if wave is not None:
         outmodel.flux = np.zeros(wave.shape,float)
         outmodel.err = np.zeros(wave.shape,float)
         outmodel.mask = np.zeros(wave.shape,bool)        
     lsf_list = []
-    for o in range(norder):
+    for o in range(spec.norder):
         w = specwave[:,o]
         w0 = np.min(w)
         w1 = np.max(w)
@@ -1002,7 +994,7 @@ class PayneSpecFitter:
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
-        print(args)
+        #print(args)
         return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
 
     
