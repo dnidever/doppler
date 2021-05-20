@@ -135,7 +135,7 @@ def load_models():
     return DopplerPayneModel.read(files)
 
 
-def prepare_payne_model(model,labels,spec,lsfinput=None,rv=None,vmacro=None,vsini=None,lsfout=False):
+def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=None,lsfout=False):
     """ Prepare a Payne spectrum for a given observed spectrum."""
 
     
@@ -150,10 +150,20 @@ def prepare_payne_model(model,labels,spec,lsfinput=None,rv=None,vmacro=None,vsin
     odw = np.zeros(spec.norder,np.float64)
     specwave = spec.wave.copy()
     if spec.wave.ndim==1:  # make 2D with order in second dimension
-        specwave = specwave.T
+        specwave = np.atleast_2d(specwave).T
     for o in range(spec.norder):
         owavechunks += dln.valrange(specwave[:,o])
         odw[o] = np.median(dln.slope(specwave[:,o]))
+
+    # Check input WAVE array
+    if wave is not None:
+        if wave.ndim==1:
+            wnorder = 1
+            wave = np.atleast_2d(wave).T
+        else:
+            wnorder = wave.shape[1]
+        if wnorder != self.norder:
+            raise ValueError('Wave must have same orders as Spectrum')
         
     # Get model spectrum for the entire wavelength range, across all orders
     # Or do them separately, if there are large gaps (e.g GALAH)
@@ -175,20 +185,24 @@ def prepare_payne_model(model,labels,spec,lsfinput=None,rv=None,vmacro=None,vsin
         model_all_in_one = False
 
     # Observed spectrum values
-    wave = spec.wave
-    ndim = wave.ndim
-    if ndim==2:
-        npix,norder = wave.shape
-    if ndim==1:
-        norder = 1
-        npix = len(wave)
-        wave = wave.reshape(npix,norder)
+    #wave = spec.wave
+    #ndim = specwave.ndim
+    #if ndim==2:
+    #    npix,norder = specwave.shape
+    #if ndim==1:
+    #    norder = 1
+    #    npix = len(wave)
+    #    wave = wave.reshape(npix,norder)
     # Loop over the orders
     outmodel = spec.copy()
     outmodel.err *= 0
+    if wave is not None:
+        outmodel.flux = np.zeros(wave.shape,float)
+        outmodel.err = np.zeros(wave.shape,float)
+        outmodel.mask = np.zeros(wave.shape,bool)        
     lsf_list = []
     for o in range(norder):
-        w = wave[:,o]
+        w = specwave[:,o]
         w0 = np.min(w)
         w1 = np.max(w)
         dw = dln.slope(w)
@@ -262,11 +276,15 @@ def prepare_payne_model(model,labels,spec,lsfinput=None,rv=None,vmacro=None,vsin
             if rv != 0.0: rmodelwave *= (1+rv/cspeed)
         
         # Interpolate
-        omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
-                              fill_value=(np.nan,np.nan),assume_sorted=True)(w)
-        
+        if wave is None:
+            omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
+                                  fill_value=(np.nan,np.nan),assume_sorted=True)(w)
+        else:
+            omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
+                                  fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])            
+            
         outmodel.flux[:,o] = omodelflux
-
+        
     if lsfout is True:
         return outmodel,lsf_list
     else:
@@ -319,14 +337,14 @@ class PayneModel(object):
         self.wr[1] = np.max(self._dispersion)        
 
 
-    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False):
+    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False,wave=None):
 
         if len(labels) != len(self.labels):
             raise ValueError('labels must have '+str(len(self.labels))+' elements')
         
         # Prepare the spectrum
         if spec is not None:
-            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro)
+            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro,wave=wave)
             if fluxonly is True:
                 return out.flux
             return out
@@ -336,39 +354,59 @@ class PayneModel(object):
         We input the scaled stellar labels (not in the original unit).
         Each label ranges from -0.5 to 0.5
         '''
-        
+
+        # Input wavelengths, create WR 
+        if wave is not None:
+            wr = [np.min(wave),np.max(wave)]
+            if rv is not None:
+                wr = [np.min([wr[0],wr[0]*(1+rv/cspeed)]), np.max([wr[1],wr[1]*(1+rv/cspeed)])]
+            
         # assuming your NN has two hidden layers.
         w_array_0, w_array_1, w_array_2, b_array_0, b_array_1, b_array_2, x_min, x_max = self._coeffs
         scaled_labels = (labels-x_min)/(x_max-x_min) - 0.5
         inside = np.einsum('ij,j->i', w_array_0, scaled_labels) + b_array_0
         outside = np.einsum('ij,j->i', w_array_1, leaky_relu(inside)) + b_array_1
         spectrum = np.einsum('ij,j->i', w_array_2, leaky_relu(outside)) + b_array_2
-
+        wavelength = self._dispersion.copy()
+        
         # Trim
         if wr is not None:
             gd, = np.where( (self.dispersion >= wr[0]) & (self.dispersion <= wr[1]) )
             if len(gd)==0:
                 raise Exception('No pixels between '+str(wr[0])+' and '+str(wr[1]))
             spectrum = spectrum[gd]
-
+            wavelength = wavelength[gd]
 
         # Apply Vmacro broadening and Vsini broadening (km/s)
         if (vmacro is not None) | (vsini is not None):
-            spectrum = utils.broaden(self._dispersion,spectrum,vgauss=vmacro,vsini=vsini)
+            spectrum = utils.broaden(wavelength,spectrum,vgauss=vmacro,vsini=vsini)
+
+        # Interpolate onto a new wavelength scale
+        if (rv is not None and rv != 0.0) or wave is not None:
+            inspectrum = spectrum
+            inwave = wavelength
+            outwave = wavelength
             
+            # Apply radial velocity to input wavelength scale
+            if (rv is not None and rv != 0.0):
+                inwave *= (1+rv/cspeed)
+
+            # Use WAVE for output wavelengths
+            if wave is not None:
+                # Currently this only handles 1D wavelength arrays                
+                outwave = wave.copy()
+                
+            # Do the interpolation
+            spectrum = interp1d(inwave,inspectrum,kind='cubic',bounds_error=False,
+                                fill_value=(np.nan,np.nan),assume_sorted=True)(outwave)
+            wavelength = outwave
+
         # Return as spectrum object with wavelengths
         if fluxonly is False:
-            mspec = Spec1D(spectrum,wave=self._dispersion.copy(),lsfsigma=None,instrument='Model')
+            mspec = Spec1D(spectrum,wave=wavelength,lsfsigma=None,instrument='Model')
         else:
             mspec = spectrum
-
-        # Apply Radial Velocity
-        if rv is not None:
-            if rv != 0.0:
-                wave = mspec.wave
-                wave *= (1+rv/cspeed)
-                mspec.wave = wave
-            
+                
         return mspec
 
     
@@ -398,8 +436,8 @@ class PayneModel(object):
         return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
 
 
-    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None):
-        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini)
+    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None,wave=None):
+        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini,wave=wave)
 
 
         
@@ -466,7 +504,7 @@ class PayneModelSet(object):
             wr[1] = np.max(wrarray)
             self.wr = wr
     
-    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False):
+    def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False,wave=None):
         '''
         Predict the rest-frame spectrum (normalized) of a single star.
         We input the scaled stellar labels (not in the original unit).
@@ -478,11 +516,17 @@ class PayneModelSet(object):
 
         # Prepare the spectrum
         if spec is not None:
-            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro)
+            out = self.prepare(labels,spec=spec,rv=rv,vsini=vsini,vmacro=vmacro,wave=wave)
             if fluxonly is True:
                 return out.flux
             return out
-            
+
+        # Input wavelengths, create WR 
+        if wave is not None:
+            wr = [np.min(wave),np.max(wave)]
+            if rv is not None:
+                wr = [np.min([wr[0],wr[0]*(1+rv/cspeed)]), np.max([wr[1],wr[1]*(1+rv/cspeed)])]
+                
         # Only a subset of wavelenths requested
         if wr is not None:
             # Check that we have pixels in this range
@@ -499,21 +543,18 @@ class PayneModelSet(object):
             for i in range(ngg):
                 npix += self._data[gg[i]].npix
             spectrum = np.zeros(npix,np.float64)
-            wave = np.zeros(npix,np.float64)
+            wavelength = np.zeros(npix,np.float64)
             cnt = 0
             for i in range(ngg):
                 spec1 = self._data[gg[i]](labels,fluxonly=True)
                 nspec1 = len(spec1)
                 spectrum[cnt:cnt+nspec1] = spec1
-                wave[cnt:cnt+nspec1] = self._data[gg[i]].dispersion               
+                wavelength[cnt:cnt+nspec1] = self._data[gg[i]].dispersion               
                 cnt += nspec1
             # Now trim a final time
-            ggpix, = np.where( (wave >= wr[0]) & (wave <= wr[1]) )
-            wave = wave[ggpix]
+            ggpix, = np.where( (wavelength >= wr[0]) & (wavelength <= wr[1]) )
+            wavelength = wavelength[ggpix]
             spectrum = spectrum[ggpix]
-                               
-            # Return as spectrum object with wavelengths
-            mspec = Spec1D(spectrum,wave=wave,lsfsigma=None,instrument='Model')
 
         # all pixels
         else:
@@ -524,24 +565,39 @@ class PayneModelSet(object):
                 nspec1 = len(spec1)
                 spectrum[cnt:cnt+nspec1] = spec1
                 cnt += nspec1
-                
-            # Return as spectrum object with wavelengths
-            mspec = Spec1D(spectrum,wave=self._dispersion.copy(),lsfsigma=None,instrument='Model')
+            wavelength = self._dispersion.copy()
 
         # Apply Vmacro broadening and Vsini broadening (km/s)
         if (vmacro is not None) | (vsini is not None):
-            oflux = utils.broaden(mspec.wave,mspec.flux,vgauss=vmacro,vsini=vsini)
-            mspec.flux = oflux
-            
-        # Apply Radial Velocity
-        if rv is not None:
-            if rv != 0.0:
-                wave = mspec.wave
-                wave *= (1+rv/cspeed)
-                mspec.wave = wave
-            
-        return mspec
+            spectrum = utils.broaden(wavelength,spectrum,vgauss=vmacro,vsini=vsini)
 
+        # Interpolate onto a new wavelength scale
+        if (rv is not None and rv != 0.0) or wave is not None:
+            inspectrum = spectrum
+            inwave = wavelength
+            outwave = wavelength
+            
+            # Apply radial velocity to input wavelength scale
+            if (rv is not None and rv != 0.0):
+                inwave *= (1+rv/cspeed)
+
+            # Use WAVE for output wavelengths
+            if wave is not None:
+                # Currently this only handles 1D wavelength arrays                
+                outwave = wave.copy()
+                
+            # Do the interpolation
+            spectrum = interp1d(inwave,inspectrum,kind='cubic',bounds_error=False,
+                                fill_value=(np.nan,np.nan),assume_sorted=True)(outwave)
+            wavelength = outwave
+
+        # Return as spectrum object with wavelengths
+        if fluxonly is False:
+            mspec = Spec1D(spectrum,wave=wavelength,lsfsigma=None,instrument='Model')
+        else:
+            mspec = spectrum
+                
+        return mspec   
 
     def __setitem__(self,index,data):
         self._data[index] = data
@@ -584,8 +640,8 @@ class PayneModelSet(object):
         models.sort(key=minwave)
         return PayneModelSet(models)
 
-    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None):
-        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini)
+    def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None,wave=None):
+        return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini,wave=wave)
 
 
     
@@ -614,7 +670,7 @@ class DopplerPayneModel(object):
     # easier to specify what you want, and use "defaults" for the rest
     # of the parameters
         
-    def __call__(self,labels,wr=None):
+    def __call__(self,labels,wr=None,wave=None):
         """ Create the model."""
         # Dictionary input
         if isinstance(labels,dict):
@@ -625,9 +681,9 @@ class DopplerPayneModel(object):
         vsini,vmacro,rv = labels[-3:]
         plabels = labels[0:-3]  # just the payne labels
         if self.prepared==True:
-            return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv)
+            return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
         else:
-            return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv)        
+            return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
         
     def mklabels(self,inputs):
         """ Convert input dictionary to labels."""
@@ -739,7 +795,7 @@ class DopplerPayneModel(object):
 
 class PayneSpecFitter:
 
-    def __init__(self,spec,pmodel,params,fitparams=None,verbose=False):
+    def __init__(self,spec,pmodel,params={},fitparams=None,verbose=False):
         # spec - observed spectrum object
         # pmodel - Payne model object
         # params - initial/fixed parameters dictionary
@@ -748,7 +804,7 @@ class PayneSpecFitter:
         pmodel.prepare(spec)
         self._paynemodel = pmodel
         self.labels = pmodel.labels
-        labelnames = np.char.array(self._paynemodel.labels)        
+        labelnames = np.char.array(self._paynemodel.labels)
         nlabels = len(self._paynemodel.labels)
         self.params = dict((key.upper(), value) for (key, value) in params.items()) # all CAPS
         self._initlabels = self.mkinitlabels(params)
@@ -836,7 +892,7 @@ class PayneSpecFitter:
     def params(self,params):
         """ Dictionary, keys must be all CAPS."""
         self._params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
-
+            
     @property
     def fitparams(self):
         return self._fitparams
@@ -946,6 +1002,7 @@ class PayneSpecFitter:
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
-        return self._paynemodel(labels)
+        print(args)
+        return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
 
     

@@ -948,8 +948,13 @@ def spec_resid(pars,wave,flux,err,models,spec):
 def printpars(pars,parerr=None):
     """ Print out the 3/4 parameters."""
 
-    names = ['Teff','logg','[Fe/H]','Vrel']
-    units = ['K','','','km/s']
+    if len(pars)==4:
+        names = ['Teff','logg','[Fe/H]','Vrel']
+        units = ['K','','','km/s']
+    if len(pars)==5:
+        names = ['Teff','logg','[Fe/H]','[alpha/Fe]','Vrel']
+        units = ['K','','','','km/s']
+
     for i in range(len(pars)):
         if parerr is None:
             err = None
@@ -1158,7 +1163,7 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
     return beststr, bestmodel
 
 
-def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
+def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0):
     """
     Fit spectrum using cross-correlation with models sampled in the parameter space.
     
@@ -1166,8 +1171,8 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
     ----------
     spec : Spec1D object
          The observed spectrum to match.
-    models : list of Payne models, optional
-         A list of Payne models to use.  The default is to load all of the Cannon
+    model : Payne model, optional
+         Payne model to use.  The default is to load all of the Payne
          models in the data/ directory and use those.
     samples : numpy structured array, optional
          Catalog of teff/logg/feh/alphafe parameters to use when sampling the parameter space.
@@ -1195,7 +1200,7 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
     
     # Check that the samples input has the right columns
     if samples is not None:
-        for n in ['teff','logg','feh','alphafe']:
+        for n in ['teff','logg','fe_h','alpha_h']:
             try:
                 dum = samples[n]
             except:
@@ -1208,16 +1213,16 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
 
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
-    if models is None:
-        models = payne.load_models().copy()
-        models.prepare(spec)
+    if model is None:
+        model = payne.load_models()
+        model.prepare(spec)
         
     # Step 3: put on logarithmic wavelength grid
     #-------------------------------------------
     wavelog = utils.make_logwave_scale(spec.wave,vel=0.0)  # get new wavelength solution
     obs = spec.interp(wavelog)
     # The LSF information will not be correct if using Gauss-Hermite, it uses a Gaussian approximation
-    # it's okay because the "models" are prepared for the original spectra (above)
+    # it's okay because the "model" is prepared for the original spectra (above)
     
     # Step 4: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
@@ -1228,41 +1233,152 @@ def fit_xcorrgrid_payne(spec,models=None,samples=None,verbose=False,maxvel=1000.
     if samples is None:
         teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
         logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
-        feh = [-1.5, -0.5]
-        alphafe = [0.0, 0.3]
+        feh = [-1.5, -0.5, -1.5, -0.5]
+        alphafe = [0.0, 0.0, 0.3, 0.3]
         dt = np.dtype([('teff',float),('logg',float),('feh',float),('alphafe',float)])
-        samples = np.zeros(len(teff),dtype=dt)
-        samples['teff'][:] = teff
-        samples['logg'][:] = logg
-        samples['feh'][:] = feh
+        samples = np.zeros(len(teff)*len(feh),dtype=dt)
+        nteff = len(teff)
+        for i in range(len(feh)):
+            samples['teff'][i*nteff:(i+1)*nteff] = teff
+            samples['logg'][i*nteff:(i+1)*nteff] = logg
+            samples['feh'][i*nteff:(i+1)*nteff] = feh[i]
+            samples['alphafe'][i*nteff:(i+1)*nteff] = alphafe[i] 
     outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
-                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
-    outstr = np.zeros(len(teff),dtype=outdtype)
-    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
+                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32),('alphafe',np.float32)])
+    outstr = np.zeros(len(samples),dtype=outdtype)
+    if verbose is True: print('  TEFF    LOGG   FEH   ALPHAFE    VREL  CCPEAK   CHISQ')
     for i in range(len(samples)):
-        m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
+        inpdict = {'teff':samples['teff'][i],'logg':samples['logg'][i],'fe_h':samples['feh'][i],
+                   'alpha_h':samples['alphafe'][i]+samples['feh'][i],'rv':0.0}
+        labels = model.mklabels(inpdict)
+        m = model(labels,wave=wavelog)
         outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
         #if outstr1['chisq'] > 1000:
         #    import pdb; pdb.set_trace()
         if verbose is True:
-            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
+            print('%7.0f  %5.2f  %5.2f  %5.2f  %8.2f  %5.2f  %5.2f' % (samples['teff'][i],samples['logg'][i],samples['feh'][i],
+                                                                       samples['alphafe'][i],outstr1['vrel'][0],outstr1['ccpeak'][0],
+                                                                       outstr1['chisq'][0]))
         for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
-        outstr['teff'][i] = teff[i]
-        outstr['logg'][i] = logg[i]
-        outstr['feh'][i] = feh
+        outstr['teff'][i] = samples['teff'][i]
+        outstr['logg'][i] = samples['logg'][i]
+        outstr['feh'][i] = samples['feh'][i]
+        outstr['alphafe'][i] = samples['alphafe'][i]
+        #import pdb; pdb.set_trace()
     # Get best fit
     bestind = np.argmin(outstr['chisq'])    
     beststr = outstr[bestind]
-    bestmodel = models(teff=beststr['teff'],logg=beststr['logg'],feh=beststr['feh'],rv=beststr['vrel'])
+    bestlabels = model.mklabels({'teff':beststr['teff'],'logg':beststr['logg'],'fe_h':beststr['feh'],
+                                 'alpha_h':beststr['alphafe']+beststr['feh'],'rv':beststr['vrel']})
+    bestmodel = model(bestlabels)
     
     if verbose is True:
         print('Initial RV fit:')
-        printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['vrel']],[None,None,None,beststr['vrelerr']])
+        printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['alphafe'],beststr['vrel']],
+                  [None,None,None,None,beststr['vrelerr']])
 
     return beststr, bestmodel
 
 
-def fit_lsq(spec,models=None,initpar=None,verbose=False):
+def fit_lsq_payne(spec,model=None,initpar=None,verbose=False):
+    """
+    Least Squares fitting with forward modeling of the spectrum.
+    
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    model : Payne model, optional
+         Payne model to use.  The default is to load all of the Payne
+         models in the data/ directory and use those.
+    initpar : numpy array, optional
+         Initial estimate for [teff, logg, feh, RV], optional.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Payne model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = fit_lsq_payne(spec)
+
+    """
+    
+    # Prepare the spectrum
+    #-----------------------------
+    # normalize and mask spectrum
+    spec = utils.specprep(spec)
+
+    # Load and prepare the Cannon models
+    #-------------------------------------------
+    if model is None:
+        model = payne.load_models()
+    
+    # Get initial estimates
+    if initpar is None:
+        initpar = np.array([6000.0, 2.5, -0.5, 0.0])
+    initpar = np.array(initpar).flatten()
+    
+    # Calculate the bounds
+    lbounds = np.zeros(4,float)+1e5
+    ubounds = np.zeros(4,float)-1e5
+    for p in models:
+        lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
+        ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
+    lbounds[3] = -1000
+    ubounds[3] = 1000    
+    bounds = (lbounds, ubounds)
+
+    # Make sure RV is in the boundaries
+    initpar[3] = dln.limit(initpar[3],-999,999)
+
+    # Initialize spectral fitter
+    sp = payne.PayneSpecFitter(spec,model,params,fitparams)
+    
+    ## function to use with curve_fit
+    #def spec_interp(x,teff,logg,feh,rv):
+    #    """ This returns the interpolated model for a given spectrum."""
+    #    # The "models" and "spec" must already exist outside of this function
+    #    m = models(teff=teff,logg=logg,feh=feh,rv=rv)
+    #    if m is None:
+    #        return np.zeros(spec.flux.shape,float).flatten()+1e30
+    #    return m.flux.flatten()
+    
+    # Use curve_fit
+    #initpar = sp.mkinitlabels({})
+    lspars, lscov = curve_fit(sp.model, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
+                              p0=initpar, bounds=bounds)
+    # If it hits a boundary then the solution won't change much compared to initpar
+    # setting absolute_sigma=True gives crazy low lsperror values
+    lsperror = np.sqrt(np.diag(lscov))
+    
+    if verbose is True:
+        print('Least Squares RV and stellar parameters:')
+        printpars(lspars)
+    lsmodel = model(lspars)
+    lschisq = np.sqrt(np.sum(((spec.flux-lsmodel.flux)/spec.err)**2)/(spec.npix*spec.norder))
+    if verbose is True: print('chisq = %5.2f' % lschisq)
+
+    # Put it into the output structure
+    dtype = np.dtype([('pars',float,4),('parerr',float,4),('parcov',float,(4,4)),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = lspars
+    out['parerr'] = lsperror
+    out['parcov'] = lscov
+    out['chisq'] = lschisq
+    
+    return out, lsmodel
+
+
+def fit_lsq_cannon(spec,models=None,initpar=None,verbose=False):
     """
     Least Squares fitting with forward modeling of the spectrum.
     
@@ -1290,7 +1406,7 @@ def fit_lsq(spec,models=None,initpar=None,verbose=False):
 
     .. code-block:: python
 
-         out, bmodel = fit_lsq(spec)
+         out, bmodel = fit_lsq_cannon(spec)
 
     """
     
@@ -1801,7 +1917,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
     initpar = np.array(initpar).flatten()
-    lsout, lsmodel = fit_lsq(specm,models,initpar=initpar,verbose=verbose)
+    lsout, lsmodel = fit_lsq_cannon(specm,models,initpar=initpar,verbose=verbose)
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
     
