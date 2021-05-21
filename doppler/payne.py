@@ -997,7 +997,7 @@ class PayneSpecFitter:
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
-        #print(args)
+        print(args)
         return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
 
     
