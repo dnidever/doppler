@@ -1304,7 +1304,7 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
         printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['alphafe'],beststr['vrel']],
                   [None,None,None,None,beststr['vrelerr']])
         print('chisq = %5.2f' % beststr['chisq'])
-    
+        
     return beststr, bestmodel
 
 def make_payne_initlabels(labels):
@@ -1402,7 +1402,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    spec = utils.specprep(spec)
+    #spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
@@ -1455,6 +1455,12 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
 
     bestlabels = model.mklabels(dict(zip(fitparams,lspars)))
     lsmodel = model(bestlabels)
+
+    #gdmask = ( (np.isfinite(spec.flux.flatten())==True) & (spec.flux.flatten()>0.0) &
+    #           (spec.err.flatten()>0.0) & (spec.err.flatten() < 1e5) & (spec.mask.flatten()==False) )
+    #ngdpix = np.sum(gdmask)
+    #lschisq = np.sqrt( np.sum( (spec.flux.flatten()[gdmask]-lsmodel.flux.flatten()[gdmask])**2/spec.err.flatten()[gdmask]**2 )/ngdpix )
+    
     lschisq = np.sqrt(np.sum(((spec.flux-lsmodel.flux)/spec.err)**2)/(spec.npix*spec.norder))
     if verbose is True: print('chisq = %5.2f' % lschisq)
 
@@ -1467,6 +1473,8 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     out['parerr'] = lsperror
     out['parcov'] = lscov
     out['chisq'] = lschisq
+
+    import pdb; pdb.set_trace()
     
     return out, lsmodel
 
@@ -2352,7 +2360,7 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     # Step 4: Least Squares fitting with forward modeling
     #----------------------------------------------------
     # Tweak the continuum
-    specm = tweakcontinuum(specm,xmodel)
+    #specm = tweakcontinuum(specm,xmodel)
     # Initial estimates
     initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
                'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
@@ -2360,7 +2368,7 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
 
-    # THIS IS NOT FINDING THE MINIUM!!!!!!
+    # THIS IS NOT FINDING THE MINIMUM!!!!!!
     import pdb; pdb.set_trace()
 
     

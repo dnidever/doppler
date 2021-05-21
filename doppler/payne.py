@@ -273,9 +273,12 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
                                   fill_value=(np.nan,np.nan),assume_sorted=True)(w)
         else:
             omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
-                                  fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])            
+                                  fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])
             
         outmodel.flux[:,o] = omodelflux
+
+    if wave is not None:
+        outmodel.wave = wave.copy()
         
     if lsfout is True:
         return outmodel,lsf_list
