@@ -21,7 +21,8 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.wcs import WCS
 from scipy.ndimage.filters import median_filter,gaussian_filter1d
-from scipy.optimize import curve_fit, least_squares
+from dlnpyutils.minpack import curve_fit
+from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata
@@ -1436,15 +1437,23 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
         if len(ind)>0:
             allinitpar[ind[0]] = initpar[name]
             
-    # Calculate the bounds
-    bounds = make_payne_bounds(fitparams,allinitpar)
-
     # Initialize spectral fitter
-    sp = payne.PayneSpecFitter(spec,model,params,fitparams)
+    sp = payne.PayneSpecFitter(spec,model,params,fitparams,verbose=True)
+
+    # Calculate the bounds
+    bounds = sp.mkbounds(fitparams,allinitpar)
     
     # Use curve_fit
-    lspars, lscov = curve_fit(sp.model, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
-                              p0=allinitpar, bounds=bounds)
+    tol = 5e-5  # 5e-4
+    #lspars, lscov = curve_fit(sp.model, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
+    #                          p0=allinitpar, bounds=bounds, xtol=tol,ftol=tol)
+
+
+    dx_lim = sp.mkdxlim(fitparams)
+    #import pdb; pdb.set_trace()
+    lspars, lscov = curve_fit(sp.model,spec.wave.flatten(),spec.flux.flatten(), dx_lim=dx_lim,
+                              sigma=spec.err.flatten(),p0=allinitpar,bounds=bounds,jac=sp.jac)
+    
     # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
     lsperror = np.sqrt(np.diag(lscov))
@@ -1474,7 +1483,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     out['parcov'] = lscov
     out['chisq'] = lschisq
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     
     return out, lsmodel
 
@@ -2368,8 +2377,7 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
 
-    # THIS IS NOT FINDING THE MINIMUM!!!!!!
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
 
     
     ## Tweak the continuum normalization
@@ -2426,7 +2434,7 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     out['chisq'] = fchisq
     out['bc'] = bc
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     
     # Make diagnostic figure
     if figfile is not None:

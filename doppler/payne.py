@@ -285,6 +285,86 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
     else:
         return outmodel
 
+    
+def mkdxlim(fitparams):
+    """ Make array of parameter changes at which curve_fit should finish."""
+    npar = len(fitparams)
+    dx_lim = np.zeros(npar,float)
+    for k in range(npar):
+        if fitparams[k]=='TEFF':
+            dx_lim[k] = 1.0
+        elif fitparams[k]=='LOGG':
+            dx_lim[k] = 0.005
+        elif (fitparams[k]=='VMICRO' or fitparams[k]=='VTURB'):
+            dx_lim[k] = 0.1
+        elif (fitparams[k]=='VSINI' or fitparams[k]=='VROT'):
+            dx_lim[k] = 0.1
+        elif fitparams[k]=='RV':
+            dx_lim[k] = 0.01
+        elif fitparams[k].endswith('_H'):
+            dx_lim[k] = 0.005
+        else:
+            dx_lim[k] = 0.01
+    return dx_lim
+
+def mkinitlabels(labels):
+    """ Make initial guesses for Payne labels."""
+
+    labels = np.char.array(labels).upper()
+    
+    # Initializing the labels array
+    nlabels = len(labels)
+    initpars = np.zeros(nlabels,float)
+    initpars[labels=='TEFF'] = 5000.0
+    initpars[labels=='LOGG'] = 3.5
+    initpars[labels.endswith('_H')] = 0.0
+    # Vmicro/Vturb=2.0 km/s by default
+    initpars[(labels=='VTURB') | (labels=='VMICRO')] = 2.0
+    # All abundances, VSINI, VMACRO, RV = 0.0
+            
+    return initpars
+
+
+def mkbounds(labels,initpars=None):
+    """ Make upper and lower bounds for Payne labels."""
+
+    if initpars is None:
+        initpars = mkinitlabels(labels)
+    nlabels = len(labels)
+    lbounds = np.zeros(nlabels,np.float64)
+    ubounds = np.zeros(nlabels,np.float64)
+
+    # Initial guesses and bounds for the fitted parameters
+    for i,par in enumerate(labels):
+        if par.upper()=='TEFF':
+            lbounds[i] = np.maximum(initpars[i]-2000,3000)
+            ubounds[i] = initpars[i]+2000
+        if par.upper()=='LOGG':
+            lbounds[i] = np.maximum(initpars[i]-2,0)
+            ubounds[i] = np.minimum(initpars[i]+2,5)
+        if par.upper()=='VTURB':
+            lbounds[i] = np.maximum(initpars[i]-2,0)
+            ubounds[i] = initpars[i]+2
+        if par.upper().endswith('_H'):
+            lbounds[i] = np.maximum(initpars[i]-0.75,-2.5)
+            ubounds[i] = np.minimum(initpars[i]+0.75,0.5)
+        if par.upper()=='FE_H':
+            lbounds[i] = -2.5
+            ubounds[i] = 0.5
+        if par.upper()=='VSINI':
+            lbounds[i] = np.maximum(initpars[i]-20,0)
+            ubounds[i] = initpars[i]+50
+        if par.upper()=='VMACRO':
+            lbounds[i] = np.maximum(initpars[i]-2,0)
+            ubounds[i] = initpars[i]+2
+        if par.upper()=='RV':
+            lbounds[i] = -1000.0
+            ubounds[i] = 1000.0
+            
+    bounds = (lbounds,ubounds)
+    
+    return bounds
+
 
 class PayneModel(object):
 
@@ -867,17 +947,19 @@ class PayneSpecFitter:
         self._lsf = spec.lsf.copy()
         self._lsf.wavevac = spec.wavevac
         self._wavevac = spec.wavevac
-        self._verbse = verbose
+        self.verbose = verbose
         #self._norm = norm   # normalize
         self._continuum_func = spec.continuum_func
         # Figure out the wavelength parameters
         npix = spec.npix
         norder = spec.norder
         # parameters to save
-        #self._all_pars = []
-        #self._all_model = []
-        #self._all_chisq = []
-        #self._jac_array = None
+        self.nfev = 0
+        self.njac = 0
+        self._all_pars = []
+        self._all_model = []
+        self._all_chisq = []
+        self._jac_array = None
 
     @property
     def params(self):
@@ -991,13 +1073,102 @@ class PayneSpecFitter:
         return labels
     
     def chisq(self,model):
-        return np.sqrt( np.sum( (self.flux-model)**2/self.err**2 )/len(self.flux) )
+        return np.sqrt( np.sum( (self._flux-model)**2/self._err**2 )/len(self._flux) )
             
     def model(self,xx,*args):
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
-        print(args)
+        if self.verbose: print(args)
         return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
+
+    def mkdxlim(self,fitparams):
+        return mkdxlim(fitparams)
+
+    def mkbounds(self,labels,initpars=None):
+        return mkbounds(labels,initpars=initpars)
+
+    def getstep(self,name,val,relstep=0.02):
+        """ Calculate step for a parameter."""
+        # It mainly deals with edge cases
+        #if val != 0.0:
+        #    step = relstep*val
+        #else:
+        if name=='TEFF':
+            step = 10.0
+        elif name=='RV':
+            step = 1.0
+        elif name=='VROT':
+            step = 0.5
+        elif name=='VMICRO':
+            step = 0.5
+        elif name.endswith('_H'):
+            step = 0.02
+        else:
+            step = 0.02
+        return step
+                
+    def jac(self,x,*args):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]). """
+        
+        # Boundaries
+        lbounds,ubounds = self.mkbounds(self.fitparams)
+        
+        relstep = 0.02
+        npix = len(x)
+        npar = len(args)
+        
+        # Create synthetic spectrum at current values
+        f0 = self.model(self._wave,*args)
+        self.nfev += 1
+        
+        # Save models/pars/chisq
+        self._all_pars.append(list(args).copy())
+        self._all_model.append(f0.copy())
+        self._all_chisq.append(self.chisq(f0))
+        chisq = np.sqrt( np.sum( (self._flux-f0)**2/self._err**2 )/len(self._flux) )
+        if self.verbose:
+            print('chisq = '+str(chisq))
+        
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),np.float64)
+        
+        # Loop over parameters
+        for i in range(npar):
+            pars = np.array(copy.deepcopy(args))
+            step = self.getstep(self.fitparams[i],pars[i],relstep)
+            # Check boundaries, if above upper boundary
+            #   go the opposite way
+            if pars[i]>ubounds[i]:
+                step *= -1
+            pars[i] += step
+            
+            if self.verbose:
+                print('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
+
+            f1 = self.model(self._wave,*pars)
+            self.nfev += 1
+            
+            # Save models/pars/chisq
+            self._all_pars.append(list(pars).copy())
+            self._all_model.append(f1.copy())
+            self._all_chisq.append(self.chisq(f1))
+            
+            if np.sum(~np.isfinite(f1))>0:
+                print('some nans/infs')
+                import pdb; pdb.set_trace()
+
+            jac[:,i] = (f1-f0)/step
+
+        if np.sum(~np.isfinite(jac))>0:
+            print('some nans/infs')
+            import pdb; pdb.set_trace()
+
+        self._jac_array = jac.copy()   # keep a copy
+            
+        self.njac += 1
+            
+        return jac
 
     
