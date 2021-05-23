@@ -1438,7 +1438,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
             allinitpar[ind[0]] = initpar[name]
             
     # Initialize spectral fitter
-    sp = payne.PayneSpecFitter(spec,model,params,fitparams,verbose=True)
+    sp = payne.PayneSpecFitter(spec,model,params,fitparams,verbose=False)
 
     # Calculate the bounds
     bounds = sp.mkbounds(fitparams,allinitpar)
@@ -1451,8 +1451,9 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
 
     dx_lim = sp.mkdxlim(fitparams)
     #import pdb; pdb.set_trace()
-    lspars, lscov = curve_fit(sp.model,spec.wave.flatten(),spec.flux.flatten(), dx_lim=dx_lim,
+    lspars, lscov = curve_fit(sp.model,spec.wave.flatten(),spec.flux.flatten(), #dx_lim=dx_lim,
                               sigma=spec.err.flatten(),p0=allinitpar,bounds=bounds,jac=sp.jac)
+    print(sp.nfev,sp.njac)
     
     # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
@@ -2379,6 +2380,28 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
 
     #import pdb; pdb.set_trace()
 
+
+    # Step 5: Run fine grid in RV, forward modeling
+    #----------------------------------------------
+    #maxv = np.maximum(beststr2['vrel'][0],20.0)
+    maxv = 10.0
+    rvind, = np.where(np.char.array(fitparams)=='RV')[0]
+    vel = dln.scale_vector(np.arange(31),lspars[rvind]-maxv,lspars[rvind]+maxv)
+    chisq = np.zeros(len(vel))
+    tinput = dict(zip(fitparams,lsout['pars'][0].copy()))
+    for i,v in enumerate(vel):
+        tinput['RV'] = v
+        tlabels = model.mklabels(tinput)
+        m = model(tlabels)
+        chisq[i] = np.sqrt(np.sum(((specm.flux-m.flux)/specm.err)**2)/(specm.npix*specm.norder))
+    vel2 = dln.scale_vector(np.arange(300),lspars[rvind]-maxv,lspars[rvind]+maxv)
+    chisq2 = dln.interp(vel,chisq,vel2)
+    bestind = np.argmin(chisq2)
+    finerv = vel2[bestind]
+    finechisq = chisq2[bestind]
+    if verbose is True:
+        print('Fine grid best RV = %5.2f km/s' % finerv)
+        print('chisq = %5.2f' % finechisq)
     
     ## Tweak the continuum normalization
     #specm = tweakcontinuum(specm,bestmodelspec0)
@@ -2388,8 +2411,12 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     # Final parameters and uncertainties (so far)
     fpars = lsout['pars'][0]
     fperror = lsout['parerr'][0]
-    fchisq = lsout['chisq'][0]
-    fmodel = lsmodel
+    fpars[rvind] = finerv
+    fchisq = finechisq
+    finput = dict(zip(fitparams,fpars.copy()))
+    finput['RV'] = finerv
+    flabels = model.mklabels(finput)
+    fmodel = model(flabels)
     
     ## Step 9: MCMC
     ##--------------
@@ -2403,9 +2430,11 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
         
     # Construct the output
     #---------------------
-    rvind, = np.where(lsout['labels'][0]=='RV')
-    vrel = lsout['pars'][0][rvind[0]]
-    vrelerr = lsout['parerr'][0][rvind[0]]    
+    #rvind, = np.where(lsout['labels'][0]=='RV')
+    #vrel = lsout['pars'][0][rvind[0]]
+    #vrelerr = lsout['parerr'][0][rvind[0]]
+    vrel = fpars[rvind]
+    vrelerr = fperror[rvind]
     bc = specm.barycorr()
     vhelio = vrel + bc
     if verbose is True:

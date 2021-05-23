@@ -1080,6 +1080,7 @@ class PayneSpecFitter:
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
         if self.verbose: print(args)
+        self.nfev += 1
         return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
 
     def mkdxlim(self,fitparams):
@@ -1095,17 +1096,17 @@ class PayneSpecFitter:
         #    step = relstep*val
         #else:
         if name=='TEFF':
-            step = 10.0
+            step = 5.0
         elif name=='RV':
-            step = 1.0
+            step = 0.1
         elif name=='VROT':
             step = 0.5
         elif name=='VMICRO':
             step = 0.5
         elif name.endswith('_H'):
-            step = 0.02
+            step = 0.01
         else:
-            step = 0.02
+            step = 0.01
         return step
                 
     def jac(self,x,*args):
@@ -1121,15 +1122,15 @@ class PayneSpecFitter:
         
         # Create synthetic spectrum at current values
         f0 = self.model(self._wave,*args)
-        self.nfev += 1
+        #self.nfev += 1
         
         # Save models/pars/chisq
         self._all_pars.append(list(args).copy())
         self._all_model.append(f0.copy())
         self._all_chisq.append(self.chisq(f0))
         chisq = np.sqrt( np.sum( (self._flux-f0)**2/self._err**2 )/len(self._flux) )
-        if self.verbose:
-            print('chisq = '+str(chisq))
+        #if self.verbose:
+        #    print('chisq = '+str(chisq))
         
         # Initialize jacobian matrix
         jac = np.zeros((npix,npar),np.float64)
@@ -1144,11 +1145,11 @@ class PayneSpecFitter:
                 step *= -1
             pars[i] += step
             
-            if self.verbose:
-                print('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
+            #if self.verbose:
+            #    print('--- '+str(i+1)+' '+self.fitparams[i]+' '+str(pars[i])+' ---')
 
             f1 = self.model(self._wave,*pars)
-            self.nfev += 1
+            #self.nfev += 1
             
             # Save models/pars/chisq
             self._all_pars.append(list(pars).copy())
