@@ -18,7 +18,10 @@ if __name__ == "__main__":
     parser = ArgumentParser(description='Run Doppler fitting on spectra')
     parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files or list')
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
-    parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')
+    parser.add_argument('--payne', action='store_true', help='Fit a Payne model')
+    parser.add_argument('--fitpars', type=str, nargs=1, default='', help='Payne labels to fit')    
+    parser.add_argument('--fixpars', type=str, nargs=1, default='', help='Payne labels to hold fixed')
+    parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')    
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
     parser.add_argument('-l','--list', action='store_true', help='Input is a list of FITS files')
     #parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
@@ -35,6 +38,29 @@ if __name__ == "__main__":
     t0 = time.time()
     files = args.files
     inpoutfile = dln.first_el(args.outfile)
+    payne = args.payne
+    # Payne labels to fit
+    fitpars = dln.first_el(args.fitpars)
+    if fitpars != '':
+        fitparams = fitpars.split(',')
+        fitparams = list(np.char.array(fitparams).upper())
+    else:
+        fitparams = None
+    # Payne labels to hold fixed
+    fixpars = dln.first_el(args.fixpars)
+    if fixpars != '':
+        fixpars = fixpars.split(',')
+        fixparams = {}
+        for k,val in enumerate(fixpars):
+            if val.find(':') != -1:
+                arr = val.split(':')
+            elif val.find('=') != -1:
+                arr = val.split('=')
+            else:
+                raise ValueError('Use format key=value or key:value')
+            fixparams[str(arr[0]).upper()] = float(arr[1])
+    else:
+        fixparams = {}
     inpfigfile = dln.first_el(args.figfile)
     outdir = dln.first_el(args.outdir)
     if outdir == '':
@@ -125,7 +151,8 @@ if __name__ == "__main__":
                     if (outdir is None) & (fdir != ''): cornername = fdir+'/'+cornername
                     
                 # Run Doppler
-                out, model, specm = doppler.fit(spec,mcmc=mcmc,figfile=figfile,verbose=verbose,
+                out, model, specm = doppler.fit(spec,payne=payne,fitparams=fitparams,fixparams=fixparams,
+                                                mcmc=mcmc,figfile=figfile,verbose=verbose,
                                                 cornername=cornername,nthreads=nthreads)
                 
                 # Save the output

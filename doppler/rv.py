@@ -1367,7 +1367,7 @@ def make_payne_bounds(labels,initpars=None):
     return bounds
 
 
-def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=False):
+def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbose=False):
     """
     Least Squares fitting with forward modeling of the spectrum.
     
@@ -1381,6 +1381,11 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     initpar : dictionary or array, optional
          Initial estimate for [teff, logg, feh, alphafe, RV] or a dictionary
          of initial values. Optional.
+    fitparams : list of labels, optional
+         List of Payne parameter/label names to fit. Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
 
@@ -1396,7 +1401,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
 
     .. code-block:: python
 
-         out, bmodel = fit_lsq_payne(spec)
+         out, bmodel = fit_lsq_payne(spec,model)
 
     """
     
@@ -1418,7 +1423,9 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     else:
         fitparams = [f.upper() for f in fitparams]  # all CAPS
     nfitparams = len(fitparams)
-        
+    nfixparams = len(fixparams)
+    nallparams = nfitparams+nfixparams
+    
     # Get initial estimates
     if initpar is None:
         initpar = {'TEFF':5000.0, 'LOGG':3.5, 'FE_H':0.0, 'ALPHA_H':0.0, 'RV':0.0}
@@ -1438,7 +1445,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
             allinitpar[ind[0]] = initpar[name]
             
     # Initialize spectral fitter
-    sp = payne.PayneSpecFitter(spec,model,params,fitparams,verbose=False)
+    sp = payne.PayneSpecFitter(spec,model,fixparams,fitparams,verbose=False)
 
     # Calculate the bounds
     bounds = sp.mkbounds(fitparams,allinitpar)
@@ -1450,7 +1457,6 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
 
 
     dx_lim = sp.mkdxlim(fitparams)
-    #import pdb; pdb.set_trace()
     lspars, lscov = curve_fit(sp.model,spec.wave.flatten(),spec.flux.flatten(), #dx_lim=dx_lim,
                               sigma=spec.err.flatten(),p0=allinitpar,bounds=bounds,jac=sp.jac)
     print(sp.nfev,sp.njac)
@@ -1463,13 +1469,20 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
         print('Least Squares RV and stellar parameters:')
         printpars(lspars)
 
-    bestlabels = model.mklabels(dict(zip(fitparams,lspars)))
+    
+    if nfixparams>0:
+        all_labels = fitparams+list(fixparams.keys())
+        all_pars = lspars + fixparams.values()
+        #all_error = np.zeros(nallparams,float)
+        #all_error[0:nfitparams] = lserror
+        #fixed = np.zeros(nallparams,bool)
+        #fixed[0:nfitparams] = True
+    else:
+        all_labels = fitparams
+        all_pars = lspars
+        #fixed = np.zeros(nfitparams,bool)
+    bestlabels = model.mklabels(dict(zip(all_labels,all_pars)))    
     lsmodel = model(bestlabels)
-
-    #gdmask = ( (np.isfinite(spec.flux.flatten())==True) & (spec.flux.flatten()>0.0) &
-    #           (spec.err.flatten()>0.0) & (spec.err.flatten() < 1e5) & (spec.mask.flatten()==False) )
-    #ngdpix = np.sum(gdmask)
-    #lschisq = np.sqrt( np.sum( (spec.flux.flatten()[gdmask]-lsmodel.flux.flatten()[gdmask])**2/spec.err.flatten()[gdmask]**2 )/ngdpix )
     
     lschisq = np.sqrt(np.sum(((spec.flux-lsmodel.flux)/spec.err)**2)/(spec.npix*spec.norder))
     if verbose is True: print('chisq = %5.2f' % lschisq)
@@ -1483,8 +1496,6 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,params={},verbose=
     out['parerr'] = lsperror
     out['parcov'] = lscov
     out['chisq'] = lschisq
-
-    #import pdb; pdb.set_trace()
     
     return out, lsmodel
 
@@ -2266,8 +2277,8 @@ def fit_payne_model(spec,model,pars=None,bounds=None,initpars=None,fixpars=None)
     return coeffs, coeffs_cov
 
 
-def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
-              mcmc=False,cornername=None,nthreads=None):
+def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
+              figfile=None,mcmc=False,cornername=None,nthreads=None):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
 
@@ -2281,6 +2292,8 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     fitparams : list of labels, optional
          List of Payne parameter/label names to fit. Optional.
          The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
     mcmc : bool, optional
@@ -2332,7 +2345,8 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     if fitparams is None:
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV'] 
     nfitparams = len(fitparams)
-        
+    nfixparams = len(fixparams)
+    
     # Step 1: Prepare the spectrum
     #-----------------------------
     # Normalize and mask the spectrum
@@ -2374,7 +2388,8 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     # Initial estimates
     initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
                'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
-    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,verbose=verbose)
+    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
+                                   fixparams=fixparams,verbose=verbose)
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
 
@@ -2389,6 +2404,8 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     vel = dln.scale_vector(np.arange(31),lspars[rvind]-maxv,lspars[rvind]+maxv)
     chisq = np.zeros(len(vel))
     tinput = dict(zip(fitparams,lsout['pars'][0].copy()))
+    if nfixparams>0:  # add fixed parameters
+        tinput.update(fixparams)
     for i,v in enumerate(vel):
         tinput['RV'] = v
         tlabels = model.mklabels(tinput)
@@ -2418,7 +2435,7 @@ def fit_payne(spectrum,model=None,fitparams=None,verbose=False,figfile=None,
     flabels = model.mklabels(finput)
     fmodel = model(flabels)
     
-    ## Step 9: MCMC
+    ## Step 6: MCMC
     ##--------------
     #if (mcmc is True) | (cornername is not None):
     #    mcout, mcmodel = fit_mcmc(specm,pmodels,fpars,verbose=verbose,cornername=cornername)
@@ -2764,8 +2781,8 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
 
 
 
-def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
-        retpmodels=False,nthreads=None,payne=False):
+def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=False,
+        mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -2776,6 +2793,12 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
     models : list of Cannon models or Payne model, optional
          A list of Cannon models or a Payne model to use.  The default is to load
          the models in the data/ directory and use those.
+    fitparams : list, optional
+         List of Payne labels to fit.
+    fixparams : dict, optional
+         Dictionary of Payne labels to hold fixed.
+    payne : bool, optional
+         Fit a Payne model.  By default, a Cannon model is used.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
     mcmc : bool, optional
@@ -2791,8 +2814,6 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
          Return the prepared models (only if Cannon models used).
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
-    payne : bool, optional
-         Fit a Payne model.  By default, a Cannon model is used.
 
     Returns
     -------
@@ -2820,7 +2841,8 @@ def fit(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=No
                           cornername=cornername,retpmodels=retpmodels,nthreads=nthreads)
     # Payne model
     else:
-        return fit_payne(spectrum,model=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
+        return fit_payne(spectrum,model=models,fitparams=fitparams,fixparams=fixparams,
+                         verbose=verbose,mcmc=mcmc,figfile=figfile,
                          cornername=cornername,nthreads=nthreads)
 
 
