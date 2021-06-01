@@ -1768,8 +1768,8 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
          Payne model to use.  The default is to load the Payne model
          in the data/ directory and use those.
     fitparams : list of labels, optional
-         List of Payne parameter/label names to fit. Optional.
-         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+         List of Payne parameter/label names to fit (excluding RV). Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H'].
     fixparams : dict, optional
          Dictionary of parameters to hold fixed.
     mcmc : bool, optional
@@ -1821,11 +1821,23 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
     
     # If list of filenames input, then load them
+
+    # Fitting parameters, excluding RV
+    if fitparams is None:
+        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
+    # Make sure RV is excluded, that is handled separately
+    fitparams = np.char.array(fitparams)
+    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')=-1])
+    nfitparams = len(fitparams)
+    nfixparams = len(fixparams)
     
     # Creating catalog of info on each spectrum
-    dt = np.dtype([('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float),
-                   ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
-                   ('feherr',float),('chisq',float),('bc',float)])
+    dtlist = [('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float)]
+    for k in range(nfitparams):
+        name = fitparams[k].lower()
+        dtlist += [(name,np.float32),(name+'err',np.float32)]
+    dtlist += [('chisq',float),('bc',float)]
+    dt = np.dtype(dtlist)
     info = np.zeros(nspec,dtype=dt)
     for n in dt.names: info[n] = np.nan
     for i,s in enumerate(speclist):
@@ -1858,21 +1870,21 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
                 figfile = base+'_dopfit.png'
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
-            # Fit the spectrum    
-            out, model, specm, pmodels = fit_cannon(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            # Fit the spectrum
+            fitparams1 = fitparams.append('RV')  # make sure to fit the RV
+            out, model, specm, pmodels = fit_payne(spec,fitparams=fitparams1,fixparams=fixparams,
+                                                   verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
             del specm
             info['vhelio'][i] = out['vhelio']
             info['vrel'][i] = out['vrel']
-            info['vrelerr'][i] = out['vrelerr']    
-            info['teff'][i] = out['teff']
-            info['tefferr'][i] = out['tefferr']
-            info['logg'][i] = out['logg']
-            info['loggerr'][i] = out['loggerr']
-            info['feh'][i] = out['feh']
-            info['feherr'][i] = out['feherr']
+            info['vrelerr'][i] = out['vrelerr']
+            for k in range(nfitparams):                
+                name = fitparams[k].lower()
+                info[name][i] = out[name]
+                info[name+'err'][i] = out[name+'err']                
             info['chisq'][i] = out['chisq']
             info['bc'][i] = out['bc']
         else:
@@ -1889,16 +1901,16 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         if verbose is True: print(' ')
 
         
-    # Step 2) find weighted stellar parameters
+    # Step 2) find weighted labels
     if verbose is True: print('Step #2: Getting weighted stellar parameters')
     gd, ngd = dln.where(np.isfinite(info['chisq']))
     if ngd>0:
-        pars = ['teff','logg','feh','vhelio']
-        parerr = ['tefferr','loggerr','feherr','vrelerr']
-        wtpars = np.zeros(4,float)
+        pars = list(np.char.array(fitparams).lower())+['vhelio']
+        parerr = list(np.char.array(fitparams).lower()+'err')+['vrelerr']
+        wtpars = np.zeros(len(pars),float)
         for i in range(len(pars)):
             p = info[pars[i]][gd]
-            perr = info[parerr[i]][gd]
+            perr = info[parerr[i]][gd]            
             gdp,ngdp,bdp,nbdp = dln.where(perr > 0.0,comp=True)
             # Weighted by 1/perr^2
             if ngdp>0:
@@ -1912,21 +1924,18 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             print('Initial weighted parameters are:')
             printpars(wtpars)
     else:
-        wtpars = np.zeros(4,float)
-        wtpars[0] = 6000.0
-        wtpars[1] = 4.0
-        wtpars[2] = -0.5
-        wtpars[3] = 0.0
+        wtpars = np.zeros(nfitparams+1,float)
+        wtpars = make_payne_initlabels(fitparams+['RV'])
         vscatter0 = 999999.
         if verbose is True:
             print('No good fits.  Using these as intial guesses:')
             printpars(wtpars)
         
     # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
-    initpar1 = np.zeros(3+nspec,float)
-    initpar1[0:3] = wtpars[0:3]
+    initpar1 = np.zeros(nfitparams+nspec,float)
+    initpar1[0:nfitparams] = wtpars[0:nfitparams]
     # the default is to use mean vhelio + BC for all visit spectra
-    initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
+    initpar1[fitparams:] = wtpars[nfitparams]-info['bc']  # vhelio = vrel + BC
     # Use the Vrel values from the initial fitting if they are accurate enough
     gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
     if ngdinit>0:
