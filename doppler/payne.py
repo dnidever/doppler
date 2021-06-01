@@ -870,7 +870,7 @@ class DopplerPayneModel(object):
 
 class PayneSpecFitter:
 
-    def __init__(self,spec,pmodel,params={},fitparams=None,verbose=False):
+    def __init__(self,spec,pmodel,fitparams=None,fixparams={},verbose=False):
         # spec - observed spectrum object
         # pmodel - Payne model object
         # params - initial/fixed parameters dictionary
@@ -881,8 +881,8 @@ class PayneSpecFitter:
         self.labels = pmodel.labels
         labelnames = np.char.array(self._paynemodel.labels)
         nlabels = len(self._paynemodel.labels)
-        self.params = dict((key.upper(), value) for (key, value) in params.items()) # all CAPS
-        self._initlabels = self.mkinitlabels(params)
+        self.fixparams = dict((key.upper(), value) for (key, value) in fixparams.items()) # all CAPS
+        self._initlabels = self.mkinitlabels(fixparams)
         if fitparams is not None:
             self.fitparams = fitparams
         else:
@@ -901,10 +901,10 @@ class PayneSpecFitter:
                 # In FITPARAMS, NOT FIXED
                 if name in self.fitparams:
                     fixed[k] = False
-                # Not in FITPARAMS but in PARAMS, FIXED                    
-                elif name in self.params.keys():
+                # Not in FITPARAMS but in FIXPARAMS, FIXED                    
+                elif name in self.fixparams.keys():
                     fixed[k] = True
-                # Not in FITPARAMS or PARAMS, but FE_H or ALPHA_H in FITPARAMS, NOT FIXED
+                # Not in FITPARAMS or FIXPARAMS, but FE_H or ALPHA_H in FITPARAMS, NOT FIXED
                 elif 'FE_H' in self.fitparams or 'ALPHA_H' in self.fitparams:
                     fixed[k] = False
                 # Not in FITPARAMS/PARAMS and FE_H/ALPHA_H not being fit, FIXED
@@ -916,13 +916,13 @@ class PayneSpecFitter:
                 # In FITPARAMS, NOT FIXED
                 if name in self.fitparams:
                     fixed[k] = False
-                # Not in FITPARAMS but in PARAMS, FIXED
-                elif name in self.params.keys():
+                # Not in FITPARAMS but in FIXPARAMS, FIXED
+                elif name in self.fixparams.keys():
                     fixed[k] = True
-                # Not in FITPARAMS or PARAMS, but FE_H in FITPARAMS, NOT FIXED
+                # Not in FITPARAMS or FIXPARAMS, but FE_H in FITPARAMS, NOT FIXED
                 elif 'FE_H' in self.fitparams:
                     fixed[k] = False
-                # Not in FITPARAMS/PARAMS and FE_H not being fit, FIXED
+                # Not in FITPARAMS/FIXPARAMS and FE_H not being fit, FIXED
                 else:
                     fixed[k] = True
             # Other parameters (Teff, logg, RV, Vturb, Vsini, etc.)
@@ -930,8 +930,8 @@ class PayneSpecFitter:
                 # In FITPARAMS, NOT FIXED
                 if name in self.fitparams:
                     fixed[k] = False
-                # Not in FITPARAMS but in PARAMS, FIXED
-                elif name in self.params.keys():
+                # Not in FITPARAMS but in FIXPARAMS, FIXED
+                elif name in self.fixparams.keys():
                     fixed[k] = True
                 # Not in FITPARAMS/PARAMS, FIXED
                 else:
@@ -962,13 +962,13 @@ class PayneSpecFitter:
         self._jac_array = None
 
     @property
-    def params(self):
-        return self._params
+    def fixparams(self):
+        return self._fixparams
 
-    @params.setter
-    def params(self,params):
+    @fixparams.setter
+    def fixparams(self,fixparams):
         """ Dictionary, keys must be all CAPS."""
-        self._params = dict((key.upper(), value) for (key, value) in params.items())  # all CAPS
+        self._fixparams = dict((key.upper(), value) for (key, value) in fixparams.items())  # all CAPS
             
     @property
     def fitparams(self):
@@ -1089,7 +1089,7 @@ class PayneSpecFitter:
     def mkbounds(self,labels,initpars=None):
         return mkbounds(labels,initpars=initpars)
 
-    def getstep(self,name,val,relstep=0.02):
+    def getstep(self,name,val=None,relstep=0.02):
         """ Calculate step for a parameter."""
         # It mainly deals with edge cases
         #if val != 0.0:

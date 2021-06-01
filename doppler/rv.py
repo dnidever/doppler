@@ -992,10 +992,13 @@ def printpars(pars,parerr=None,names=None,units=None):
         else:
             print('%-6s =  %8.2f %-5s' % (names[i],pars[i],units[i]))
 
-    
-def emcee_lnlike(theta, x, y, yerr, models, spec):
+
+######################### PAYNE PROGRAMS ###########################
+
+
+def emcee_lnlike_payne(theta, x, y, yerr, sp):
     """
-    This helper function calculates the log likelihood for the MCMC portion of fit().
+    This helper function calculates the log likelihood for fit_mcmc_payne().
     
     Parameters
     ----------
@@ -1007,10 +1010,8 @@ def emcee_lnlike(theta, x, y, yerr, models, spec):
        Observed flux array.
     yerr : array
         Uncertainties in the observed flux.
-    models : list of Cannon models
-        List of Cannon models to use
-    spec : Spec1D
-        The observed spectrum.  Needed to run cannon.model_spectrum().
+    sp : PayneSpecFitter
+       Special class for fitting Payne models to data.
 
     Outputs
     -------
@@ -1018,24 +1019,23 @@ def emcee_lnlike(theta, x, y, yerr, models, spec):
          The log likelihood value.
 
     """
-    #m = cannon.model_spectrum(models,spec,teff=theta[0],logg=theta[1],feh=theta[2],rv=theta[3])
-    m = models(teff=theta[0],logg=theta[1],feh=theta[2],rv=theta[3])    
+    mflux = sp.model(x,*theta)
     inv_sigma2 = 1.0/yerr**2
-    return -0.5*(np.sum((y-m.flux.flatten())**2*inv_sigma2))
+    return -0.5*(np.sum((y-mflux)**2*inv_sigma2))
 
 
-def emcee_lnprior(theta, models):
+def emcee_lnprior_payne(theta, sp):
     """
-    This helper function calculates the log prior for the MCMC portion of fit().
+    This helper function calculates the log prior for fit_mcmc_payne().
     It's a flat/uniform prior across the stellar parameter space covered by the
-    Cannon models.
+    Payne model.
     
     Parameters
     ----------
     theta : array
-      Input parameters [teff, logg, feh, rv].
-    models : list of Cannon models
-        List of Cannon models to use
+      Input parameters [teff, logg, feh, rv, etc.].
+    sp : PayneSpecFitter
+       Special class for fitting Payne models to data.
 
     Outputs
     -------
@@ -1043,33 +1043,32 @@ def emcee_lnprior(theta, models):
          The log prior value.
 
     """
-    for m in models:
-        inside = True
-        for i in range(3):
-            inside &= (theta[i]>=m.ranges[i,0]) & (theta[i]<=m.ranges[i,1])
-        inside &= (np.abs(theta[3]) <= 1000)
-        if inside:
-            return 0.0
+    lbounds,ubounds = sp.bounds
+    nfitparams = len(sp.fitparams)
+    
+    inside = True
+    for i in range(nfitparams):
+        inside &= (theta[i]>=lbounds[i]) & (theta[i]<=ubounds[i])
+    if inside:
+        return 0.0
     return -np.inf
 
-def emcee_lnprob(theta, x, y, yerr, models, spec):
+def emcee_lnprob_payne(theta, x, y, yerr, sp):
     """
-    This helper function calculates the log probability for the MCMC portion of fit().
+    This helper function calculates the log probability for fit_mcmc_payne().
     
     Parameters
     ----------
     theta : array
-      Input parameters [teff, logg, feh, rv].
+      Input parameters [teff, logg, feh, rv, etc.].
     x : array
       Array of x-values for y.  Not really used.
     y : array
        Observed flux array.
     yerr : array
         Uncertainties in the observed flux.
-    models : list of Cannon models
-        List of Cannon models to use
-    spec : Spec1D
-        The observed spectrum.  Needed to run cannon.model_spectrum().
+    sp : PayneSpecFitter
+       Special class for fitting Payne models to data.
 
     Outputs
     -------
@@ -1078,116 +1077,10 @@ def emcee_lnprob(theta, x, y, yerr, models, spec):
          log likelihood.
 
     """
-    lp = emcee_lnprior(theta,models)
+    lp = emcee_lnprior_payne(theta,sp)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + emcee_lnlike(theta, x, y, yerr, models, spec)
-
-
-def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
-    """
-    Fit spectrum using cross-correlation with models sampled in the parameter space.
-    
-    Parameters
-    ----------
-    spec : Spec1D object
-         The observed spectrum to match.
-    models : list of Cannon models, optional
-         A list of Cannon models to use.  The default is to load all of the Cannon
-         models in the data/ directory and use those.
-    samples : numpy structured array, optional
-         Catalog of teff/logg/feh parameters to use when sampling the parameter space.
-    verbose : bool, optional
-         Verbose output of the various steps.  This is False by default.
-    maxvel : float, optional
-         The maximum velocity to probe in the cross-correlation.  The default is 1000 km/s.
-
-    Returns
-    -------
-    out : numpy structured array
-         The output structured array of the final derived RVs, stellar parameters and errors.
-    bmodel : Spec1D object
-         The best-fitting Cannon model spectrum (as Spec1D object).
-
-    Example
-    -------
-
-    .. code-block:: python
-
-         out, bmodel = fit_xcorrgrid_cannon(spec)
-
-
-    """
-    
-    # Check that the samples input has the right columns
-    if samples is not None:
-        for n in ['teff','logg','feh']:
-            try:
-                dum = samples[n]
-            except:
-                raise ValueError(n+' not found in input SAMPLES')
-            
-    # Step 1: Prepare the spectrum
-    #-----------------------------
-    # normalize and mask spectrum
-    spec = utils.specprep(spec)
-
-    # Step 2: Load and prepare the Cannon models
-    #-------------------------------------------
-    if models is None:
-        models = cannon.models.copy()
-        models.prepare(spec)
-    
-    # Step 3: put on logarithmic wavelength grid
-    #-------------------------------------------
-    wavelog = utils.make_logwave_scale(spec.wave,vel=0.0)  # get new wavelength solution
-    obs = spec.interp(wavelog)
-    # The LSF information will not be correct if using Gauss-Hermite, it uses a Gaussian approximation
-    # it's okay because the "models" are prepared for the original spectra (above)
-    
-    # Step 4: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
-    #------------------------------------------------------------------------------------------------
-    dwlog = np.median(dln.slope(np.log10(wavelog)))
-    # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
-    maxlag = np.maximum(maxlag,50)
-    if samples is None:
-        #teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
-        #logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
-        # temporarily remove WD until that's fixed        
-        teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
-        logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
-        feh = -0.5
-        dt = np.dtype([('teff',float),('logg',float),('feh',float)])
-        samples = np.zeros(len(teff),dtype=dt)
-        samples['teff'][:] = teff
-        samples['logg'][:] = logg
-        samples['feh'][:] = feh
-    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
-                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
-    outstr = np.zeros(len(teff),dtype=outdtype)
-    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
-    for i in range(len(samples)):
-        m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
-        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
-        #if outstr1['chisq'] > 1000:
-        #    import pdb; pdb.set_trace()
-        if verbose is True:
-            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
-        for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
-        outstr['teff'][i] = teff[i]
-        outstr['logg'][i] = logg[i]
-        outstr['feh'][i] = feh
-    # Get best fit
-    bestind = np.argmin(outstr['chisq'])    
-    beststr = outstr[bestind]
-    bestmodel = models(teff=beststr['teff'],logg=beststr['logg'],feh=beststr['feh'],rv=beststr['vrel'])
-    
-    if verbose is True:
-        print('Initial RV fit:')
-        printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['vrel']],[None,None,None,beststr['vrelerr']])
-
-    return beststr, bestmodel
+    return lp + emcee_lnlike_payne(theta, x, y, yerr, sp)
 
 
 def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0):
@@ -1445,21 +1338,17 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
             allinitpar[ind[0]] = initpar[name]
             
     # Initialize spectral fitter
-    sp = payne.PayneSpecFitter(spec,model,fixparams,fitparams,verbose=False)
+    sp = payne.PayneSpecFitter(spec,model,fitparams,fixparams,verbose=False)
 
     # Calculate the bounds
     bounds = sp.mkbounds(fitparams,allinitpar)
     
     # Use curve_fit
     tol = 5e-5  # 5e-4
-    #lspars, lscov = curve_fit(sp.model, spec.wave.flatten(), spec.flux.flatten(), sigma=spec.err.flatten(),
-    #                          p0=allinitpar, bounds=bounds, xtol=tol,ftol=tol)
-
-
     dx_lim = sp.mkdxlim(fitparams)
     lspars, lscov = curve_fit(sp.model,spec.wave.flatten(),spec.flux.flatten(), #dx_lim=dx_lim,
                               sigma=spec.err.flatten(),p0=allinitpar,bounds=bounds,jac=sp.jac)
-    print(sp.nfev,sp.njac)
+    #print(sp.nfev,sp.njac)
     
     # If it hits a boundary then the solution won't change much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
@@ -1473,14 +1362,9 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     if nfixparams>0:
         all_labels = fitparams+list(fixparams.keys())
         all_pars = lspars + fixparams.values()
-        #all_error = np.zeros(nallparams,float)
-        #all_error[0:nfitparams] = lserror
-        #fixed = np.zeros(nallparams,bool)
-        #fixed[0:nfitparams] = True
     else:
         all_labels = fitparams
         all_pars = lspars
-        #fixed = np.zeros(nfitparams,bool)
     bestlabels = model.mklabels(dict(zip(all_labels,all_pars)))    
     lsmodel = model(bestlabels)
     
@@ -1498,6 +1382,862 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     out['chisq'] = lschisq
     
     return out, lsmodel
+
+def mcmc_delta_payne(labels):
+    """ Get MCMC deltas for the walkers."""
+    delta = np.zeros(len(labels),float)
+    for i in range(len(labels)):
+        name = labels[i]
+        if name=='TEFF':
+            step = 50.0
+        elif name=='RV':
+            step = 5
+        elif name=='VROT':
+            step = 5
+        elif name=='VMICRO':
+            step = 1.0
+        elif name.endswith('_H'):
+            step = 0.1
+        else:
+            step = 0.1
+        delta[i] = step
+    return delta
+
+
+def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,steps=100,
+                   cornername=None,verbose=False):
+    """
+    Fit the spectrum with MCMC.
+    
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    model: Payne model, optional
+         Payne model to use.  The default is to load the Payne model
+         in the data/ directory and use those.
+    fitparams : list of labels, optional
+         List of Payne parameter/label names to fit. Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
+    initpar : numpy array, optional
+         Initial estimate for [teff, logg, feh, RV], optional.
+    steps : int, optional
+         Number of steps to use.  Default is 100.
+    cornername : string, optional
+         Output filename for the corner plot.  If a corner plot is requested, then the
+         minimum number of steps used is 500.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = fit_mcmc_payne(spec)
+
+    """
+    
+    # Prepare the spectrum
+    #-----------------------------
+    # normalize and mask spectrum
+    spec = utils.specprep(spec)
+
+    # Fitting parameters
+    if fitparams is None:
+        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV'] 
+    nfitparams = len(fitparams)
+    nfixparams = len(fixparams)
+
+    # Load the Payne model
+    #-----------------------
+    if model is None: model = payne.load_models()
+    model.prepare(spec)
+    
+    # Initial estimates
+    if initpar is None:
+        initpar = make_payne_initlabels(fitparams)
+            
+    # Initialize spectral fitter
+    sp = payne.PayneSpecFitter(spec,model,fitparams,fixparams,verbose=False)
+
+    # Calculate the bounds
+    bounds = sp.mkbounds(fitparams,initpar)
+    sp.bounds = bounds
+
+    # Set up the MCMC sampler
+    ndim, nwalkers = nfitparams, 20
+    delta = mcmc_delta_payne(fitparams)
+    pos = [initpar + delta*np.random.randn(ndim) for i in range(nwalkers)]        
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, emcee_lnprob_payne,
+                                    args=(spec.wave.flatten(), spec.flux.flatten(), spec.err.flatten(), sp))
+    if cornername is not None: steps=np.maximum(steps,500)  # at least 500 steps
+    
+    # Run MCMC sampler
+    if verbose: print('Running MCMC')
+    out = sampler.run_mcmc(pos, steps)
+    samples = sampler.chain[:, np.int(steps/2):, :].reshape((-1, ndim))
+
+    # Get the median and stddev values
+    pars = np.zeros(ndim,float)
+    parerr = np.zeros(ndim,float)
+    if verbose is True: print('MCMC values:')
+    for i in range(ndim):
+        t=np.percentile(samples[:,i],[16,50,84])
+        pars[i] = t[1]
+        parerr[i] = (t[2]-t[0])*0.5
+    if verbose is True: printpars(pars,parerr,names=fitparams)
+        
+    # The maximum likelihood parameters
+    bestind = np.unravel_index(np.argmax(sampler.lnprobability),sampler.lnprobability.shape)
+    pars_ml = sampler.chain[bestind[0],bestind[1],:]
+
+    # Get best model
+    if nfixparams>0:
+        all_labels = fitparams+list(fixparams.keys())
+        all_pars = pars + fixparams.values()
+    else:
+        all_labels = fitparams
+        all_pars = pars
+    bestlabels = model.mklabels(dict(zip(all_labels,all_pars)))    
+    mcmodel = model(bestlabels)
+    mcchisq = np.sqrt(np.sum(((spec.flux-mcmodel.flux)/spec.err)**2)/(spec.npix*spec.norder))
+
+    # Put it into the output structure
+    dtype = np.dtype([('pars',float,ndim),('pars_ml',float,ndim),('parerr',float,ndim),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = pars
+    out['pars_ml'] = pars_ml    
+    out['parerr'] = parerr
+    out['chisq'] = mcchisq
+    
+    # Corner plot
+    if cornername is not None:
+        matplotlib.use('Agg')
+        fig = corner.corner(samples, labels=fitparams, truths=pars)
+        plt.savefig(cornername)
+        plt.close(fig)
+        print('Corner plot saved to '+cornername)
+
+    return out,mcmodel
+ 
+
+def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
+              figfile=None,mcmc=False,cornername=None,nthreads=None):
+    """
+    Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
+
+    Parameters
+    ----------
+    spectrum : Spec1D object
+         The observed spectrum to match.
+    model: Payne model, optional
+         Payne model to use.  The default is to load the Payne model
+         in the data/ directory and use those.
+    fitparams : list of labels, optional
+         List of Payne parameter/label names to fit. Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is False by default.
+    figfile : string, optional
+         The filename for a diagnostic plot showing the observed spectrum, model
+         spectrum and the best-fit parameters.
+    cornername : string, optional
+         The filename for a "corner" plot showing the posterior distributions from
+         the MCMC run.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    model : Spec1D object
+         The best-fitting Payne model spectrum (as Spec1D object).
+    specm : Spec1D object
+         The observed spectrum with discrepant and outlier pixels masked.
+
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, model = fit_payne(spec)
+
+    """
+
+
+    # Set threads
+    if nthreads is not None:
+        os.environ["OMP_NUM_THREADS"] = str(nthreads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
+        os.environ["MKL_NUM_THREADS"] = str(nthreads)
+        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
+    
+    t0 = time.time()
+
+    # Make internal copy
+    spec = spectrum.copy()
+
+    # Fitting parameters
+    if fitparams is None:
+        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV'] 
+    nfitparams = len(fitparams)
+    nfixparams = len(fixparams)
+    
+    # Step 1: Prepare the spectrum
+    #-----------------------------
+    # Normalize and mask the spectrum
+    spec = utils.specprep(spec)         
+    # Mask out any large positive outliers, e.g. badly subtracted sky lines
+    specm = utils.maskoutliers(spec,verbose=verbose)
+    
+    # Step 2: Load the Payne model
+    #------------------------------
+    if model is None: model = payne.load_models()
+    model.prepare(specm)
+
+    # Have a generic fit_payne_model() code that you give an observed spectrum
+    # a DopplerPayneModel and a list of parameter names that you want to fit
+    # (e.g., ['teff','logg','feh','mg_h']), and bounds for each.
+    # you also need values for the parameters we aren't fitting (although
+    # for abundances we can just set [X/Fe] = 0.
+    #
+    # then have a little function that checks that we have all the parameters
+    # we need and not more (if fitting [alpha/fe] then we can't fit individual
+    # alpha abundances).
+    #
+    # then have a little function that figures out the bounds for all the parameters.
+    #
+    # the default is to fit all the parameters
+    # if DopplerPayneModel then that includes Vsini/Vmacro.
+  
+    
+
+    # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+    #------------------------------------------------------------------------------------------------
+    beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  
+
+    # Step 4: Least Squares fitting with forward modeling
+    #----------------------------------------------------
+    # Tweak the continuum
+    #specm = tweakcontinuum(specm,xmodel)
+    # Initial estimates
+    initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
+               'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
+    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
+                                   fixparams=fixparams,verbose=verbose)
+    lspars = lsout['pars'][0]
+    lsperror = lsout['parerr'][0]    
+
+    #import pdb; pdb.set_trace()
+
+
+    # Step 5: Run fine grid in RV, forward modeling
+    #----------------------------------------------
+    #maxv = np.maximum(beststr2['vrel'][0],20.0)
+    maxv = 10.0
+    rvind, = np.where(np.char.array(fitparams)=='RV')[0]
+    vel = dln.scale_vector(np.arange(31),lspars[rvind]-maxv,lspars[rvind]+maxv)
+    chisq = np.zeros(len(vel))
+    tinput = dict(zip(fitparams,lsout['pars'][0].copy()))
+    if nfixparams>0:  # add fixed parameters
+        tinput.update(fixparams)
+    for i,v in enumerate(vel):
+        tinput['RV'] = v
+        tlabels = model.mklabels(tinput)
+        m = model(tlabels)
+        chisq[i] = np.sqrt(np.sum(((specm.flux-m.flux)/specm.err)**2)/(specm.npix*specm.norder))
+    vel2 = dln.scale_vector(np.arange(300),lspars[rvind]-maxv,lspars[rvind]+maxv)
+    chisq2 = dln.interp(vel,chisq,vel2)
+    bestind = np.argmin(chisq2)
+    finerv = vel2[bestind]
+    finechisq = chisq2[bestind]
+    if verbose is True:
+        print('Fine grid best RV = %5.2f km/s' % finerv)
+        print('chisq = %5.2f' % finechisq)
+    
+    ## Tweak the continuum normalization
+    #specm = tweakcontinuum(specm,bestmodelspec0)
+    ## Mask out very discrepant pixels when compared to the best-fit model
+    #specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
+
+    # Final parameters and uncertainties (so far)
+    fpars = lsout['pars'][0]
+    fperror = lsout['parerr'][0]
+    fpars[rvind] = finerv
+    fchisq = finechisq
+    finput = dict(zip(fitparams,fpars.copy()))
+    finput['RV'] = finerv
+    flabels = model.mklabels(finput)
+    fmodel = model(flabels)
+    
+    # Step 6: MCMC
+    #--------------
+    if (mcmc is True) | (cornername is not None):
+        mcout, mcmodel = fit_mcmc_payne(specm,model,fitparams=fitparams,fixparams=fixparams,
+                                        initpar=fpars,verbose=verbose,cornername=cornername)
+        # Use these parameters
+        fpars = mcout['pars'][0]
+        fperror = mcout['parerr'][0]
+        fchisq = mcout['chisq'][0]
+        fmodel = mcmodel
+        
+    # Construct the output
+    #---------------------
+    #rvind, = np.where(lsout['labels'][0]=='RV')
+    #vrel = lsout['pars'][0][rvind[0]]
+    #vrelerr = lsout['parerr'][0][rvind[0]]
+    vrel = fpars[rvind]
+    vrelerr = fperror[rvind]
+    bc = specm.barycorr()
+    vhelio = vrel + bc
+    if verbose is True:
+        print('Final parameters:')
+        printpars(fpars,fperror,names=fitparams)
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (vhelio,vrelerr))
+        print('BC = %5.2f km/s' % bc)
+        print('chisq = %5.2f' % fchisq)
+        
+    dtlist = [('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32)]
+    for k in range(nfitparams):
+        name = fitparams[k].lower()
+        if name is not 'rv':  # Skip RV
+            dtlist += [(name,np.float32),(name+'err',np.float32)]
+    dtlist += [('chisq',np.float32),('bc',np.float32)]
+    dtype = np.dtype(dtlist)
+    out = np.zeros(1,dtype=dtype)
+    out['vhelio'] = vhelio
+    out['vrel'] = vrel
+    out['vrelerr'] = vrelerr    
+    for k in range(nfitparams):
+        name = fitparams[k].lower()
+        if name is not 'rv':  # Skip RV
+            out[name] = fpars[k]
+            out[name+'err'] = fperror[k]
+    out['chisq'] = fchisq
+    out['bc'] = bc
+
+    #import pdb; pdb.set_trace()
+    
+    # Make diagnostic figure
+    if figfile is not None:
+        # Apply continuum tweak to original spectrum as well
+        cratio = specm.cont/spec.cont
+        orig = spec.copy()
+        orig.flux /= cratio
+        orig.err /= cratio
+        orig.cont *= cratio    
+        # Make the diagnostic figure
+        annotlabels = np.char.array(fitparams).lower()
+        annotlabels[rvind] = 'vrel'
+        specfigure(figfile,specm,fmodel,out,original=orig,verbose=verbose,ispayne=True,annotlabels=annotlabels)
+
+    # How long did this take
+    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
+    
+    return out, fmodel, specm
+
+
+def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
+                   saveplot=False,verbose=False,outdir=None,nthreads=None):
+    """
+    This fits a Payne model to multiple spectra of the same star.
+
+    Parameters
+    ----------
+    speclist : Spec1D object
+         The observed spectrum to match.
+    model: Payne model, optional
+         Payne model to use.  The default is to load the Payne model
+         in the data/ directory and use those.
+    fitparams : list of labels, optional
+         List of Payne parameter/label names to fit. Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
+    mcmc : bool, optional
+         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
+         This is only run the individual spectra are being fit.
+         This is False by default.
+    snrcut : int, optional
+         S/N cut to fit individual spectra in the first step.  The default is snrcut=10.
+    saveplot : bool, optional
+         Save output plots.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    outdir : str, optional
+         The directory for output files.  The default is to use the current directory.
+    nthreads : int, optional
+         The number of threads to use.  By default the number of threads is not limited.
+
+    Returns
+    -------
+    sumstr : numpy structured array
+         Summary catalog of final best-fit values.
+    final : 
+         Final best-fit values for each individual spectrum.
+    bmodel : List of Spec1D object
+         List of best-fitting model spectra.
+    specmlist : list of Spec1D object
+         List of the observed spectrua with discrepant and outlier pixels masked.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         sumstr, final, bmodel, specmlist = jointfit_cannon(speclist)
+
+    """
+    
+    # speclist is list of Spec1D objects.
+
+    nspec = len(speclist)
+    t0 = time.time()
+
+    # Set threads
+    if nthreads is not None:
+        os.environ["OMP_NUM_THREADS"] = str(nthreads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
+        os.environ["MKL_NUM_THREADS"] = str(nthreads)
+        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
+    
+    # If list of filenames input, then load them
+    
+    # Creating catalog of info on each spectrum
+    dt = np.dtype([('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float),
+                   ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
+                   ('feherr',float),('chisq',float),('bc',float)])
+    info = np.zeros(nspec,dtype=dt)
+    for n in dt.names: info[n] = np.nan
+    for i,s in enumerate(speclist):
+        info['filename'][i] = s.filename
+        info['snr'][i] = s.snr
+
+    # Make sure some spectra pass the S/N cut
+    hisnr, nhisnr = dln.where(info['snr']>snrcut)
+    if nhisnr < np.ceil(0.25*nspec):
+        snr = np.flip(np.sort(info['snr']))
+        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
+        if verbose is True:
+            print('Lowering S/N cut to %5.1f so at least 25%% of the spectra pass the cut' % snrcut)
+        
+    # Step 1) Loop through each spectrum and run fit()
+    if verbose is True: print('Step #1: Fitting the individual spectra')
+    specmlist = []
+    modlist = []
+    for i in range(len(speclist)):
+        spec = speclist[i].copy()
+        if verbose is True:
+            print('Fitting spectrum '+str(i+1))
+            print(speclist[i].filename)
+        # Only do this for spectra with S/N>10 or 15
+        if spec.snr>snrcut:
+            # Save the plot, figure the output figure filename
+            figfile = None
+            if saveplot is True:
+                fdir, base, ext = utils.splitfilename(speclist[i].filename)
+                figfile = base+'_dopfit.png'
+                if outdir is not None: figfile = outdir+'/'+figfile
+                if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
+            # Fit the spectrum    
+            out, model, specm, pmodels = fit_cannon(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            modlist.append(pmodels.copy())
+            del pmodels
+            specmlist.append(specm.copy())
+            del specm
+            info['vhelio'][i] = out['vhelio']
+            info['vrel'][i] = out['vrel']
+            info['vrelerr'][i] = out['vrelerr']    
+            info['teff'][i] = out['teff']
+            info['tefferr'][i] = out['tefferr']
+            info['logg'][i] = out['logg']
+            info['loggerr'][i] = out['loggerr']
+            info['feh'][i] = out['feh']
+            info['feherr'][i] = out['feherr']
+            info['chisq'][i] = out['chisq']
+            info['bc'][i] = out['bc']
+        else:
+            if verbose is True:
+                print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
+            modlist.append(cannon.models.copy().prepare(speclist[i]))
+            sp = speclist[i].copy()
+            sp = utils.specprep(sp)   # mask and normalize
+            # Mask outliers
+            sp = utils.maskoutliers(sp)
+            specmlist.append(sp)
+            # at least need BC
+            info['bc'][i] = speclist[i].barycorr()
+        if verbose is True: print(' ')
+
+        
+    # Step 2) find weighted stellar parameters
+    if verbose is True: print('Step #2: Getting weighted stellar parameters')
+    gd, ngd = dln.where(np.isfinite(info['chisq']))
+    if ngd>0:
+        pars = ['teff','logg','feh','vhelio']
+        parerr = ['tefferr','loggerr','feherr','vrelerr']
+        wtpars = np.zeros(4,float)
+        for i in range(len(pars)):
+            p = info[pars[i]][gd]
+            perr = info[parerr[i]][gd]
+            gdp,ngdp,bdp,nbdp = dln.where(perr > 0.0,comp=True)
+            # Weighted by 1/perr^2
+            if ngdp>0:
+                if (nbdp>0): perr[bdp] = np.max(perr[gdp])*2
+                mnp = dln.wtmean(p,perr)
+                wtpars[i] = mnp
+            # Unweighted
+            else:
+                wtpars[i] = np.mean(p)
+        if verbose is True:
+            print('Initial weighted parameters are:')
+            printpars(wtpars)
+    else:
+        wtpars = np.zeros(4,float)
+        wtpars[0] = 6000.0
+        wtpars[1] = 4.0
+        wtpars[2] = -0.5
+        wtpars[3] = 0.0
+        vscatter0 = 999999.
+        if verbose is True:
+            print('No good fits.  Using these as intial guesses:')
+            printpars(wtpars)
+        
+    # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    initpar1 = np.zeros(3+nspec,float)
+    initpar1[0:3] = wtpars[0:3]
+    # the default is to use mean vhelio + BC for all visit spectra
+    initpar1[3:] = wtpars[3]-info['bc']  # vhelio = vrel + BC
+    # Use the Vrel values from the initial fitting if they are accurate enough
+    gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
+    if ngdinit>0:
+        initpar1[gdinit+3] = info['vrel'][gdinit]
+
+    
+    # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
+    if verbose is True:
+        print(' ')
+        print('Step #3: Fitting all spectra simultaneously')
+    out1, fmodels1 = multifit_lsq_cannon(specmlist,modlist,initpar1)
+    stelpars1 = out1['pars'][0,0:3]
+    stelparerr1 = out1['parerr'][0,0:3]    
+    vrel1 = out1['pars'][0,3:]
+    vrelerr1 = out1['parerr'][0,3:]
+    vhelio1 = vrel1+info['bc']
+    medvhelio1 = np.median(vhelio1)
+    vscatter1 = dln.mad(vhelio1)
+    verr1 = vscatter1/np.sqrt(nspec)
+    if verbose is True:
+        print('Parameters:')
+        printpars(stelpars1)
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio1,verr1))
+        print('Vscatter =  %6.3f km/s' % vscatter1)
+        print(vhelio1)
+
+    # Step 4) tweak continua and remove outlies
+    if verbose is True:
+        print(' ')
+        print('Step #4: Tweaking continuum and masking outliers')
+    for i,spm in enumerate(specmlist):
+        bestm = modlist[i](stelpars1,rv=vrel1[i])
+        # Tweak the continuum normalization
+        spm = tweakcontinuum(spm,bestm)
+        # Mask out very discrepant pixels when compared to the best-fit model
+        spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
+        specmlist[i] = spm.copy()
+        
+    # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
+    if verbose is True:
+        print(' ')
+        print('Step #5: Re-fitting all spectra simultaneously')
+
+    # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    initpar2 = out1['pars'][0]
+    out2, fmodels2 = multifit_lsq_cannon(specmlist,modlist,initpar2)
+    stelpars2 = out2['pars'][0,0:3]
+    stelparerr2 = out2['parerr'][0,0:3]    
+    vrel2 = out2['pars'][0,3:]
+    vrelerr2 = out2['parerr'][0,3:]
+    vhelio2 = vrel2+info['bc']
+    medvhelio2 = np.median(vhelio2)
+    vscatter2 = dln.mad(vhelio2)
+    verr2 = vscatter2/np.sqrt(nspec)
+    if verbose is True:
+        print('Final parameters:')
+        printpars(stelpars2)
+        print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
+        print('Vscatter =  %6.3f km/s' % vscatter2)
+        print(vhelio2)
+    
+    # Final output structure
+    final = info.copy()
+    final['teff'] = stelpars2[0]
+    final['tefferr'] = stelparerr2[0]
+    final['logg'] = stelpars2[1]
+    final['loggerr'] = stelparerr2[1]
+    final['feh'] = stelpars2[2]
+    final['feherr'] = stelparerr2[2]    
+    final['vrel'] = vrel2
+    final['vrelerr'] = vrelerr2
+    final['vhelio'] = vhelio2
+    bmodel = []
+    totchisq = 0.0
+    totnpix = 0
+    for i in range(nspec):
+        pars1 = [final['teff'][i], final['logg'][i], final['feh'][i]]
+        vr1 = final['vrel'][i]
+        sp = specmlist[i]
+        m = modlist[i](pars1,rv=vr1)
+        chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
+        totchisq += np.sum(((sp.flux-m.flux)/sp.err)**2)
+        totnpix += sp.npix*sp.norder
+        final['chisq'][i] = chisq
+        bmodel.append(m)
+    totchisq = np.sqrt(totchisq/totnpix)
+        
+    # Average values
+    sumdt = np.dtype([('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float),
+                      ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
+                      ('feherr',float),('chisq',float)])
+    sumstr = np.zeros(1,dtype=sumdt)
+    sumstr['medsnr'] = np.median(info['snr'])
+    sumstr['totsnr'] = np.sqrt(np.sum(info['snr']**2))
+    sumstr['vhelio'] = medvhelio2
+    sumstr['vscatter'] = vscatter2
+    sumstr['verr'] = verr2
+    sumstr['teff'] = stelpars2[0]
+    sumstr['tefferr'] = stelparerr2[0]
+    sumstr['logg'] = stelpars2[1]
+    sumstr['loggerr'] = stelparerr2[1]
+    sumstr['feh'] = stelpars2[2]
+    sumstr['feherr'] = stelparerr2[2]
+    sumstr['chisq'] = totchisq
+        
+    # How long did this take
+    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
+    
+    return sumstr, final, bmodel, specmlist
+
+
+######################### CANNON PROGRAMS ###########################
+
+
+   
+def emcee_lnlike_cannon(theta, x, y, yerr, models, spec):
+    """
+    This helper function calculates the log likelihood for the MCMC portion of fit().
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    x : array
+      Array of x-values for y.  Not really used.
+    y : array
+       Observed flux array.
+    yerr : array
+        Uncertainties in the observed flux.
+    models : list of Cannon models
+        List of Cannon models to use
+    spec : Spec1D
+        The observed spectrum.  Needed to run cannon.model_spectrum().
+
+    Outputs
+    -------
+    lnlike : float
+         The log likelihood value.
+
+    """
+    #m = cannon.model_spectrum(models,spec,teff=theta[0],logg=theta[1],feh=theta[2],rv=theta[3])
+    m = models(teff=theta[0],logg=theta[1],feh=theta[2],rv=theta[3])    
+    inv_sigma2 = 1.0/yerr**2
+    return -0.5*(np.sum((y-m.flux.flatten())**2*inv_sigma2))
+
+
+def emcee_lnprior_cannon(theta, models):
+    """
+    This helper function calculates the log prior for the MCMC portion of fit().
+    It's a flat/uniform prior across the stellar parameter space covered by the
+    Cannon models.
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    models : list of Cannon models
+        List of Cannon models to use
+
+    Outputs
+    -------
+    lnprior : float
+         The log prior value.
+
+    """
+    for m in models:
+        inside = True
+        for i in range(3):
+            inside &= (theta[i]>=m.ranges[i,0]) & (theta[i]<=m.ranges[i,1])
+        inside &= (np.abs(theta[3]) <= 1000)
+        if inside:
+            return 0.0
+    return -np.inf
+
+
+def emcee_lnprob_cannon(theta, x, y, yerr, models, spec):
+    """
+    This helper function calculates the log probability for the MCMC portion of fit().
+    
+    Parameters
+    ----------
+    theta : array
+      Input parameters [teff, logg, feh, rv].
+    x : array
+      Array of x-values for y.  Not really used.
+    y : array
+       Observed flux array.
+    yerr : array
+        Uncertainties in the observed flux.
+    models : list of Cannon models
+        List of Cannon models to use
+    spec : Spec1D
+        The observed spectrum.  Needed to run cannon.model_spectrum().
+
+    Outputs
+    -------
+    lnprob : float
+         The log probability value, which is the sum of the log prior and the
+         log likelihood.
+
+    """
+    lp = emcee_lnprior_cannon(theta,models)
+    if not np.isfinite(lp):
+        return -np.inf
+    return lp + emcee_lnlike_cannon(theta, x, y, yerr, models, spec)
+
+
+def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000.0):
+    """
+    Fit spectrum using cross-correlation with models sampled in the parameter space.
+    
+    Parameters
+    ----------
+    spec : Spec1D object
+         The observed spectrum to match.
+    models : list of Cannon models, optional
+         A list of Cannon models to use.  The default is to load all of the Cannon
+         models in the data/ directory and use those.
+    samples : numpy structured array, optional
+         Catalog of teff/logg/feh parameters to use when sampling the parameter space.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+    maxvel : float, optional
+         The maximum velocity to probe in the cross-correlation.  The default is 1000 km/s.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = fit_xcorrgrid_cannon(spec)
+
+
+    """
+    
+    # Check that the samples input has the right columns
+    if samples is not None:
+        for n in ['teff','logg','feh']:
+            try:
+                dum = samples[n]
+            except:
+                raise ValueError(n+' not found in input SAMPLES')
+            
+    # Step 1: Prepare the spectrum
+    #-----------------------------
+    # normalize and mask spectrum
+    spec = utils.specprep(spec)
+
+    # Step 2: Load and prepare the Cannon models
+    #-------------------------------------------
+    if models is None:
+        models = cannon.models.copy()
+        models.prepare(spec)
+    
+    # Step 3: put on logarithmic wavelength grid
+    #-------------------------------------------
+    wavelog = utils.make_logwave_scale(spec.wave,vel=0.0)  # get new wavelength solution
+    obs = spec.interp(wavelog)
+    # The LSF information will not be correct if using Gauss-Hermite, it uses a Gaussian approximation
+    # it's okay because the "models" are prepared for the original spectra (above)
+    
+    # Step 4: get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
+    #------------------------------------------------------------------------------------------------
+    dwlog = np.median(dln.slope(np.log10(wavelog)))
+    # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
+    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
+    maxlag = np.maximum(maxlag,50)
+    if samples is None:
+        #teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+        #logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0, 8.0,  0.5, 1.0, 2.0, 3.0]
+        # temporarily remove WD until that's fixed        
+        teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
+        logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
+        feh = -0.5
+        dt = np.dtype([('teff',float),('logg',float),('feh',float)])
+        samples = np.zeros(len(teff),dtype=dt)
+        samples['teff'][:] = teff
+        samples['logg'][:] = logg
+        samples['feh'][:] = feh
+    outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
+                         ('chisq',np.float32),('teff',np.float32),('logg',np.float32),('feh',np.float32)])
+    outstr = np.zeros(len(teff),dtype=outdtype)
+    if verbose is True: print('TEFF    LOGG     FEH    VREL   CCPEAK    CHISQ')
+    for i in range(len(samples)):
+        m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
+        outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
+        #if outstr1['chisq'] > 1000:
+        #    import pdb; pdb.set_trace()
+        if verbose is True:
+            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
+        for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
+        outstr['teff'][i] = teff[i]
+        outstr['logg'][i] = logg[i]
+        outstr['feh'][i] = feh
+    # Get best fit
+    bestind = np.argmin(outstr['chisq'])    
+    beststr = outstr[bestind]
+    bestmodel = models(teff=beststr['teff'],logg=beststr['logg'],feh=beststr['feh'],rv=beststr['vrel'])
+    
+    if verbose is True:
+        print('Initial RV fit:')
+        printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['vrel']],[None,None,None,beststr['vrelerr']])
+
+    return beststr, bestmodel
 
 
 def fit_lsq_cannon(spec,models=None,initpar=None,verbose=False):
@@ -1595,7 +2335,7 @@ def fit_lsq_cannon(spec,models=None,initpar=None,verbose=False):
     return out, lsmodel
 
 
-def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=False):
+def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verbose=False):
     """
     Fit the spectrum with MCMC.
     
@@ -1652,7 +2392,7 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     delta = [initpar[0]*0.1, 0.1, 0.1, 0.2]
     pos = [initpar + delta*np.random.randn(ndim) for i in range(nwalkers)]
         
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, emcee_lnprob,
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, emcee_lnprob_cannon,
                                     args=(spec.wave.flatten(), spec.flux.flatten(), spec.err.flatten(), models, spec))
 
     if cornername is not None: steps=np.maximum(steps,500)  # at least 500 steps
@@ -1697,7 +2437,8 @@ def fit_mcmc(spec,models=None,initpar=None,steps=100,cornername=None,verbose=Fal
     return out,mcmodel
 
 
-def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
+
+def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
     """
     Least Squares fitting with forward modeling of multiple spectra simultaneously.
     
@@ -1876,7 +2617,6 @@ def multifit_lsq(speclist,modlist,initpar=None,verbose=False):
     out['chisq'] = lschisq
     
     return out, lsmodel
-
 
 
 def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
@@ -2070,7 +2810,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Step 9: MCMC
     #--------------
     if (mcmc is True) | (cornername is not None):
-        mcout, mcmodel = fit_mcmc(specm,models,fpars,verbose=verbose,cornername=cornername)
+        mcout, mcmodel = fit_mcmc_cannon(specm,models,fpars,verbose=verbose,cornername=cornername)
         # Use these parameters
         fpars = mcout['pars'][0]
         fperror = mcout['parerr'][0]
@@ -2133,373 +2873,6 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
         return out, fmodel, specm, models
     
     return out, fmodel, specm
-
-
-#def check_payne_free_pars(model,pars):
-#    """ Helper function that checks whether the parameters to fit
-#        are okay."""
-#
-#    # Check that all pars are legitimate.
-#    available_pars = models.labels.copy() + ['VSINI','VMACRO','RV','ALPHA_H']
-#    available_pars = np.unique(np.char.array(available_pars).upper())
-#    for p in pars:
-#        if p.upper() not in available_pars:
-#            raise ValueError(p+' is not a legitimate parameter')
-#    
-#    # If we are fitting alpha then none of the individual alpha
-#    #  elements can be fit as well.
-#    if 'ALPHA_H' in available_pars:
-#        alphas = ['O_H','MG_H','SI_H','CA_H','TI_H','S_H']
-#        for p in pars:
-#            if p.upper() in alpha:
-#                raise ValueError('Cannot fit individual alpha elements and [alpha/H]')
-
-
-            
-#def make_payne_init_pars(model,pars,bounds=None,initpars=None,fixpars=None):
-#    """ Helper function to make initial array of parameters."""
-#
-#    # Make array of initial parameters for ALL Payne labels
-#    labels = np.char.array(model.labels.copy()).upper()
-#    nlabels = len(model.labels)
-#    initcoef = np.zeros(nlabels,np.float64)
-#    lbounds = np.zeros(nlabels,np.float64)
-#    ubounds = np.zeros(nlabels,np.float64)
-#
-#    # Initial guesses and bounds for the fitted parameters
-#    if initpars is not None:
-#        for i,par in enumerate(pars):
-#            ind,nind = dln.where(labels==par.upper())
-#            if nind==0:
-#                raise ValueError(par.upper()+' NOT a label of this Payne Model')
-#            initcoef[ind] = initpars[i]
-#            if bounds is not None:
-#                lbounds[ind] = bounds[0][i]
-#                ubounds[ind] = bounds[1][i]
-#            else:
-#                if par.upper()=='TEFF':
-#                    lbounds[ind] = np.maximum(initpars[i]-1000,3000)
-#                    ubounds[ind] = initpars[i]+1000
-#                if par.upper()=='LOGG':
-#                    lbounds[ind] = np.maximum(initpars[i]-2,-1)
-#                    ubounds[ind] = np.minimum(initpars[i]+2,6)
-#                if par.upper()=='VTURB':
-#                    lbounds[ind] = np.maximum(initpars[i]-2,0)
-#                    ubounds[ind] = initpars[i]+2
-#                if par.upper().endswith('_H'):
-#                    lbounds[ind] = np.maximum(initpars[i]-0.5,-2.5)
-#                    ubounds[ind] = np.minimum(initpars[i]+0.5,0.5)
-#                if par.upper()=='FE_H':
-#                    lbounds[ind] = -3.0
-#                    ubounds[ind] = 0.5
-#                if par.upper()=='VSINI':
-#                    lbounds[ind] = np.maximum(initpars[i]-10,0)
-#                    ubounds[ind] = initpars[i]+50
-#                if par.upper()=='VMACRO':
-#                    lbounds[ind] = np.maximum(initpars[i]-2,0)
-#                    ubounds[ind] = initpars[i]+2
-#    
-#    # Add initial values for the "fixed" pars
-#    if fixpars is not None:
-#        for par in fixpars.keys():
-#            val = fixpars[par]
-#            ind,nind = dln.where(labels==par.upper())
-#            if nind==0:
-#                raise ValueError(par.upper()+' NOT a label of this Payne Model')
-#            initcoef[ind] = val
-#
-#    coefbounds = (lbounds,ubounds)
-#    
-#    return initcoef,coefbounds
-    
-    
-def fit_payne_model(spec,model,pars=None,bounds=None,initpars=None,fixpars=None):
-    """
-    Fit a Payne model to an observation.
-
-    Parameters
-    ----------
-    spec        The observed spectrum.
-    model       Payne Model
-    pars        List of label names to fit.  'alpha_h' can be used for 
-                  all the alpha elements
-    bounds      Lower and lower bounds on PARS.
-    initpars    Initial guesses for PARS.
-    fixpars     Dictionary of values to use for the fixed parameters.
-                  By default, all fixed abundances are set to [X/H] = [Fe/H]
-                  and Vsini=VMacro=RV=0
-    
-    Returns
-    -------
-    coeffs      Best-fit parameters
-    coeffs_cov  Covariance matrix for bestpars
-
-    """
-
-    # Check the parameters to fit
-    check_payne_free_pars(model,pars)
-
-
-    # Fitting ALPHA_H
-    #   need to use a special class that constructs the
-    #   the label array with the right values
-    if 'ALPHA_H' in np.char.array(pars).upper():
-    
-        # Create a dummy class to use for passing information for fitting
-        class fitClass:
-            def __init__(self):
-                pass
-
-            def model(self, x, coef):
-                """ Make the model."""
-                val = Payne(pars)
-                
-                return val
-
-        inst = fitClass()
-        inst.pars = np.char.array(pars).upper()
-        inst.fixpars = np.char.array(fixpars).upper()
-        coeffs, coeffs_cov = curve_fit(inst.fitfun,spec.wave,spec.flux,sigma=spec.err,
-                                       p0=initpars,bounds=bounds)
-
-
-    # If we are NOT fitting ALPHA_H, then we can the Payne model
-    # directly with all the paramters with proper bounds (for "fixing").
-    else:
-
-        # Make the initial parameters and bounds
-        initcoef,coefbounds = make_payne_init_pars(model,pars,bounds,initpars,fixpars)
-    
-        # Do the fitting with curve_fit
-        coeffs, coeffs_cov = curve_fit(model,spec.wave,spec.flux,sigma=spec.err,
-                                       p0=initcoef,bounds=coefbounds)
-                                      
-    return coeffs, coeffs_cov
-
-
-def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
-              figfile=None,mcmc=False,cornername=None,nthreads=None):
-    """
-    Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
-
-    Parameters
-    ----------
-    spectrum : Spec1D object
-         The observed spectrum to match.
-    model: Payne model, optional
-         Payne model to use.  The default is to load the Payne model
-         in the data/ directory and use those.
-    fitparams : list of labels, optional
-         List of Payne parameter/label names to fit. Optional.
-         The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
-    fixparams : dict, optional
-         Dictionary of parameters to hold fixed.
-    verbose : bool, optional
-         Verbose output of the various steps.  This is False by default.
-    mcmc : bool, optional
-         Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
-         This is False by default.
-    figfile : string, optional
-         The filename for a diagnostic plot showing the observed spectrum, model
-         spectrum and the best-fit parameters.
-    cornername : string, optional
-         The filename for a "corner" plot showing the posterior distributions from
-         the MCMC run.
-    nthreads : int, optional
-         The number of threads to use.  By default the number of threads is not limited.
-
-    Returns
-    -------
-    out : numpy structured array
-         The output structured array of the final derived RVs, stellar parameters and errors.
-    model : Spec1D object
-         The best-fitting Payne model spectrum (as Spec1D object).
-    specm : Spec1D object
-         The observed spectrum with discrepant and outlier pixels masked.
-
-
-    Example
-    -------
-
-    .. code-block:: python
-
-         out, model = fit_payne(spec)
-
-    """
-
-
-    # Set threads
-    if nthreads is not None:
-        os.environ["OMP_NUM_THREADS"] = str(nthreads)
-        os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
-        os.environ["MKL_NUM_THREADS"] = str(nthreads)
-        os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
-        os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
-    
-    t0 = time.time()
-
-    # Make internal copy
-    spec = spectrum.copy()
-
-    # Fitting parameters
-    if fitparams is None:
-        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV'] 
-    nfitparams = len(fitparams)
-    nfixparams = len(fixparams)
-    
-    # Step 1: Prepare the spectrum
-    #-----------------------------
-    # Normalize and mask the spectrum
-    spec = utils.specprep(spec)         
-    # Mask out any large positive outliers, e.g. badly subtracted sky lines
-    specm = utils.maskoutliers(spec,verbose=verbose)
-    
-    # Step 2: Load the Payne model
-    #------------------------------
-    if model is None: model = payne.load_models()
-    model.prepare(specm)
-
-    # Have a generic fit_payne_model() code that you give an observed spectrum
-    # a DopplerPayneModel and a list of parameter names that you want to fit
-    # (e.g., ['teff','logg','feh','mg_h']), and bounds for each.
-    # you also need values for the parameters we aren't fitting (although
-    # for abundances we can just set [X/Fe] = 0.
-    #
-    # then have a little function that checks that we have all the parameters
-    # we need and not more (if fitting [alpha/fe] then we can't fit individual
-    # alpha abundances).
-    #
-    # then have a little function that figures out the bounds for all the parameters.
-    #
-    # the default is to fit all the parameters
-    # if DopplerPayneModel then that includes Vsini/Vmacro.
-
-    
-    
-
-    # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
-    #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  
-
-    # Step 4: Least Squares fitting with forward modeling
-    #----------------------------------------------------
-    # Tweak the continuum
-    #specm = tweakcontinuum(specm,xmodel)
-    # Initial estimates
-    initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
-               'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
-    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
-                                   fixparams=fixparams,verbose=verbose)
-    lspars = lsout['pars'][0]
-    lsperror = lsout['parerr'][0]    
-
-    #import pdb; pdb.set_trace()
-
-
-    # Step 5: Run fine grid in RV, forward modeling
-    #----------------------------------------------
-    #maxv = np.maximum(beststr2['vrel'][0],20.0)
-    maxv = 10.0
-    rvind, = np.where(np.char.array(fitparams)=='RV')[0]
-    vel = dln.scale_vector(np.arange(31),lspars[rvind]-maxv,lspars[rvind]+maxv)
-    chisq = np.zeros(len(vel))
-    tinput = dict(zip(fitparams,lsout['pars'][0].copy()))
-    if nfixparams>0:  # add fixed parameters
-        tinput.update(fixparams)
-    for i,v in enumerate(vel):
-        tinput['RV'] = v
-        tlabels = model.mklabels(tinput)
-        m = model(tlabels)
-        chisq[i] = np.sqrt(np.sum(((specm.flux-m.flux)/specm.err)**2)/(specm.npix*specm.norder))
-    vel2 = dln.scale_vector(np.arange(300),lspars[rvind]-maxv,lspars[rvind]+maxv)
-    chisq2 = dln.interp(vel,chisq,vel2)
-    bestind = np.argmin(chisq2)
-    finerv = vel2[bestind]
-    finechisq = chisq2[bestind]
-    if verbose is True:
-        print('Fine grid best RV = %5.2f km/s' % finerv)
-        print('chisq = %5.2f' % finechisq)
-    
-    ## Tweak the continuum normalization
-    #specm = tweakcontinuum(specm,bestmodelspec0)
-    ## Mask out very discrepant pixels when compared to the best-fit model
-    #specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
-
-    # Final parameters and uncertainties (so far)
-    fpars = lsout['pars'][0]
-    fperror = lsout['parerr'][0]
-    fpars[rvind] = finerv
-    fchisq = finechisq
-    finput = dict(zip(fitparams,fpars.copy()))
-    finput['RV'] = finerv
-    flabels = model.mklabels(finput)
-    fmodel = model(flabels)
-    
-    ## Step 6: MCMC
-    ##--------------
-    #if (mcmc is True) | (cornername is not None):
-    #    mcout, mcmodel = fit_mcmc(specm,pmodels,fpars,verbose=verbose,cornername=cornername)
-    #    # Use these parameters
-    #    fpars = mcout['pars'][0]
-    #    fperror = mcout['parerr'][0]
-    #    fchisq = mcout['chisq'][0]
-    #    fmodel = mcmodel
-        
-    # Construct the output
-    #---------------------
-    #rvind, = np.where(lsout['labels'][0]=='RV')
-    #vrel = lsout['pars'][0][rvind[0]]
-    #vrelerr = lsout['parerr'][0][rvind[0]]
-    vrel = fpars[rvind]
-    vrelerr = fperror[rvind]
-    bc = specm.barycorr()
-    vhelio = vrel + bc
-    if verbose is True:
-        print('Final parameters:')
-        printpars(fpars,fperror,names=fitparams)
-        print('Vhelio = %6.2f +/- %5.2f km/s' % (vhelio,vrelerr))
-        print('BC = %5.2f km/s' % bc)
-        print('chisq = %5.2f' % fchisq)
-        
-    dtlist = [('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32)]
-    for k in range(nfitparams):
-        name = fitparams[k].lower()
-        if name is not 'rv':  # Skip RV
-            dtlist += [(name,np.float32),(name+'err',np.float32)]
-    dtlist += [('chisq',np.float32),('bc',np.float32)]
-    dtype = np.dtype(dtlist)
-    out = np.zeros(1,dtype=dtype)
-    out['vhelio'] = vhelio
-    out['vrel'] = vrel
-    out['vrelerr'] = vrelerr    
-    for k in range(nfitparams):
-        name = fitparams[k].lower()
-        if name is not 'rv':  # Skip RV
-            out[name] = fpars[k]
-            out[name+'err'] = fperror[k]
-    out['chisq'] = fchisq
-    out['bc'] = bc
-
-    #import pdb; pdb.set_trace()
-    
-    # Make diagnostic figure
-    if figfile is not None:
-        # Apply continuum tweak to original spectrum as well
-        cratio = specm.cont/spec.cont
-        orig = spec.copy()
-        orig.flux /= cratio
-        orig.err /= cratio
-        orig.cont *= cratio    
-        # Make the diagnostic figure
-        annotlabels = np.char.array(fitparams).lower()
-        annotlabels[rvind] = 'vrel'
-        specfigure(figfile,specm,fmodel,out,original=orig,verbose=verbose,ispayne=True,annotlabels=annotlabels)
-
-    # How long did this take
-    if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
-    
-    return out, fmodel, specm
-
     
 
 def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,
@@ -2601,7 +2974,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
-            out, model, specm, pmodels = fit(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            out, model, specm, pmodels = fit_cannon(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
@@ -2679,7 +3052,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
     if verbose is True:
         print(' ')
         print('Step #3: Fitting all spectra simultaneously')
-    out1, fmodels1 = multifit_lsq(specmlist,modlist,initpar1)
+    out1, fmodels1 = multifit_lsq_cannon(specmlist,modlist,initpar1)
     stelpars1 = out1['pars'][0,0:3]
     stelparerr1 = out1['parerr'][0,0:3]    
     vrel1 = out1['pars'][0,3:]
@@ -2714,7 +3087,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
 
     # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
     initpar2 = out1['pars'][0]
-    out2, fmodels2 = multifit_lsq(specmlist,modlist,initpar2)
+    out2, fmodels2 = multifit_lsq_cannon(specmlist,modlist,initpar2)
     stelpars2 = out2['pars'][0,0:3]
     stelparerr2 = out2['parerr'][0,0:3]    
     vrel2 = out2['pars'][0,3:]
@@ -2778,6 +3151,10 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
     return sumstr, final, bmodel, specmlist
+
+
+
+######################### MAIN PROGRAMS ###########################
 
 
 
