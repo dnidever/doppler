@@ -1733,8 +1733,6 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
             out[name+'err'] = fperror[k]
     out['chisq'] = fchisq
     out['bc'] = bc
-
-    #import pdb; pdb.set_trace()
     
     # Make diagnostic figure
     if figfile is not None:
@@ -1753,6 +1751,191 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
     return out, fmodel, specm
+
+
+def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None,verbose=False):
+    """
+    Least Squares fitting with forward modeling of multiple spectra simultaneously.
+    
+    Parameters
+    ----------
+    speclist : Spec1D object
+         List of the observed spectra to match.
+    modlist : list of Doppler Payne models
+         A list of the prepared Doppler Payne models to use, one set for each observed
+           spectrum.
+    fitparams : list of labels, optional
+         List of Payne parameter/label names to fit (excluding RV). Optional.
+         The default values are ['TEFF','LOGG','FE_H','ALPHA_H'].
+    fixparams : dict, optional
+         Dictionary of parameters to hold fixed.
+    initpar : numpy array, optional
+         Initial estimate for [teff, logg, feh, RV, etc.], optional.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Payne model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = multifit_lsq_payne(speclist,modlist,initpar)
+
+    """
+
+    nspec = len(speclist)
+
+    # Fitting parameters, excluding RV
+    if fitparams is None:
+        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
+    # Make sure RV is excluded, that is handled separately
+    fitparams = np.char.array(fitparams)
+    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')=-1])
+    nfitparams = len(fitparams)
+    nfixparams = len(fixparams)
+    
+    # Get initial estimates
+    npar = nfitparams+nspec
+
+    # Initial estimates
+    if initpar is None:
+        initpar1 = make_payne_initlabels(fitparams)
+        initpar = np.hstack((initpar1,np.zeros(nspec,float)))
+    
+    # Calculate the bounds
+    lbounds = np.zeros(npar,float)+1e5
+    ubounds = np.zeros(npar,float)-1e5
+    labelbounds = make_payne_bounds(fitparams,initpar[0:nfitparams])
+    lbounds[0:nfitparams] = labelbounds[0]
+    ubounds[0:nfitparams] = labelbounds[1]    
+    lbounds[nfitparams:] = -1000
+    ubounds[nfitparams:] = 1000    
+    bounds = (lbounds, ubounds)
+    
+    # function to use with curve_fit
+    def multispec_interp(x,*argv):
+        """ This returns the interpolated model for a given spectrum."""
+        # The "models" and "spec" must already exist outside of this function
+        #print(argv)
+        teff = argv[0]
+        logg = argv[1]
+        feh = argv[2]
+        vrel = argv[3:]
+        npix = len(x)
+        nspec = len(vrel)
+        flux = np.zeros(npix,float)
+        cnt = 0
+        for i in range(nspec):
+            npx = speclist[i].npix*speclist[i].norder
+            m = modlist[i]([teff,logg,feh],rv=vrel[i])
+            if m is not None:
+                flux[cnt:cnt+npx] = m.flux.T.flatten()
+            else:
+                flux[cnt:cnt+npx] = 1e30
+            cnt += npx
+        return flux
+
+    def multispec_interp_jac(x,*argv):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+            is the partial derivative of f[i] with respect to x[j]). """
+        # We only have to recompute the full model if teff/logg/feh are being modified
+        # otherwise we just modify one spectrum's model
+        #print('jac')
+        #print(argv)
+        relstep = 0.02
+        npix = len(x)
+        npar = len(argv)
+        teff = argv[0]
+        logg = argv[1]
+        feh  = argv[2]
+        vrel = argv[3:]
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),float)
+        # Model at current values
+        f0 = multispec_interp(x,*argv)
+        # Compute full models for teff/logg/feh
+        for i in range(3):
+            pars = np.array(copy.deepcopy(argv))
+            step = relstep*pars[i]
+            pars[i] += step
+            f1 = multispec_interp(x,*pars)
+            # Hit an edge, try the negative value instead
+            nbd = np.sum(f1>1000)
+            if nbd>1000:
+                pars = np.array(copy.deepcopy(argv))
+                step = -relstep*pars[i]
+                pars[i] += step
+                f1 = multispec_interp(x,*pars)
+            jac[:,i] = (f1-f0)/step
+        # Compute model for single spectra
+        nspec = len(speclist)
+        cnt = 0
+        for i in range(nspec):
+            vrel1 = vrel[i]
+            step = 1.0
+            vrel1 += step
+            npx = speclist[i].npix*speclist[i].norder
+            m = modlist[i]([teff,logg,feh],rv=vrel1)
+            if m is not None:
+                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
+            else:
+                jac[cnt:cnt+npx,i] = 1e30
+            cnt += npx
+                
+        return jac
+
+        
+    # We are fitting 3 stellar parameters and Nspec relative RVs
+
+    # Put all of the spectra into a large 1D array
+    ntotpix = 0
+    for s in speclist:
+        ntotpix += s.npix*s.norder
+    wave = np.zeros(ntotpix)
+    flux = np.zeros(ntotpix)
+    err = np.zeros(ntotpix)
+    cnt = 0
+    for i in range(nspec):
+        sp = speclist[i]
+        npx = sp.npix*sp.norder
+        wave[cnt:cnt+npx] = sp.wave.T.flatten()
+        flux[cnt:cnt+npx] = sp.flux.T.flatten()
+        err[cnt:cnt+npx] = sp.err.T.flatten()
+        cnt += npx
+        
+    # Use curve_fit
+    diff_step = np.zeros(npar,float)
+    diff_step[:] = 0.02
+    lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=multispec_interp_jac)
+    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, diff_step=diff_step)    
+    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds)    
+    # If it hits a boundary then the solution won't chance much compared to initpar
+    # setting absolute_sigma=True gives crazy low lsperror values
+    lsperror = np.sqrt(np.diag(lscov))
+
+    if verbose is True:
+        print('Least Squares RV and stellar parameters:')
+        printpars(lspars)
+    lsmodel = multispec_interp(wave,*lspars)
+    lschisq = np.sqrt(np.sum(((flux-lsmodel)/err)**2)/len(lsmodel))
+    if verbose is True: print('chisq = %5.2f' % lschisq)
+
+    # Put it into the output structure
+    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = lspars
+    out['parerr'] = lsperror
+    out['parcov'] = lscov
+    out['chisq'] = lschisq
+    
+    return out, lsmodel
 
 
 def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
@@ -1803,7 +1986,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
 
     .. code-block:: python
 
-         sumstr, final, bmodel, specmlist = jointfit_cannon(speclist)
+         sumstr, final, bmodel, specmlist = jointfit_payne(speclist)
 
     """
     
@@ -1822,6 +2005,10 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     
     # If list of filenames input, then load them
 
+    # Load the Payne model
+    #---------------------
+    if model is None: model = payne.load_models()
+    
     # Fitting parameters, excluding RV
     if fitparams is None:
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
@@ -1872,12 +2059,16 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum
             fitparams1 = fitparams.append('RV')  # make sure to fit the RV
-            out, model, specm, pmodels = fit_payne(spec,fitparams=fitparams1,fixparams=fixparams,
-                                                   verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
-            modlist.append(pmodels.copy())
-            del pmodels
+            out, bmodel, specm = fit_payne(spec,fitparams=fitparams1,fixparams=fixparams,
+                                          verbose=verbose,mcmc=mcmc,figfile=figfile)
+            # Save the "prepared" DopplerPayneModel object, but don't
+            # copy the original data (~200MB).
+            pmodel = model.copy()
+            pmodel._data = model._data  # make sure it points to the ORIGINAL model data to save space
+            pmodel._data._lsf = None
+            pmodel.prepare(specm)   # Now prepare the model
+            modlist.append(pmodel)
             specmlist.append(specm.copy())
-            del specm
             info['vhelio'][i] = out['vhelio']
             info['vrel'][i] = out['vrel']
             info['vrelerr'][i] = out['vrelerr']
@@ -1890,19 +2081,27 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         else:
             if verbose is True:
                 print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
-            modlist.append(cannon.models.copy().prepare(speclist[i]))
+            # Just get the spectrum
             sp = speclist[i].copy()
             sp = utils.specprep(sp)   # mask and normalize
             # Mask outliers
             sp = utils.maskoutliers(sp)
-            specmlist.append(sp)
+            specmlist.append(sp)                
+            # Save the "prepared" DopplerPayneModel object, but don't
+            # copy the original data (~200MB).
+            pmodel = model.copy()
+            pmodel._data = model._data  # make sure it points to the ORIGINAL model data to save space
+            pmodel._data._lsf = None
+            pmodel.prepare(sp)   # Now prepare the model
+            modlist.append(pmodel)
+            specmlist.append(specm.copy())
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
 
         
-    # Step 2) find weighted labels
-    if verbose is True: print('Step #2: Getting weighted stellar parameters')
+    # Step 2) Find weighted mean labels
+    if verbose is True: print('Step #2: Getting weighted mean labels')
     gd, ngd = dln.where(np.isfinite(info['chisq']))
     if ngd>0:
         pars = list(np.char.array(fitparams).lower())+['vhelio']
@@ -1931,22 +2130,26 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             print('No good fits.  Using these as intial guesses:')
             printpars(wtpars)
         
-    # Make initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    # Make initial guesses for all the parameters, nfitparams labels and Nspec relative RVs
     initpar1 = np.zeros(nfitparams+nspec,float)
     initpar1[0:nfitparams] = wtpars[0:nfitparams]
     # the default is to use mean vhelio + BC for all visit spectra
-    initpar1[fitparams:] = wtpars[nfitparams]-info['bc']  # vhelio = vrel + BC
+    initpar1[nfitparams:] = wtpars[nfitparams]-info['bc']  # vhelio = vrel + BC
     # Use the Vrel values from the initial fitting if they are accurate enough
     gdinit,ngdinit = dln.where(np.isfinite(info['vrel']) & (info['snr']>5))
     if ngdinit>0:
-        initpar1[gdinit+3] = info['vrel'][gdinit]
+        initpar1[nfitparams+gdinit] = info['vrel'][gdinit]
 
     
-    # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
+    # Step 3) Refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #3: Fitting all spectra simultaneously')
-    out1, fmodels1 = multifit_lsq_cannon(specmlist,modlist,initpar1)
+    out1, fmodels1 = multifit_lsq_payne(specmlist,modlist,fitparams=fitparams,
+                                        fixparams=fixparams,initpar=initpar1)
+
+    import pdb; pdb.set_trace()
+    
     stelpars1 = out1['pars'][0,0:3]
     stelparerr1 = out1['parerr'][0,0:3]    
     vrel1 = out1['pars'][0,3:]
@@ -1962,7 +2165,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
-    # Step 4) tweak continua and remove outlies
+    # Step 4) Tweak continua and remove outlies
     if verbose is True:
         print(' ')
         print('Step #4: Tweaking continuum and masking outliers')
@@ -1981,7 +2184,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
 
     # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
     initpar2 = out1['pars'][0]
-    out2, fmodels2 = multifit_lsq_cannon(specmlist,modlist,initpar2)
+    out2, fmodels2 = multifit_lsq_payne(specmlist,modlist,initpar2)
     stelpars2 = out2['pars'][0,0:3]
     stelparerr2 = out2['parerr'][0,0:3]    
     vrel2 = out2['pars'][0,3:]
@@ -2446,188 +2649,6 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
     return out,mcmodel
 
 
-
-def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
-    """
-    Least Squares fitting with forward modeling of multiple spectra simultaneously.
-    
-    Parameters
-    ----------
-    speclist : Spec1D object
-         List of the observed spectra to match.
-    modlist : list of Doppler Cannon models
-         A list of the prepare Doppler Cannon models to use, one set for each observed
-           spectrum.
-    initpar : numpy array, optional
-         Initial estimate for [teff, logg, feh, RV], optional.
-    verbose : bool, optional
-         Verbose output of the various steps.  This is False by default.
-
-    Returns
-    -------
-    out : numpy structured array
-         The output structured array of the final derived RVs, stellar parameters and errors.
-    bmodel : Spec1D object
-         The best-fitting Cannon model spectrum (as Spec1D object).
-
-    Example
-    -------
-
-    .. code-block:: python
-
-         out, bmodel = multifit_lsq(speclist,modlist,initpar)
-
-    """
-
-    nspec = len(speclist)
-    
-    ## Prepare the spectrum
-    ##-----------------------------
-    ## normalize and mask spectrum
-    #if spec.normalized is False: spec.normalize()
-    #if spec.mask is not None:
-    #    # Set errors to high value, leave flux alone
-    #    spec.err[spec.mask] = 1e30
-
-    ## Load and prepare the Cannon models
-    ##-------------------------------------------
-    #if models is None: models = cannon.models.prepare(spec)
-    
-    # Get initial estimates
-    npar = 3+nspec
-    if initpar is None:
-        initpar = np.zeros(npar,float)
-        initpar[0:3] = np.array([6000.0, 2.5, -0.5])
-    
-    # Calculate the bounds
-    lbounds = np.zeros(npar,float)+1e5
-    ubounds = np.zeros(npar,float)-1e5
-    for p in modlist[0]:
-        lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
-        ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
-    lbounds[3:] = -1000
-    ubounds[3:] = 1000    
-    bounds = (lbounds, ubounds)
-    
-    # function to use with curve_fit
-    def multispec_interp(x,*argv):
-        """ This returns the interpolated model for a given spectrum."""
-        # The "models" and "spec" must already exist outside of this function
-        #print(argv)
-        teff = argv[0]
-        logg = argv[1]
-        feh = argv[2]
-        vrel = argv[3:]
-        npix = len(x)
-        nspec = len(vrel)
-        flux = np.zeros(npix,float)
-        cnt = 0
-        for i in range(nspec):
-            npx = speclist[i].npix*speclist[i].norder
-            m = modlist[i]([teff,logg,feh],rv=vrel[i])
-            if m is not None:
-                flux[cnt:cnt+npx] = m.flux.T.flatten()
-            else:
-                flux[cnt:cnt+npx] = 1e30
-            cnt += npx
-        return flux
-
-    def multispec_interp_jac(x,*argv):
-        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
-            is the partial derivative of f[i] with respect to x[j]). """
-        # We only have to recompute the full model if teff/logg/feh are being modified
-        # otherwise we just modify one spectrum's model
-        #print('jac')
-        #print(argv)
-        relstep = 0.02
-        npix = len(x)
-        npar = len(argv)
-        teff = argv[0]
-        logg = argv[1]
-        feh  = argv[2]
-        vrel = argv[3:]
-        # Initialize jacobian matrix
-        jac = np.zeros((npix,npar),float)
-        # Model at current values
-        f0 = multispec_interp(x,*argv)
-        # Compute full models for teff/logg/feh
-        for i in range(3):
-            pars = np.array(copy.deepcopy(argv))
-            step = relstep*pars[i]
-            pars[i] += step
-            f1 = multispec_interp(x,*pars)
-            # Hit an edge, try the negative value instead
-            nbd = np.sum(f1>1000)
-            if nbd>1000:
-                pars = np.array(copy.deepcopy(argv))
-                step = -relstep*pars[i]
-                pars[i] += step
-                f1 = multispec_interp(x,*pars)
-            jac[:,i] = (f1-f0)/step
-        # Compute model for single spectra
-        nspec = len(speclist)
-        cnt = 0
-        for i in range(nspec):
-            vrel1 = vrel[i]
-            step = 1.0
-            vrel1 += step
-            npx = speclist[i].npix*speclist[i].norder
-            m = modlist[i]([teff,logg,feh],rv=vrel1)
-            if m is not None:
-                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
-            else:
-                jac[cnt:cnt+npx,i] = 1e30
-            cnt += npx
-                
-        return jac
-
-        
-    # We are fitting 3 stellar parameters and Nspec relative RVs
-
-    # Put all of the spectra into a large 1D array
-    ntotpix = 0
-    for s in speclist:
-        ntotpix += s.npix*s.norder
-    wave = np.zeros(ntotpix)
-    flux = np.zeros(ntotpix)
-    err = np.zeros(ntotpix)
-    cnt = 0
-    for i in range(nspec):
-        sp = speclist[i]
-        npx = sp.npix*sp.norder
-        wave[cnt:cnt+npx] = sp.wave.T.flatten()
-        flux[cnt:cnt+npx] = sp.flux.T.flatten()
-        err[cnt:cnt+npx] = sp.err.T.flatten()
-        cnt += npx
-        
-    # Use curve_fit
-    diff_step = np.zeros(npar,float)
-    diff_step[:] = 0.02
-    lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=multispec_interp_jac)
-    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, diff_step=diff_step)    
-    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds)    
-    # If it hits a boundary then the solution won't chance much compared to initpar
-    # setting absolute_sigma=True gives crazy low lsperror values
-    lsperror = np.sqrt(np.diag(lscov))
-
-    if verbose is True:
-        print('Least Squares RV and stellar parameters:')
-        printpars(lspars)
-    lsmodel = multispec_interp(wave,*lspars)
-    lschisq = np.sqrt(np.sum(((flux-lsmodel)/err)**2)/len(lsmodel))
-    if verbose is True: print('chisq = %5.2f' % lschisq)
-
-    # Put it into the output structure
-    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
-    out = np.zeros(1,dtype=dtype)
-    out['pars'] = lspars
-    out['parerr'] = lsperror
-    out['parcov'] = lscov
-    out['chisq'] = lschisq
-    
-    return out, lsmodel
-
-
 def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
                retpmodels=False,nthreads=None):
     """
@@ -2883,6 +2904,187 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     
     return out, fmodel, specm
     
+
+def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
+    """
+    Least Squares fitting with forward modeling of multiple spectra simultaneously.
+    
+    Parameters
+    ----------
+    speclist : Spec1D object
+         List of the observed spectra to match.
+    modlist : list of Doppler Cannon models
+         A list of the prepare Doppler Cannon models to use, one set for each observed
+           spectrum.
+    initpar : numpy array, optional
+         Initial estimate for [teff, logg, feh, RV], optional.
+    verbose : bool, optional
+         Verbose output of the various steps.  This is False by default.
+
+    Returns
+    -------
+    out : numpy structured array
+         The output structured array of the final derived RVs, stellar parameters and errors.
+    bmodel : Spec1D object
+         The best-fitting Cannon model spectrum (as Spec1D object).
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         out, bmodel = multifit_lsq(speclist,modlist,initpar)
+
+    """
+
+    nspec = len(speclist)
+    
+    ## Prepare the spectrum
+    ##-----------------------------
+    ## normalize and mask spectrum
+    #if spec.normalized is False: spec.normalize()
+    #if spec.mask is not None:
+    #    # Set errors to high value, leave flux alone
+    #    spec.err[spec.mask] = 1e30
+
+    ## Load and prepare the Cannon models
+    ##-------------------------------------------
+    #if models is None: models = cannon.models.prepare(spec)
+    
+    # Get initial estimates
+    npar = 3+nspec
+    if initpar is None:
+        initpar = np.zeros(npar,float)
+        initpar[0:3] = np.array([6000.0, 2.5, -0.5])
+    
+    # Calculate the bounds
+    lbounds = np.zeros(npar,float)+1e5
+    ubounds = np.zeros(npar,float)-1e5
+    for p in modlist[0]:
+        lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
+        ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
+    lbounds[3:] = -1000
+    ubounds[3:] = 1000    
+    bounds = (lbounds, ubounds)
+    
+    # function to use with curve_fit
+    def multispec_interp(x,*argv):
+        """ This returns the interpolated model for a given spectrum."""
+        # The "models" and "spec" must already exist outside of this function
+        #print(argv)
+        teff = argv[0]
+        logg = argv[1]
+        feh = argv[2]
+        vrel = argv[3:]
+        npix = len(x)
+        nspec = len(vrel)
+        flux = np.zeros(npix,float)
+        cnt = 0
+        for i in range(nspec):
+            npx = speclist[i].npix*speclist[i].norder
+            m = modlist[i]([teff,logg,feh],rv=vrel[i])
+            if m is not None:
+                flux[cnt:cnt+npx] = m.flux.T.flatten()
+            else:
+                flux[cnt:cnt+npx] = 1e30
+            cnt += npx
+        return flux
+
+    def multispec_interp_jac(x,*argv):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+            is the partial derivative of f[i] with respect to x[j]). """
+        # We only have to recompute the full model if teff/logg/feh are being modified
+        # otherwise we just modify one spectrum's model
+        #print('jac')
+        #print(argv)
+        relstep = 0.02
+        npix = len(x)
+        npar = len(argv)
+        teff = argv[0]
+        logg = argv[1]
+        feh  = argv[2]
+        vrel = argv[3:]
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),float)
+        # Model at current values
+        f0 = multispec_interp(x,*argv)
+        # Compute full models for teff/logg/feh
+        for i in range(3):
+            pars = np.array(copy.deepcopy(argv))
+            step = relstep*pars[i]
+            pars[i] += step
+            f1 = multispec_interp(x,*pars)
+            # Hit an edge, try the negative value instead
+            nbd = np.sum(f1>1000)
+            if nbd>1000:
+                pars = np.array(copy.deepcopy(argv))
+                step = -relstep*pars[i]
+                pars[i] += step
+                f1 = multispec_interp(x,*pars)
+            jac[:,i] = (f1-f0)/step
+        # Compute model for single spectra
+        nspec = len(speclist)
+        cnt = 0
+        for i in range(nspec):
+            vrel1 = vrel[i]
+            step = 1.0
+            vrel1 += step
+            npx = speclist[i].npix*speclist[i].norder
+            m = modlist[i]([teff,logg,feh],rv=vrel1)
+            if m is not None:
+                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
+            else:
+                jac[cnt:cnt+npx,i] = 1e30
+            cnt += npx
+                
+        return jac
+
+        
+    # We are fitting 3 stellar parameters and Nspec relative RVs
+
+    # Put all of the spectra into a large 1D array
+    ntotpix = 0
+    for s in speclist:
+        ntotpix += s.npix*s.norder
+    wave = np.zeros(ntotpix)
+    flux = np.zeros(ntotpix)
+    err = np.zeros(ntotpix)
+    cnt = 0
+    for i in range(nspec):
+        sp = speclist[i]
+        npx = sp.npix*sp.norder
+        wave[cnt:cnt+npx] = sp.wave.T.flatten()
+        flux[cnt:cnt+npx] = sp.flux.T.flatten()
+        err[cnt:cnt+npx] = sp.err.T.flatten()
+        cnt += npx
+        
+    # Use curve_fit
+    diff_step = np.zeros(npar,float)
+    diff_step[:] = 0.02
+    lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=multispec_interp_jac)
+    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, diff_step=diff_step)    
+    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds)    
+    # If it hits a boundary then the solution won't chance much compared to initpar
+    # setting absolute_sigma=True gives crazy low lsperror values
+    lsperror = np.sqrt(np.diag(lscov))
+
+    if verbose is True:
+        print('Least Squares RV and stellar parameters:')
+        printpars(lspars)
+    lsmodel = multispec_interp(wave,*lspars)
+    lschisq = np.sqrt(np.sum(((flux-lsmodel)/err)**2)/len(lsmodel))
+    if verbose is True: print('chisq = %5.2f' % lschisq)
+
+    # Put it into the output structure
+    dtype = np.dtype([('pars',float,npar),('parerr',float,npar),('parcov',float,(npar,npar)),('chisq',float)])
+    out = np.zeros(1,dtype=dtype)
+    out['pars'] = lspars
+    out['parerr'] = lsperror
+    out['parcov'] = lscov
+    out['chisq'] = lschisq
+    
+    return out, lsmodel
+
 
 def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,
                     outdir=None,nthreads=None):

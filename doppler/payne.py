@@ -876,7 +876,7 @@ class PayneSpecFitter:
         # params - initial/fixed parameters dictionary
         # fitparams - parameter/label names to fit (default is all)
         # "Prepare" the Payne model with the observed spectrum
-        pmodel.prepare(spec)
+        if pmodel.prepared is False: pmodel.prepare(spec)
         self._paynemodel = pmodel
         self.labels = pmodel.labels
         labelnames = np.char.array(self._paynemodel.labels)
