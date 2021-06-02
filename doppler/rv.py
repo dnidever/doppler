@@ -1356,7 +1356,7 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     
     if verbose is True:
         print('Least Squares RV and stellar parameters:')
-        printpars(lspars)
+        printpars(lspars,names=fitparams)
 
     
     if nfixparams>0:
@@ -1613,23 +1613,6 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     if model is None: model = payne.load_models()
     model.prepare(specm)
 
-    # Have a generic fit_payne_model() code that you give an observed spectrum
-    # a DopplerPayneModel and a list of parameter names that you want to fit
-    # (e.g., ['teff','logg','feh','mg_h']), and bounds for each.
-    # you also need values for the parameters we aren't fitting (although
-    # for abundances we can just set [X/Fe] = 0.
-    #
-    # then have a little function that checks that we have all the parameters
-    # we need and not more (if fitting [alpha/fe] then we can't fit individual
-    # alpha abundances).
-    #
-    # then have a little function that figures out the bounds for all the parameters.
-    #
-    # the default is to fit all the parameters
-    # if DopplerPayneModel then that includes Vsini/Vmacro.
-  
-    
-
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
     beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  
@@ -1646,12 +1629,8 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
 
-    #import pdb; pdb.set_trace()
-
-
     # Step 5: Run fine grid in RV, forward modeling
     #----------------------------------------------
-    #maxv = np.maximum(beststr2['vrel'][0],20.0)
     maxv = 10.0
     rvind, = np.where(np.char.array(fitparams)=='RV')[0]
     vel = dln.scale_vector(np.arange(31),lspars[rvind]-maxv,lspars[rvind]+maxv)
@@ -1789,7 +1768,7 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
          out, bmodel = multifit_lsq_payne(speclist,modlist,initpar)
 
     """
-
+    
     nspec = len(speclist)
 
     # Fitting parameters, excluding RV
@@ -1797,7 +1776,7 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
     # Make sure RV is excluded, that is handled separately
     fitparams = np.char.array(fitparams)
-    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')=-1])
+    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')==-1])
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
     
@@ -1808,7 +1787,7 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
     if initpar is None:
         initpar1 = make_payne_initlabels(fitparams)
         initpar = np.hstack((initpar1,np.zeros(nspec,float)))
-    
+        
     # Calculate the bounds
     lbounds = np.zeros(npar,float)+1e5
     ubounds = np.zeros(npar,float)-1e5
@@ -1818,81 +1797,9 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
     lbounds[nfitparams:] = -1000
     ubounds[nfitparams:] = 1000    
     bounds = (lbounds, ubounds)
-    
-    # function to use with curve_fit
-    def multispec_interp(x,*argv):
-        """ This returns the interpolated model for a given spectrum."""
-        # The "models" and "spec" must already exist outside of this function
-        #print(argv)
-        teff = argv[0]
-        logg = argv[1]
-        feh = argv[2]
-        vrel = argv[3:]
-        npix = len(x)
-        nspec = len(vrel)
-        flux = np.zeros(npix,float)
-        cnt = 0
-        for i in range(nspec):
-            npx = speclist[i].npix*speclist[i].norder
-            m = modlist[i]([teff,logg,feh],rv=vrel[i])
-            if m is not None:
-                flux[cnt:cnt+npx] = m.flux.T.flatten()
-            else:
-                flux[cnt:cnt+npx] = 1e30
-            cnt += npx
-        return flux
 
-    def multispec_interp_jac(x,*argv):
-        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
-            is the partial derivative of f[i] with respect to x[j]). """
-        # We only have to recompute the full model if teff/logg/feh are being modified
-        # otherwise we just modify one spectrum's model
-        #print('jac')
-        #print(argv)
-        relstep = 0.02
-        npix = len(x)
-        npar = len(argv)
-        teff = argv[0]
-        logg = argv[1]
-        feh  = argv[2]
-        vrel = argv[3:]
-        # Initialize jacobian matrix
-        jac = np.zeros((npix,npar),float)
-        # Model at current values
-        f0 = multispec_interp(x,*argv)
-        # Compute full models for teff/logg/feh
-        for i in range(3):
-            pars = np.array(copy.deepcopy(argv))
-            step = relstep*pars[i]
-            pars[i] += step
-            f1 = multispec_interp(x,*pars)
-            # Hit an edge, try the negative value instead
-            nbd = np.sum(f1>1000)
-            if nbd>1000:
-                pars = np.array(copy.deepcopy(argv))
-                step = -relstep*pars[i]
-                pars[i] += step
-                f1 = multispec_interp(x,*pars)
-            jac[:,i] = (f1-f0)/step
-        # Compute model for single spectra
-        nspec = len(speclist)
-        cnt = 0
-        for i in range(nspec):
-            vrel1 = vrel[i]
-            step = 1.0
-            vrel1 += step
-            npx = speclist[i].npix*speclist[i].norder
-            m = modlist[i]([teff,logg,feh],rv=vrel1)
-            if m is not None:
-                jac[cnt:cnt+npx,i] = (m.flux.T.flatten()-f0[cnt:cnt+npx])/step
-            else:
-                jac[cnt:cnt+npx,i] = 1e30
-            cnt += npx
-                
-        return jac
-
-        
-    # We are fitting 3 stellar parameters and Nspec relative RVs
+    # Initialize the fitter
+    spfitter = payne.PayneMultiSpecFitter(speclist,modlist,fitparams,fixparams=fixparams,verbose=verbose)
 
     # Put all of the spectra into a large 1D array
     ntotpix = 0
@@ -1903,27 +1810,25 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
     err = np.zeros(ntotpix)
     cnt = 0
     for i in range(nspec):
-        sp = speclist[i]
-        npx = sp.npix*sp.norder
-        wave[cnt:cnt+npx] = sp.wave.T.flatten()
-        flux[cnt:cnt+npx] = sp.flux.T.flatten()
-        err[cnt:cnt+npx] = sp.err.T.flatten()
+        spec1 = speclist[i]
+        npx = spec1.npix*spec1.norder
+        wave[cnt:cnt+npx] = spec1.wave.T.flatten()
+        flux[cnt:cnt+npx] = spec1.flux.T.flatten()
+        err[cnt:cnt+npx] = spec1.err.T.flatten()
         cnt += npx
-        
-    # Use curve_fit
-    diff_step = np.zeros(npar,float)
-    diff_step[:] = 0.02
-    lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=multispec_interp_jac)
-    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds, diff_step=diff_step)    
-    #lspars, lscov = curve_fit(multispec_interp, wave, flux, sigma=err, p0=initpar, bounds=bounds)    
+
+    # We are fitting nfitparams stellar parameters and Nspec relative RVs    
+    lspars, lscov = curve_fit(spfitter.model, wave, flux, sigma=err, p0=initpar, bounds=bounds, jac=spfitter.jac)    
+  
     # If it hits a boundary then the solution won't chance much compared to initpar
     # setting absolute_sigma=True gives crazy low lsperror values
     lsperror = np.sqrt(np.diag(lscov))
 
     if verbose is True:
-        print('Least Squares RV and stellar parameters:')
-        printpars(lspars)
-    lsmodel = multispec_interp(wave,*lspars)
+        print('Least Squares labels and RVs:')
+        parnames = fitparams.copy()+list('RV'+np.char.array((np.arange(nspec)+1).astype(str)))
+        printpars(lspars,lsperror,names=parnames)
+    lsmodel = spfitter.model(wave,*lspars)
     lschisq = np.sqrt(np.sum(((flux-lsmodel)/err)**2)/len(lsmodel))
     if verbose is True: print('chisq = %5.2f' % lschisq)
 
@@ -2014,7 +1919,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
     # Make sure RV is excluded, that is handled separately
     fitparams = np.char.array(fitparams)
-    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')=-1])
+    fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')==-1])
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
     
@@ -2058,14 +1963,12 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum
-            fitparams1 = fitparams.append('RV')  # make sure to fit the RV
+            fitparams1 = fitparams+['RV']  # make sure to fit the RV
             out, bmodel, specm = fit_payne(spec,fitparams=fitparams1,fixparams=fixparams,
                                           verbose=verbose,mcmc=mcmc,figfile=figfile)
             # Save the "prepared" DopplerPayneModel object, but don't
             # copy the original data (~200MB).
-            pmodel = model.copy()
-            pmodel._data = model._data  # make sure it points to the ORIGINAL model data to save space
-            pmodel._data._lsf = None
+            pmodel = model.copy()  # points to original data
             pmodel.prepare(specm)   # Now prepare the model
             modlist.append(pmodel)
             specmlist.append(specm.copy())
@@ -2089,15 +1992,20 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             specmlist.append(sp)                
             # Save the "prepared" DopplerPayneModel object, but don't
             # copy the original data (~200MB).
-            pmodel = model.copy()
-            pmodel._data = model._data  # make sure it points to the ORIGINAL model data to save space
-            pmodel._data._lsf = None
+            pmodel = model.copy()   # points to original data
             pmodel.prepare(sp)   # Now prepare the model
             modlist.append(pmodel)
             specmlist.append(specm.copy())
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
+
+        
+        #import psutil
+        #v = psutil.virtual_memory()
+        #process = psutil.Process(os.getpid())
+        #print('%6.1f Percent of memory used. %6.1f GB available.  Process is using %6.2f GB of memory.' %
+        #      (v.percent,v.available/1e9,process.memory_info()[0]/1e9))
 
         
     # Step 2) Find weighted mean labels
@@ -2121,15 +2029,14 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
                 wtpars[i] = np.mean(p)
         if verbose is True:
             print('Initial weighted parameters are:')
-            printpars(wtpars)
+            printpars(wtpars,names=np.char.array(pars).upper())
     else:
         wtpars = np.zeros(nfitparams+1,float)
         wtpars = make_payne_initlabels(fitparams+['RV'])
-        vscatter0 = 999999.
         if verbose is True:
             print('No good fits.  Using these as intial guesses:')
             printpars(wtpars)
-        
+            
     # Make initial guesses for all the parameters, nfitparams labels and Nspec relative RVs
     initpar1 = np.zeros(nfitparams+nspec,float)
     initpar1[0:nfitparams] = wtpars[0:nfitparams]
@@ -2147,67 +2054,71 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         print('Step #3: Fitting all spectra simultaneously')
     out1, fmodels1 = multifit_lsq_payne(specmlist,modlist,fitparams=fitparams,
                                         fixparams=fixparams,initpar=initpar1)
-
-    import pdb; pdb.set_trace()
-    
-    stelpars1 = out1['pars'][0,0:3]
-    stelparerr1 = out1['parerr'][0,0:3]    
-    vrel1 = out1['pars'][0,3:]
-    vrelerr1 = out1['parerr'][0,3:]
+    stelpars1 = out1['pars'][0,0:nfitparams]
+    stelparerr1 = out1['parerr'][0,0:nfitparams]
+    vrel1 = out1['pars'][0,nfitparams:]
+    vrelerr1 = out1['parerr'][0,nfitparams:]
     vhelio1 = vrel1+info['bc']
     medvhelio1 = np.median(vhelio1)
     vscatter1 = dln.mad(vhelio1)
     verr1 = vscatter1/np.sqrt(nspec)
     if verbose is True:
         print('Parameters:')
-        printpars(stelpars1)
+        printpars(stelpars1,names=fitparams)
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio1,verr1))
         print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
+        
     # Step 4) Tweak continua and remove outlies
     if verbose is True:
         print(' ')
         print('Step #4: Tweaking continuum and masking outliers')
     for i,spm in enumerate(specmlist):
-        bestm = modlist[i](stelpars1,rv=vrel1[i])
+        # Create parameter list that includes RV at the end
+        params1 = list(stelpars1)+[vrel1[i]]
+        paramnames1 = fitparams+['RV']
+        parinput1 = dict(zip(paramnames1,params1))
+        model1 = modlist[i]
+        labels1 = model1.mklabels(parinput1)
+        bestm = model1(labels1)
         # Tweak the continuum normalization
         spm = tweakcontinuum(spm,bestm)
         # Mask out very discrepant pixels when compared to the best-fit model
         spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
         specmlist[i] = spm.copy()
+
         
     # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #5: Re-fitting all spectra simultaneously')
 
-    # Initial guesses for all the parameters, 3 stellar paramters and Nspec relative RVs
+    # Initial guesses for all the parameters, nfitparams stellar parameters and Nspec relative RVs
     initpar2 = out1['pars'][0]
-    out2, fmodels2 = multifit_lsq_payne(specmlist,modlist,initpar2)
-    stelpars2 = out2['pars'][0,0:3]
-    stelparerr2 = out2['parerr'][0,0:3]    
-    vrel2 = out2['pars'][0,3:]
-    vrelerr2 = out2['parerr'][0,3:]
+    out2, fmodels2 = multifit_lsq_payne(specmlist,modlist,fitparams=fitparams,
+                                        fixparams=fixparams,initpar=initpar2)
+    stelpars2 = out2['pars'][0,0:nfitparams]
+    stelparerr2 = out2['parerr'][0,0:nfitparams]
+    vrel2 = out2['pars'][0,nfitparams:]
+    vrelerr2 = out2['parerr'][0,nfitparams:]
     vhelio2 = vrel2+info['bc']
     medvhelio2 = np.median(vhelio2)
     vscatter2 = dln.mad(vhelio2)
     verr2 = vscatter2/np.sqrt(nspec)
     if verbose is True:
         print('Final parameters:')
-        printpars(stelpars2)
+        printpars(stelpars2,names=fitparams)
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
         print('Vscatter =  %6.3f km/s' % vscatter2)
-        print(vhelio2)
-    
-    # Final output structure
+        print('Vhelio values = ',vhelio2)
+        
+    # Final output structure, one element per spectrum
     final = info.copy()
-    final['teff'] = stelpars2[0]
-    final['tefferr'] = stelparerr2[0]
-    final['logg'] = stelpars2[1]
-    final['loggerr'] = stelparerr2[1]
-    final['feh'] = stelpars2[2]
-    final['feherr'] = stelparerr2[2]    
+    for k in range(nfitparams):                
+        name = fitparams[k].lower()
+        info[name][i] = stelpars2[k]
+        info[name+'err'][i] = stelparerr2[k]
     final['vrel'] = vrel2
     final['vrelerr'] = vrelerr2
     final['vhelio'] = vhelio2
@@ -2215,33 +2126,38 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     totchisq = 0.0
     totnpix = 0
     for i in range(nspec):
-        pars1 = [final['teff'][i], final['logg'][i], final['feh'][i]]
-        vr1 = final['vrel'][i]
-        sp = specmlist[i]
-        m = modlist[i](pars1,rv=vr1)
-        chisq = np.sqrt(np.sum(((sp.flux-m.flux)/sp.err)**2)/(sp.npix*sp.norder))
-        totchisq += np.sum(((sp.flux-m.flux)/sp.err)**2)
-        totnpix += sp.npix*sp.norder
+        # Create parameter list that includes RV at the end
+        params1 = list(stelpars2)+[vrel2[i]]
+        paramnames1 = fitparams+['RV']
+        parinput1 = dict(zip(paramnames1,params1))
+        model1 = modlist[i]
+        labels1 = model1.mklabels(parinput1)
+        m = model1(labels1)
+        sp1 = specmlist[i]
+        chisq = np.sqrt(np.sum(((sp1.flux-m.flux)/sp1.err)**2)/(sp1.npix*sp1.norder))
+        totchisq += np.sum(((sp1.flux-m.flux)/sp1.err)**2)
+        totnpix += sp1.npix*sp1.norder
         final['chisq'][i] = chisq
         bmodel.append(m)
     totchisq = np.sqrt(totchisq/totnpix)
-        
+    
     # Average values
-    sumdt = np.dtype([('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float),
-                      ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
-                      ('feherr',float),('chisq',float)])
+    sumdtlist = [('medsnr',float),('totsnr',float),('vhelio',float),('vscatter',float),('verr',float)]
+    for k in range(nfitparams):
+        name = fitparams[k].lower()
+        sumdtlist += [(name,np.float32),(name+'err',np.float32)]
+    sumdtlist += [('chisq',float)]
+    sumdt = np.dtype(sumdtlist)
     sumstr = np.zeros(1,dtype=sumdt)
     sumstr['medsnr'] = np.median(info['snr'])
     sumstr['totsnr'] = np.sqrt(np.sum(info['snr']**2))
     sumstr['vhelio'] = medvhelio2
     sumstr['vscatter'] = vscatter2
     sumstr['verr'] = verr2
-    sumstr['teff'] = stelpars2[0]
-    sumstr['tefferr'] = stelparerr2[0]
-    sumstr['logg'] = stelpars2[1]
-    sumstr['loggerr'] = stelparerr2[1]
-    sumstr['feh'] = stelpars2[2]
-    sumstr['feherr'] = stelparerr2[2]
+    for k in range(nfitparams):
+        name = fitparams[k].lower()
+        sumstr[name] = stelpars2[k]
+        sumstr[name+'err'] = stelparerr2[k]
     sumstr['chisq'] = totchisq
         
     # How long did this take

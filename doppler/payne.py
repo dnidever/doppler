@@ -193,6 +193,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         outmodel.err = np.zeros(wave.shape,float)
         outmodel.mask = np.zeros(wave.shape,bool)        
     lsf_list = []
+    lsfwave_list = []
     for o in range(spec.norder):
         w = specwave[:,o]
         w0 = np.min(w)
@@ -255,9 +256,13 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         # Convolve with LSF, Vsini and Vmacro kernels
         if model._lsf is not None:
             lsf = model._lsf[o]
+            if lsf.shape[0] != len(rmodelwave):
+                print('prepare_payne_model: saved LSF does not match')
+                import pdb; pdb.set_trace()
         else:
             lsf = spec.lsf.anyarray(rmodelwave,xtype='Wave',order=o,original=False)
         lsf_list.append(lsf)
+        lsfwave_list.append(rmodelwave)
         cmodelflux = utils.convolve_sparse(rmodelflux,lsf)
         # Apply Vmacro broadening and Vsini broadening (km/s)
         if (vmacro is not None) | (vsini is not None):
@@ -281,7 +286,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         outmodel.wave = wave.copy()
         
     if lsfout is True:
-        return outmodel,lsf_list
+        return outmodel,lsf_list,lsfwave_list
     else:
         return outmodel
 
@@ -847,16 +852,30 @@ class DopplerPayneModel(object):
         # Get the LSF array
         tlabels = self.mklabels({'teff':5000,'logg':3.0,'fe_h':0.0})
         tlabels = tlabels[0:33]
-        temp,lsf = prepare_payne_model(self._data,tlabels,self._spec,lsfout=True)
+        temp,lsf,lsfwave = prepare_payne_model(self._data,tlabels,self._spec,lsfout=True)
         self._data._lsf = lsf
+        self._data._lsfwave = lsfwave
         
     def copy(self):
-        """ Make a copy of the DopplerPayneModel."""
+        """ Make a copy of the DopplerPayneModel but point to the original data."""
+        new_model = self._data.copy()
+        new = DopplerPayneModel(new_model)
+        # points to the ORIGINAL Payne data to save space        
+        if isinstance(new_model,PayneModel):
+            new._data = self._data
+        if isinstance(new_model,PayneModelSet):
+            new._data._data = self._data._data
+        if self.prepared==True:
+            new.prepare(self._spec)
+        return new
+
+    def hardcopy(self):
+        """ Make a complete copy of the DopplerPayneModel."""
         new_model = self._data.copy()
         new = DopplerPayneModel(new_model)
         if self.prepared==True:
             new.prepare(self._spec)
-        return new
+        return new    
 
     def read(mfiles):
         """ Read a set of Payne model files."""
@@ -1173,3 +1192,345 @@ class PayneSpecFitter:
         return jac
 
     
+class PayneMultiSpecFitter:
+
+    def __init__(self,speclist,modlist,fitparams,fixparams={},verbose=False):
+        # speclist - observed spectrum list
+        # modlist - Payne model list
+        # fixparams - parameter/label names to fit
+        # fitparams - fixed parameters dictionary
+        self.nspec = len(speclist)
+        self._speclist = speclist
+        self._modlist = modlist
+        self._labels = modlist[0].labels  # all labels
+        self.fitparams = fitparams
+        self.fixparams = dict((key.upper(), value) for (key, value) in fixparams.items()) # all CAPS
+        self._initlabels = self.mkinitlabels(fixparams)
+        
+        # Put all of the spectra into a large 1D array
+        ntotpix = 0
+        for s in speclist:
+            ntotpix += s.npix*s.norder
+        wave = np.zeros(ntotpix)
+        flux = np.zeros(ntotpix)
+        err = np.zeros(ntotpix)
+        cnt = 0
+        for i in range(self.nspec):
+            spec = speclist[i]
+            npx = spec.npix*spec.norder
+            wave[cnt:cnt+npx] = spec.wave.T.flatten()
+            flux[cnt:cnt+npx] = spec.flux.T.flatten()
+            err[cnt:cnt+npx] = spec.err.T.flatten()
+            cnt += npx
+        self._flux = flux
+        self._err = err
+        self._wave = wave        
+
+        fixed,alphaelem,elem = self.fixed_labels(list(fitparams)+['RV'])
+        self._label_fixed = fixed
+        self._label_alphaelem = alphaelem
+        self._label_elem = elem     
+        
+        self.verbose = verbose
+        # parameters to save
+        self.nfev = 0
+        self.njac = 0
+        self._all_pars = []
+        self._all_model = []
+        self._all_chisq = []
+        self._jac_array = None
+
+    def fixed_labels(self,fitparams=None):
+        nlabels = len(self._labels)
+        labelnames = self._labels
+
+        if fitparams is None:
+            fitparams = self.fitparams
+        
+        # Labels FIXED, ALPHAELEM, ELEM arrays
+        fixed = np.ones(nlabels,bool)  # all fixed by default
+        alphaelem = np.zeros(nlabels,bool)  # all False to start
+        elem = np.zeros(nlabels,bool)  # all False to start        
+        for k,name in enumerate(labelnames):
+            # Alpha element
+            if name in ['O_H','MG_H','SI_H','S_H','CA_H','TI_H']:
+                alphaelem[k] = True
+                elem[k] = True
+                # In FITPARAMS, NOT FIXED
+                if name in fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in FIXPARAMS, FIXED                    
+                elif name in self.fixparams.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS or FIXPARAMS, but FE_H or ALPHA_H in FITPARAMS, NOT FIXED
+                elif 'FE_H' in fitparams or 'ALPHA_H' in fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS/PARAMS and FE_H/ALPHA_H not being fit, FIXED
+                else:
+                    fixed[k] = True
+            # Non-alpha element
+            elif name.endswith('_H'):
+                elem[k] = True
+                # In FITPARAMS, NOT FIXED
+                if name in fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in FIXPARAMS, FIXED
+                elif name in self.fixparams.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS or FIXPARAMS, but FE_H in FITPARAMS, NOT FIXED
+                elif 'FE_H' in fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS/FIXPARAMS and FE_H not being fit, FIXED
+                else:
+                    fixed[k] = True
+            # Other parameters (Teff, logg, RV, Vturb, Vsini, etc.)
+            else:
+                # In FITPARAMS, NOT FIXED
+                if name in fitparams:
+                    fixed[k] = False
+                # Not in FITPARAMS but in FIXPARAMS, FIXED
+                elif name in self.fixparams.keys():
+                    fixed[k] = True
+                # Not in FITPARAMS/PARAMS, FIXED
+                else:
+                    fixed[k] = True
+        return fixed,alphaelem,elem
+        
+    @property
+    def fitparams(self):
+        return self._fitparams
+
+    @fitparams.setter
+    def fitparams(self,fitparams):
+        """ List, all CAPS."""
+        self._fitparams = [f.upper() for f in fitparams]
+        
+    @property
+    def fixparams(self):
+        return self._fixparams
+
+    @fixparams.setter
+    def fixparams(self,fixparams):
+        """ Dictionary, keys must be all CAPS."""
+        self._fixparams = dict((key.upper(), value) for (key, value) in fixparams.items())  # all CAPS
+
+    def mkinitlabels(self,inputs):
+        """ Convert input dictionary to Payne labels."""
+
+        # This assumes ALL abundances are relative to H *not* FE!!!
+        
+        params = dict((key.upper(), value) for (key, value) in inputs.items()) # all CAPS
+        nparams = len(params)
+
+        labelnames = np.char.array(self._labels)
+
+        # Defaults for main parameters
+        if 'TEFF' not in list(params.keys()):
+            params['TEFF'] = 4000.0
+        if 'LOGG' not in list(params.keys()):
+            params['LOGG'] = 3.0
+        if 'FE_H' not in list(params.keys()):
+            params['FE_H'] = 0.0            
+            
+            
+        # Initializing the labels array
+        nlabels = len(self._labels)
+        labels = np.zeros(nlabels,float)
+        # Set X_H = FE_H
+        labels[labelnames.endswith('_H')] = params['FE_H']
+        # Vmicro/Vturb=2.0 km/s by default
+        labels[(labelnames=='VTURB') | (labelnames=='VMICRO')] = 2.0
+        
+        # Deal with alpha abundances
+        # Individual alpha elements will overwrite the mean alpha below     
+        # Make sure ALPHA_H is *not* one of the labels:
+        if 'ALPHA_H' not in self._labels:
+            if 'ALPHA_H' in params.keys():
+                alpha = params['ALPHA_H']
+                alphaelem = ['O','MG','SI','S','CA','TI']                
+                for k in range(len(alphaelem)):
+                    # Only set the value if it was found in self.labels
+                    labels[labelnames==alphaelem[k]+'_H'] = alpha
+                
+        # Loop over input parameters
+        for name in params.keys():
+            # Only set the value if it was found in labelsnames
+            labels[labelnames==name] = params[name]
+            
+        return labels
+
+    def mklabels(self,args,fitparams=None):
+        """ Make labels for Payne model."""
+        # Start with initial labels and only modify the fitparams."""
+
+        # Initialize with init values
+        labels = self._initlabels.copy()
+        
+        labelnames = np.char.array(self._labels)
+        if fitparams is None:
+            fitparams = self.fitparams.copy()
+        fitnames = np.char.array(fitparams)
+        if 'FE_H' in fitparams:
+            fitfeh = True
+            fehind, = np.where(fitnames=='FE_H')
+        else:
+            fitfeh = False
+        if 'ALPHA_H' in fitparams:
+            fitalpha = True
+            alphaind, = np.where(fitnames=='ALPHA_H')
+        else:
+            fitalpha = False
+
+        # Loop over labels        
+        for k,name in enumerate(labelnames):
+            # Label is NOT fixed, change it
+            if self._label_fixed[k] == False:
+                # Alpha element
+                if self._label_alphaelem[k] == True:
+                    # ALPHA_H in FITPARAMS
+                    if fitalpha is True:
+                        labels[k] = args[alphaind[0]]
+                    elif fitfeh is True:
+                        labels[k] = args[fehind[0]]
+                    else:
+                        print('THIS SHOULD NOT HAPPEN!')
+                        import pdb; pdb.set_trace()
+                # Non-alpha element
+                elif self._label_elem[k] == True:
+                    if fitfeh is True:
+                        labels[k] = args[fehind[0]]
+                    else:
+                        print('THIS SHOULD NOT HAPPEN!')
+                        import pdb; pdb.set_trace()
+                # Other parameters
+                else:
+                    ind, = np.where(fitnames==name)
+                    labels[k] = args[ind[0]]
+        return labels
+    
+    def chisq(self,modelflux):
+        return np.sqrt( np.sum( (self._flux-modelflux)**2/self._err**2 )/len(self._flux) )
+            
+    def model(self,xx,*args):
+        # Return model Payne spectrum given the input arguments."""
+        # Convert arguments to Payne model inputs
+        #print(args)
+        nargs = len(args)
+        nfitparams = len(self.fitparams)
+        params = args[0:nfitparams]
+        vrel = args[nfitparams:]
+        npix = len(xx)
+        flux = np.zeros(npix,float)
+        cnt = 0
+        for i in range(self.nspec):
+            npx = self._speclist[i].npix*self._speclist[i].norder
+            # Create parameter list that includes RV at the end
+            params1 = list(params)+[vrel[i]]
+            paramnames1 = self.fitparams+['RV']
+            labels = self.mklabels(params1,fitparams=paramnames1)
+            m = self._modlist[i](labels)
+            if m is not None:
+                flux[cnt:cnt+npx] = m.flux.T.flatten()
+            else:
+                flux[cnt:cnt+npx] = 1e30
+            cnt += npx
+        self.nfev = 0
+        return flux
+    
+    def mkdxlim(self,fitparams):
+        return mkdxlim(fitparams)
+
+    def mkbounds(self,labels,initpars=None):
+        return mkbounds(labels,initpars=initpars)
+
+    def getstep(self,name,val=None,relstep=0.02):
+        """ Calculate step for a parameter."""
+        # It mainly deals with edge cases
+        #if val != 0.0:
+        #    step = relstep*val
+        #else:
+        if name=='TEFF':
+            step = 5.0
+        elif name=='RV':
+            step = 0.1
+        elif name=='VROT':
+            step = 0.5
+        elif name=='VMICRO':
+            step = 0.5
+        elif name.endswith('_H'):
+            step = 0.01
+        else:
+            step = 0.01
+        return step
+                
+    def jac(self,x,*args):
+        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]). """
+
+        npix = len(x)
+        npar = len(args)
+        nspec = len(self._speclist)
+        nfitparams = npar-nspec
+        
+        # Boundaries
+        lbounds = np.zeros(npar,float)+1e5
+        ubounds = np.zeros(npar,float)-1e5
+        labelbounds = self.mkbounds(self.fitparams)
+        lbounds[0:nfitparams] = labelbounds[0]
+        ubounds[0:nfitparams] = labelbounds[1]    
+        lbounds[nfitparams:] = -1000
+        ubounds[nfitparams:] = 1000    
+
+        params = args[0:nfitparams]
+        vrel = args[nfitparams:]
+        # Initialize jacobian matrix
+        jac = np.zeros((npix,npar),float)
+        
+        # Model at current values
+        f0 = self.model(x,*args)
+        # Save models/pars/chisq
+        self._all_pars.append(list(args).copy())
+        self._all_model.append(f0.copy())
+        self._all_chisq.append(self.chisq(f0))
+        chisq = np.sqrt( np.sum( (self._flux-f0)**2/self._err**2 )/len(self._flux) )
+
+        # Loop over parameters
+        parnames = self.fitparams.copy()+list('RV'+np.char.array((np.arange(nspec)+1).astype(str)))
+        for i in range(npar):
+            pars = np.array(copy.deepcopy(args))
+            if i<nfitparams:
+                step = self.getstep(self.fitparams[i])
+            # RV
+            else:
+                step = 0.1
+            # Check boundaries, if above upper boundary
+            #   go the opposite way
+            if pars[i]>ubounds[i]:
+                step *= -1
+            pars[i] += step
+            
+            if self.verbose:
+                print('--- '+str(i+1)+' '+parnames[i]+' '+str(pars[i])+' ---')
+
+            f1 = self.model(x,*pars)
+            
+            # Save models/pars/chisq
+            self._all_pars.append(list(pars).copy())
+            self._all_model.append(f1.copy())
+            self._all_chisq.append(self.chisq(f1))
+            
+            if np.sum(~np.isfinite(f1))>0:
+                print('some nans/infs')
+                import pdb; pdb.set_trace()
+
+            jac[:,i] = (f1-f0)/step
+
+        if np.sum(~np.isfinite(jac))>0:
+            print('some nans/infs')
+            import pdb; pdb.set_trace()
+
+        self._jac_array = jac.copy()   # keep a copy
+            
+        self.njac += 1
+            
+        return jac
