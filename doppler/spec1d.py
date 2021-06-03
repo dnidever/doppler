@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20200112'  # yyyymmdd                                                                                                                           
+__version__ = '20210603'  # yyyymmdd                                                                                                                           
 
 import numpy as np
 import math
@@ -62,8 +62,9 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
 
     Examples
     --------
+    .. code-block:: python
 
-    cont = continuum(spec)
+         cont = continuum(spec)
 
     """
 
@@ -136,8 +137,9 @@ def combine(speclist,wave=None,sum=False):
 
     Examples
     --------
-    
-    spec = combine([spec1,spec2,spec3])
+    .. code-block:: python
+
+        spec = combine([spec1,spec2,spec3])
 
     """
     
@@ -243,6 +245,7 @@ class Spec1D:
     # Initialize the object
     def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
+        """ Initialize Spec1D object."""
         self.flux = flux
         self.err = err
         self.wave = wave
@@ -330,10 +333,11 @@ class Spec1D:
         x : array
           The array of converted pixels.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        x = spec.wave2pix(w)
+             x = spec.wave2pix(w)
 
         """
         
@@ -367,10 +371,11 @@ class Spec1D:
         w : array
           The array of converted wavelengths.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        w = spec.pix2wave(x)
+             w = spec.pix2wave(x)
 
         """
         
@@ -397,10 +402,11 @@ class Spec1D:
         and the continuum saved in cont.  The normalized property is set to
         True.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        spec.normalize()
+             spec.normalize()
 
         """
 

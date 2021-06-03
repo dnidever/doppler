@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20200111'  # yyyymmdd                                                                                                                           
+__version__ = '20210312'  # yyyymmdd
 
 import os
 import numpy as np

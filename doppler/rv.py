@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20190622'  # yyyymmdd                                                                                                                           
+__version__ = '20210603'  # yyyymmdd                                                                                                                           
 
 import os
 #import sys, traceback

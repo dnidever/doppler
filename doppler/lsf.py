@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20200112'  # yyyymmdd                                                                                                                           
+__version__ = '20210603'  # yyyymmdd                                                                                                                           
 
 import numpy as np
 import math
@@ -55,10 +55,11 @@ def ghlsf(x,xcenter,params,nowings=False):
     lsf : array
        The 2D LSF array for the input x and xcenter arrays.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    lsf = ghlsf(x,xcenter,params)
+         lsf = ghlsf(x,xcenter,params)
 
     2015-02-26 - Written based on Nidever's code in apogeereduce - Bovy (IAS)
     Heavily modified by D.Nidever to work with Nidever's translated IDL routines Jan 2020.
@@ -163,10 +164,11 @@ def gausshermitebin(x,par,binsize=1.0):
     y : array
        The output array of the function values for x.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    y = gausshermitebin(x,par)
+         y = gausshermitebin(x,par)
 
     By D. Nidever  March/April 2010
     much of it copied from GHM_int.pro by Ana Perez
@@ -393,10 +395,11 @@ def ghwingsbin(x,par,binsize=1.0,Wproftype=1):
     y : array
       The output array of the function values for x.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    y = ghwingsbin(x,par,binsize=1,1)
+         y = ghwingsbin(x,par,binsize=1,1)
 
     By D. Nidever  April 2011
     translated to python Jan 2020
@@ -550,8 +553,9 @@ def ghlsf_bovy(x,xcenter,params,nowings=False):
 
     Examples
     --------
+    .. code-block:: python
 
-    lsf = ghlsf_bovy(x,xcenter,params)
+         lsf = ghlsf_bovy(x,xcenter,params)
 
     2015-02-26 - Written based on Nidever's code in apogeereduce - Bovy (IAS)
     """
@@ -637,7 +641,7 @@ def unpack_ghlsf_params(lsfarr):
     Parameters
     ----------
     lsfarr : array
-
+        Array of APOGEE Gauss-Hermite LSF parameters.
 
     Returns
     -------
@@ -655,8 +659,9 @@ def unpack_ghlsf_params(lsfarr):
 
     Examples
     --------
+    .. code-block:: python
 
-    params = unpack_ghlsf_params(lsfarr)
+         params = unpack_ghlsf_params(lsfarr)
 
     2015-02-15 - Written based on Nidever's code in apogeereduce - Bovy (IAS@KITP)
     """
@@ -739,6 +744,7 @@ class Lsf:
     
     # Initalize the object
     def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None,verbose=False):
+        """ Initialize Lsf object. """
         # xtype is wave or pixels.  designates what units to use BOTH for the input
         #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
@@ -791,10 +797,11 @@ class Lsf:
         x : array
           The array of converted pixels.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        x = lsf.wave2pix(w)
+             x = lsf.wave2pix(w)
 
         """
                
@@ -827,10 +834,11 @@ class Lsf:
         w : array
           The array of converted wavelengths.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        w = lsf.pix2wave(x)
+             w = lsf.pix2wave(x)
 
         """
         
@@ -865,10 +873,11 @@ class Lsf:
         fwhm : array
            The array of FWHM values.
 
-        Examples
-        --------
+        Example
+        -------
+        .. code-block:: python
 
-        fwhm = lsf.fwhm()
+             fwhm = lsf.fwhm()
 
         """
         return self.sigma(x,xtype=xtype,order=order)*2.35
@@ -932,6 +941,7 @@ class GaussianLsf(Lsf):
 
     # Initalize the object
     def __init__(self,wave=None,pars=None,xtype='wave',lsftype='Gaussian',sigma=None,verbose=False):
+        """ Initialize GaussianLsf object."""
         # xtype is wave or pixels.  designates what units to use BOTH for the input
         #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
@@ -963,9 +973,11 @@ class GaussianLsf(Lsf):
         sigma : array
             The array of Gaussian sigma values.
 
-        Examples
-        --------
-        sigma = lsf.sigma([100,200])
+        Example
+        -------
+        .. code-block:: python
+
+             sigma = lsf.sigma([100,200])
         
         """
         
@@ -1070,9 +1082,11 @@ class GaussianLsf(Lsf):
         lsf : array
            The full LSF array for the spectrum (or just one order).
 
-        Examples
-        --------
-        lsf = lsf.array()
+        Example
+        -------
+        .. code-block:: python
+
+             lsf = lsf.array()
 
         """
         
@@ -1157,9 +1171,11 @@ class GaussianLsf(Lsf):
         lsf : array
            The 2D array of LSF values.
 
-        Examples
-        --------
-        lsf = lsf.anyarray([100,200])
+        Example
+        -------
+        .. code-block:: python
+
+             lsf = lsf.anyarray([100,200])
 
         """
 
@@ -1227,6 +1243,7 @@ class GaussHermiteLsf(Lsf):
     
     # Initalize the object
     def __init__(self,wave=None,pars=None,xtype='pixel',lsftype='Gauss-Hermite',sigma=None,verbose=False):
+        """ Initialize GaussianHermiteLsf object."""
         # xtype is wave or pixels.  designates what units to use BOTH for the input
         #   arrays to use with PARS and the output units
         if wave is None and xtype=='Wave':
@@ -1258,9 +1275,11 @@ class GaussHermiteLsf(Lsf):
         sigma : array
             The array of Gaussian sigma values in units of xtype.
 
-        Examples
-        --------
-        sigma = lsf.sigma([100,200])
+        Example
+        -------
+        .. code-block:: python
+
+             sigma = lsf.sigma([100,200])
         
         """
         
@@ -1308,9 +1327,11 @@ class GaussHermiteLsf(Lsf):
         lsf : array
            The full LSF array for the spectrum (or just one order).
 
-        Examples
-        --------
-        lsf = lsf.array()
+        Example
+        -------
+        .. code-block:: python
+
+             lsf = lsf.array()
 
         """
         
@@ -1369,9 +1390,11 @@ class GaussHermiteLsf(Lsf):
         lsf : array
            The 2D array of LSF values.
 
-        Examples
-        --------
-        lsf = lsf.anyarray([100,200])
+        Example
+        -------
+        .. code-block:: python
+        
+             lsf = lsf.anyarray([100,200])
 
         """
         

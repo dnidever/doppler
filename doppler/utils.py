@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20200112'  # yyyymmdd                                                                                                                           
+__version__ = '20210603'  # yyyymmdd                                                                                                                           
 
 import os
 import numpy as np
@@ -45,9 +45,11 @@ def w2p(dispersion,w,extrapolate=True):
     x : array
       Array of converted pixel values.
 
-    Examples
-    --------
-    x = w2p(disp,w)
+    Example
+    -------
+    .. code-block:: python
+
+         x = w2p(disp,w)
 
     """
     x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
@@ -95,9 +97,11 @@ def p2w(dispersion,x,extrapolate=True):
     w : array
       Array of converted wavelengths.
 
-    Examples
-    --------
-    w = p2w(disp,x)
+    Example
+    -------
+    .. code-block:: python
+
+         w = p2w(disp,x)
 
     """
 
@@ -137,9 +141,11 @@ def sparsify(lsf):
     out : sparse matrix
          The sparse matrix version of lsf.
 
-    Usage
-    -----
-    slsf = sparsify(lsf)
+    Example
+    -------
+    .. code-block:: python
+
+         slsf = sparsify(lsf)
 
     From J.Bovy's lsf.py APOGEE code.
     """
@@ -174,9 +180,11 @@ def convolve_sparse(spec,lsf):
     out : array
          The new flux array convolved with LSF.
 
-    Usage
-    -----
-    >>>out = convolve_sparse(spec,lsf)
+    Example
+    -------
+    .. code-block:: python
+
+         out = convolve_sparse(spec,lsf)
 
     From J.Bovy's lsf.py APOGEE code.
     """
@@ -201,6 +209,28 @@ def convolve_sparse(spec,lsf):
     return out
 
 def gausskernel(wave,vgauss):
+    """
+    Creates a 2D Gaussian kernel for an input wavelength array.
+
+    Parameters
+    ----------
+    wave : numpy array
+       Input 1D wavelength array for which to create the Gaussian kernel.
+    vgauss : float
+       The input Gaussian sigma velocity in km/s.
+
+    Returns
+    -------
+    kernel : numpy array
+       The output 2D Gaussian kernel.
+
+    Example
+    -------
+    .. code-block:: python
+
+         kernel = gausskernel(wave,10.0)
+
+    """
     # Create a 2D Gaussian broadening kernel array
     npix = len(np.atleast_1d(wave))
     dw = np.diff(wave)
@@ -228,6 +258,32 @@ def gausskernel(wave,vgauss):
 
 
 def rotkernel(wave,vsini,eps=0.6):
+    """
+    Creates a 2D rotational kernel for an input wavelength array.
+
+    Parameters
+    ----------
+    wave : numpy array
+       Input 1D wavelength array for which to create the rotational kernel.
+    vsini : float
+       The rotational velocity in km/s.
+    eps : float, optional
+       The linear limb-darkening coefficient (epsilon, 0-1) to use for the
+       rotational profile.  Default is 0.6.
+
+    Returns
+    -------
+    kernel : numpy array
+       The output 2D rotational kernel.
+
+    Example
+    -------
+    .. code-block:: python
+
+         kernel = rotkernel(wave,10.0)
+
+    """
+
     # Create a 2D Rotational broadening kernel array
 
     # G(dlambda) = 2*(1-eps)*sqrt(1-(dlambda/dlambdaL)^2) + 0.5*pi*eps*(1-(dlambda/dlambdaL)^2)
@@ -264,7 +320,7 @@ def rotkernel(wave,vsini,eps=0.6):
 
 
 def check_rotkernel(wave,vsini,eps=0.6):
-    """ Check if the rotational kernel will have any effect."""
+    """ Helper function to check if the rotational kernel will have any effect."""
     # it will return True if it will have an effect and False if not
     kernel = rotkernel(wave,vsini,eps=eps)
     if kernel.shape[1]==3 and np.sum(kernel[:,1]>0.99)==kernel.shape[0]:
@@ -302,6 +358,36 @@ def check_rotkernel(wave,vsini,eps=0.6):
 
 # Rotational and Gaussian broaden a spectrum
 def broaden(wave,flux,vgauss=None,vsini=None):
+    """
+    Broaden a spectrum with Gaussian and Rotational broadening.
+
+    Parameters
+    ----------
+    wave : numpy array
+       Wavelength array of the spectrum.
+    flux : numpy array
+       Flux array of the spectrum.
+    vgauss : float
+       The input Gaussian sigma velocity in km/s. Optional.
+    vsini : float
+       The rotational velocity in km/s.  Optional.
+    eps : float, optional
+       The linear limb-darkening coefficient (epsilon, 0-1) to use for the
+       rotational profile.  Default is 0.6.
+
+    Returns
+    -------
+    oflux : numpy array
+       The output broadened flux array.
+
+    Example
+    -------
+    .. code-block:: python
+
+         oflux = broaden(wave,flux,vgauss=10.0,vsini=20.0)
+
+    """
+    
     # Create the 2D broadening kernel array
     npix = len(wave)
     # Are the wavelengths logarithmically spaced
@@ -388,9 +474,11 @@ def make_logwave_scale(wave,vel=1000.0):
     fwave : array
          New logarithmic wavelength array.
 
-    Usage
-    -----
-    >>>fwave = make_logwave_scale(wave)
+    Example
+    -------
+    .. code-block:: python
+
+         fwave = make_logwave_scale(wave)
 
     """
 
@@ -603,6 +691,27 @@ def maskoutliers(spec,nsig=5,verbose=False):
     """
     Mask large positive outliers and negative flux pixels in the spectrum.
 
+    Parameters
+    ----------
+    spec : Spec1D object
+       Observed spectrum to mask outliers on.
+    nsig : int, optional
+       Number of standard deviations to use for the outlier rejection.
+       Default is 5.0.
+    verbose : boolean, optional
+       Verbose output.  Default is False.
+
+    Returns
+    -------
+    spec2 : Spec1D object
+       Spectrum with outliers masked.
+
+    Example
+    -------
+    .. code-block:: python
+
+         spec = maskoutliers(spec,nsig=5)
+
     """
 
     spec2 = spec.copy()
@@ -650,6 +759,29 @@ def maskoutliers(spec,nsig=5,verbose=False):
 def maskdiscrepant(spec,model,nsig=10,verbose=False):
     """
     Mask pixels that are discrepant when compared to a model.
+
+    Parameters
+    ----------
+    spec : Spec1D object
+       Observed spectrum for which to mask discrepant values.
+    model : Spec1D object
+       Reference/model spectrum to use to find discrepant values.
+    nsig : int, optional
+       Number of standard deviations to use for the discrepant values.
+       Default is 10.0.
+    verbose : boolean, optional
+       Verbose output.  Default is False.
+
+    Returns
+    -------
+    spec2 : Spec1D object
+       Spectrum with discrepant values masked.
+
+    Example
+    -------
+    .. code-block:: python
+
+         spec = maskdiscrepant(spec,nsig=5)
 
     """
 

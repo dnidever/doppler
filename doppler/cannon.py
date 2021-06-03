@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@montana.edu>'
-__version__ = '20200112'  # yyyymmdd
+__version__ = '20210603'  # yyyymmdd
 
 import os
 import numpy as np
@@ -449,7 +449,7 @@ class DopplerCannonModel(object):
     @property
     def has_continuum(self):
         """ Does the model have continuum parameters."""
-        return hasattr(self._data[0],'continuum'):
+        return hasattr(self._data[0],'continuum')
 
     @property
     def ranges(self):
