@@ -1393,6 +1393,8 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     nallparams = nfitparams+nfixparams
     
     # Get initial estimates
+    #  this does not need to include initial guess for all fitparams
+    #  that's taken care of below
     if initpar is None:
         initpar = {'TEFF':5000.0, 'LOGG':3.5, 'FE_H':0.0, 'ALPHA_H':0.0, 'RV':0.0}
     else:
@@ -1670,7 +1672,10 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
 
     # Fitting parameters
     if fitparams is None:
-        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV'] 
+        fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
+    else:
+        fitparams = [f.upper() for f in fitparams]
+    if verbose: print('Fitting: '+', '.join(fitparams))        
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
     
@@ -1702,6 +1707,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     lspars = lsout['pars'][0]
     lsperror = lsout['parerr'][0]    
 
+    
     # Step 5: Run fine grid in RV, forward modeling
     #----------------------------------------------
     maxv = 10.0
@@ -1987,6 +1993,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     # Fitting parameters, excluding RV
     if fitparams is None:
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H']
+    if verbose: print('Fitting: '+', '.join(fitparams))
     # Make sure RV is excluded, that is handled separately
     fitparams = np.char.array(fitparams)
     fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')==-1])

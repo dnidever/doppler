@@ -1463,7 +1463,7 @@ class PayneSpecFitter:
                 
         # Loop over input parameters
         for name in params.keys():
-            # Only set the value if it was found in labelsnames
+            # Only set the value if it was found in labelnames
             labels[labelnames==name] = params[name]
             
         return labels
@@ -1533,6 +1533,17 @@ class PayneSpecFitter:
                 else:
                     ind, = np.where(fitnames==name)
                     labels[k] = args[ind[0]]
+
+        # Add values for individual elements we are fitting (not FE_H or ALPHA_H)
+        #   The code above misses individual elements that are being fit
+        gdelem, = np.where(fitnames.endswith('_H') & (fitnames.find('FE_H')==-1) &
+                           (fitnames.find('ALPHA_H')==-1))
+        ngdelem = len(gdelem)
+        for k in range(ngdelem):
+            name = fitnames[gdelem[k]]
+            ind, = np.where(labelnames==name)
+            labels[ind[0]] = args[gdelem[k]]
+        
         return labels
     
     def chisq(self,model):
@@ -1728,7 +1739,7 @@ class PayneSpecFitter:
                 import pdb; pdb.set_trace()
 
             jac[:,i] = (f1-f0)/step
-
+            
         if np.sum(~np.isfinite(jac))>0:
             print('some nans/infs')
             import pdb; pdb.set_trace()
@@ -1923,7 +1934,6 @@ class PayneMultiSpecFitter:
         if 'FE_H' not in list(params.keys()):
             params['FE_H'] = 0.0            
             
-            
         # Initializing the labels array
         nlabels = len(self._labels)
         labels = np.zeros(nlabels,float)
@@ -2017,6 +2027,17 @@ class PayneMultiSpecFitter:
                 else:
                     ind, = np.where(fitnames==name)
                     labels[k] = args[ind[0]]
+
+        # Add values for individual elements we are fitting (not FE_H or ALPHA_H)
+        #   The code above misses individual elements that are being fit
+        gdelem, = np.where(fitnames.endswith('_H') & (fitnames.find('FE_H')==-1) &
+                           (fitnames.find('ALPHA_H')==-1))
+        ngdelem = len(gdelem)
+        for k in range(ngdelem):
+            name = fitnames[gdelem[k]]
+            ind, = np.where(labelnames==name)
+            labels[ind[0]] = args[gdelem[k]]
+                    
         return labels
     
     def chisq(self,modelflux):
@@ -2212,6 +2233,7 @@ class PayneMultiSpecFitter:
         chisq = np.sqrt( np.sum( (self._flux-f0)**2/self._err**2 )/len(self._flux) )
 
         # Loop over parameters
+        #  stellar parameters and RVs for each spectrum
         parnames = self.fitparams.copy()+list('RV'+np.char.array((np.arange(nspec)+1).astype(str)))
         for i in range(npar):
             pars = np.array(copy.deepcopy(args))
@@ -2227,7 +2249,7 @@ class PayneMultiSpecFitter:
             pars[i] += step
             
             if self.verbose:
-                print('--- '+str(i+1)+' '+parnames[i]+' '+str(pars[i])+' ---')
+                print('--- '+str(i+1)+' '+parnames[i]+' '+str(step)+' '+str(pars[i])+' ---')
 
             f1 = self.model(x,*pars)
             
@@ -2241,7 +2263,7 @@ class PayneMultiSpecFitter:
                 import pdb; pdb.set_trace()
 
             jac[:,i] = (f1-f0)/step
-
+            
         if np.sum(~np.isfinite(jac))>0:
             print('some nans/infs')
             import pdb; pdb.set_trace()
