@@ -65,7 +65,20 @@ def mute():
 
     
 class DopplerCannonModelSet(object):
+    """
+    A class to wrap a set of Cannon models to be used by Doppler.
+    Generally each Cannon model covers a different region of
+    parameter space.
+
+    Parameters
+    ----------
+    model : list of Cannon models
+      List of Cannon models to use.
+
+    """
+    
     def __init__(self,models):
+        """ Initialize DopplerCannonModelSet object."""
         if type(models) is list:
             self.nmodel = len(models)
             self._data = models
@@ -79,6 +92,7 @@ class DopplerCannonModelSet(object):
         
     @property
     def has_continuum(self):
+        """ Does the model have continuum parameters."""
         return self._data[0].has_continuum
 
     def get_best_model(self,pars):
@@ -94,10 +108,53 @@ class DopplerCannonModelSet(object):
 
     @property
     def dispersion(self):
+        """ Wavelength array."""
         return self._data[0].dispersion
     
     def __call__(self,pars=None,teff=None,logg=None,feh=None,order=None,norm=True,
                  fluxonly=False,wave=None,rv=None):
+        """
+        Create the Cannon model spectrum given the input label values.  The appropriate
+        Cannon model from the set is used.
+
+        Parameters
+        ----------
+        pars : array, optional
+            Array or list of Cannon parameters/labels.  This is normally [teff,logg,feh].
+            If pars is not input then teff, logg, and feh need to be input separately.
+        teff : float, optional
+            Temperature value.  Used if pars is not input.
+        logg : float, optional
+            Surface gravity value.  Used if pars is not input.
+        feh : float, optional
+            Metallicity value.  Used if pars is not input.
+        order : int, optional
+            Which spectral order to use.  Default is to return all.
+        norm : boolean, optional
+            Return a normalized spectrum (norm=True, default), or a spectrum with
+            the flux continuum included (norm=False).
+        fluxonly : boolean, optional
+            Only return the flux array.  Default is to return a Spec1D object.        
+        wave : numpy array, optional
+            Input wavelength array to use for the output Cannon model.  Default is to use the full
+            wavelength range or the observed spectrum wavelengths if the model is "prepared".
+        rv : float, optional
+            Doppler shift to apply to the Cannon model (in km/s).  Default is no Doppler shift.
+
+        Returns
+        -------
+        mspec : numpy array or Spec1D object
+            The output model Cannon spectrum.  If fluxonly=True then only the flux array is returned,
+            otherwise a Spec1D object is returned.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model(labels)
+
+        """
+        
         # This will return a model given a set of parameters
         if pars is None:
             pars = np.array([teff,logg,feh])
@@ -109,6 +166,39 @@ class DopplerCannonModelSet(object):
         return model(pars,order=order,norm=norm,fluxonly=fluxonly,wave=wave,rv=rv)
 
     def model(self,spec,pars=None,teff=None,logg=None,feh=None,rv=None):
+        """
+        This will return a Cannon model given a set of parameters and prepared for an
+        input observed spectrum.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+          Observed spectrum to prepare the model with.
+        pars : array, optional
+            Array or list of Cannon parameters/labels.  This is normally [teff,logg,feh].
+            If pars is not input then teff, logg, and feh need to be input separately.
+        teff : float, optional
+            Temperature value.  Used if pars is not input.
+        logg : float, optional
+            Surface gravity value.  Used if pars is not input.
+        feh : float, optional
+            Metallicity value.  Used if pars is not input.
+        rv : float, optional
+            Doppler shift to apply to the Cannon model (in km/s).  Default is no Doppler shift.
+
+        Returns
+        -------
+        mspec : Spec1D object
+            The output model Cannon spectrum.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model.model(labels)
+
+        """
+        
         # This will return a model given a set of parameters, similar to model_spectrum()
         if rv is None: rv=0.0
         if pars is None:
@@ -167,6 +257,26 @@ class DopplerCannonModelSet(object):
         return mspec
 
     def test(self,spec):
+        """
+        Fit the Cannon model label values for a given input spectrum.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+           The observed spectrum to fit.
+
+        Results
+        -------
+        out : list
+           List of best-fit label values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = model.test(spec)        
+
+        """
         # fit a spectrum across all the models, return the best one
 
         if spec.normalized is False:
@@ -218,6 +328,32 @@ class DopplerCannonModelSet(object):
             raise StopIteration
 
     def prepare(self,spec):
+        """
+        Prepare the model using an observed spectrum.  This keeps a copy of the spectrum,
+        makes sure the model wavevac matches the observed spectrum value, and convolves
+        the Cannon model with the observed spectrum's LSF.
+
+        After a DopplerCannonModelSet has been prepared, then using __call__ will automatically
+        return a Cannon model spectrum that has been convolved with the observed spectrum's
+        LSF and on its wavelength array.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+            The observed spectrum to prepare with.
+
+        Returns
+        -------
+        The model object is modified in place.
+
+        Example
+        -------
+
+        .. code-block:: python
+             
+             model.prepare(spec)
+        """
+        
         # Loop through the models and prepare them
         self._original_model = self.copy()
         for i,m in enumerate(self):
@@ -227,6 +363,7 @@ class DopplerCannonModelSet(object):
 
     @property
     def prepared(self):
+        """ Has the model been prepared with an observd spectrum."""
         return self._prepared
 
     @prepared.setter
@@ -246,6 +383,7 @@ class DopplerCannonModelSet(object):
         self.flattened = False
             
     def interp(self,wave):
+        """ Interpolate model onto a new wavelength grid. """
         # Interpolate onto a new wavelength scale
         models = []
         for i,m in enumerate(self):
@@ -255,6 +393,7 @@ class DopplerCannonModelSet(object):
         return new
     
     def flatten(self):
+        """ Returns the model with multiple orders flattened and stacked into one long model """
         # This flattens multiple orders and stacks them into one long model
         if self[0].norder==1:
             return self.copy()
@@ -263,8 +402,9 @@ class DopplerCannonModelSet(object):
             models.append(m.flatten())
         new = DopplerCannonModelSet(model)
         return new
-    
+
     def copy(self):
+        """ Make a copy of the DopplerCannonModel."""
         # Make a copy of this DopplerCannonModelSet
         models = []
         for i,m in enumerate(self):
@@ -272,15 +412,27 @@ class DopplerCannonModelSet(object):
         new = DopplerCannonModelSet(models)
         return new
 
-    def read(files):
+    @classmethod
+    def read(cls,files):
+        """ Read a list of Cannon model files."""
         models = load_cannon_model(files)
         return DopplerCannonModelSet(models)
     
 
     
 class DopplerCannonModel(object):
+    """
+    A class to wrap a Cannon model to be used by Doppler.
 
+    Parameters
+    ----------
+    model : Cannon model
+      The Cannon model to use.
+
+    """
+    
     def __init__(self,model):
+        """ Initialize DopplerCannonModel object."""
         if type(model) is list:
             if len(model)>1:
                 raise ValueError("Can only input a single Cannon model")
@@ -296,20 +448,54 @@ class DopplerCannonModel(object):
         
     @property
     def has_continuum(self):
-        if hasattr(self._data[0],'continuum'):
-            return True
-        else:
-            return False
+        """ Does the model have continuum parameters."""
+        return hasattr(self._data[0],'continuum'):
 
     @property
     def ranges(self):
+        """ Parameter ranges."""
         return self._data[0].ranges
 
     @property
     def dispersion(self,order=0):
+        """ Wavelength array."""
         return self._data[order].dispersion
         
     def __call__(self,labels,order=None,norm=True,fluxonly=False,wave=None,rv=None):
+        """
+        Create the Cannon model spectrum given the input label values.
+
+        Parameters
+        ----------
+        labels : list or array
+            List/array or dictionary of input labels values to use.
+        order : int, optional
+            Which spectral order to use.  Default is to return all.
+        norm : boolean, optional
+            Return a normalized spectrum (norm=True, default), or a spectrum with
+            the flux continuum included (norm=False).
+        fluxonly : boolean, optional
+            Only return the flux array.  Default is to return a Spec1D object.        
+        wave : numpy array, optional
+            Input wavelength array to use for the output Cannon model.  Default is to use the full
+            wavelength range or the observed spectrum wavelengths if the model is "prepared".
+        rv : float, optional
+            Doppler shift to apply to the Cannon model (in km/s).  Default is no Doppler shift.
+
+        Returns
+        -------
+        mspec : numpy array or Spec1D object
+            The output model Cannon spectrum.  If fluxonly=True then only the flux array is returned,
+            otherwise a Spec1D object is returned.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model(labels)
+
+        """
+        
         # Default is to return all orders
         # order can also be a list or array of orders
         # Orders to loop over
@@ -397,6 +583,26 @@ class DopplerCannonModel(object):
         return mspec
 
     def test(self,spec):
+        """
+        Fit the Cannon model label values for a given input spectrum.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+           The observed spectrum to fit.
+
+        Results
+        -------
+        out : list
+           List of best-fit label values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = model.test(spec)        
+
+        """
         # Fit a spectrum using this Cannon Model
         # Outputs: labels, cov, meta
         
@@ -434,6 +640,32 @@ class DopplerCannonModel(object):
         return self._data[index]
     
     def prepare(self,spec):
+        """
+        Prepare the model using an observed spectrum.  This keeps a copy of the spectrum,
+        makes sure the model wavevac matches the observed spectrum value, and convolves
+        the Cannon model with the observed spectrum's LSF.
+
+        After a DopplerCannonModel has been prepared, then using __call__ will automatically
+        return a Cannon model spectrum that has been convolved with the observed spectrum's
+        LSF and on its wavelength array.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+            The observed spectrum to prepare with.
+
+        Returns
+        -------
+        The model object is modified in place.
+
+        Example
+        -------
+
+        .. code-block:: python
+             
+             model.prepare(spec)
+        """
+        
         # prepare the models
         # already prepared, unprepare, then prepare again
         if self.prepare is True:
@@ -463,6 +695,7 @@ class DopplerCannonModel(object):
 
     @property
     def prepared(self):
+        """ Has the model been prepared with an observd spectrum."""
         return self._prepared
 
     @prepared.setter
@@ -472,7 +705,7 @@ class DopplerCannonModel(object):
             self.unprepare()
         
     def unprepare(self):
-        """ Set back to original."""
+        """ Set back to original model."""
         # Copy the original model back
         self._data = self._original_model._data.copy()
         self._data_nointerp = None
@@ -482,6 +715,7 @@ class DopplerCannonModel(object):
         self.flattened = False
     
     def interp(self,wave):
+        """ Interpolate model onto a new wavelength grid. """
         # Interpolate model onto new wavelength grid
         if wave.ndim==1:
             wnorder = 1
@@ -506,6 +740,7 @@ class DopplerCannonModel(object):
         return new
             
     def flatten(self):
+        """ Returns the model with multiple orders flattened and stacked into one long model """
         # This flattens multiple orders and stacks then into one long model
         # THIS REMOVES THE _DATA_NOINTERP INFORMATION
         if self.norder==1:
@@ -522,6 +757,7 @@ class DopplerCannonModel(object):
         return new
 
     def copy(self):
+        """ Make a copy of the DopplerCannonModel."""
         # Make copies of the _data list of cannon models
         new_data = []
         for d in self._data:
@@ -538,7 +774,9 @@ class DopplerCannonModel(object):
         new.flattened = self.flattened
         return new
     
-    def read(mfile):
+    @classmethod
+    def read(cls,mfile):
+        """ Read a Cannon model file."""
         model = load_cannon_model(mfile)
         return DopplerCannonModel(model)
 
@@ -602,7 +840,26 @@ def readfromdata(state):
 
 
 def hstack(models):
-    """ Stack Cannon models.  Basically combine all of the pixels right next to each other."""
+    """
+    Stack Cannon models.  Basically combine all of the pixels right next to each other.
+
+    Parameters
+    ----------
+    models : list of Cannon models
+       List of Cannon models to stack
+
+    Returns
+    -------
+    omodel : Cannon model
+       Output Cannon model with input Cannon pixel values next to each other.
+
+    Example
+    -------
+    .. code-block:: python
+             
+         omodel = hstack(models)
+
+    """
     nmodels = dln.size(models)
     if nmodels==1: return models
 
@@ -677,14 +934,21 @@ def load_cannon_model(files):
     """
     Load a single (or list of) Cannon models from file and manipulate as needed.
 
+    Parameters
+    ----------
+    files : list
+       List of Cannon model files to load.
+
     Returns
     -------
     files : string
        File name (or list of filenames) of Cannon models to load.
 
-    Examples
-    --------
-    model = load_cannon_model()
+    Example
+    -------
+    .. code-block:: python
+
+         model = load_cannon_model(files)
 
     """
 
@@ -720,30 +984,6 @@ def load_cannon_model(files):
     return model
 
 
-## Load the cannon model
-#def load_all_cannon_models():
-#    """
-#    Load all Cannon models from the Doppler data/ directory.
-#
-#    Returns
-#    -------
-#    models : list of Cannon models
-#       List of all Cannon models in the Doppler data/ directory.
-#
-#    Examples
-#    --------
-#    models = load_all_cannon_models()
-#
-#    """
-#    
-#    datadir = utils.datadir()
-#    files = glob(datadir+'cannongrid*.pkl')
-#    nfiles = len(files)
-#    if nfiles==0:
-#        raise Exception("No Cannon model files in "+datadir)
-#    models = load_cannon_model(files)
-#    return models
-
 
 # Load all cannon models and return as DopplerCannonModelSet.
 def load_models():
@@ -759,7 +999,9 @@ def load_models():
 
     Examples
     --------
-    models = load_models()
+    .. code-block:: python
+
+         models = load_models()
 
     """    
     datadir = utils.datadir()
@@ -791,8 +1033,9 @@ def get_best_cannon_model(models,pars):
 
     Examples
     --------
+    .. code-block:: python
 
-    m = get_best_cannon_models(models,pars)
+         m = get_best_cannon_models(models,pars)
 
     """
     
@@ -839,10 +1082,11 @@ def trim_cannon_model(model,x0=None,x1=None,w0=None,w1=None):
     omodel : Cannon model(s)
        The trimmed Cannon model(s).
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    omodel = trim_cannon_model(model,100,1000)
+         omodel = trim_cannon_model(model,100,1000)
 
     """
     
@@ -898,10 +1142,11 @@ def rebin_cannon_model(model,binsize):
     omodel : Cannon model or list
        The rebinned Cannon model or list of Cannon models.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    omodel = rebin_cannon_model(model,4)
+         omodel = rebin_cannon_model(model,4)
 
     """
     
@@ -960,10 +1205,11 @@ def interp_cannon_model(model,xout=None,wout=None):
     omodel : Cannon model or list
       The interpolated Cannon model or list of models.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    omodel = interp_cannon_model(model,wout)
+         omodel = interp_cannon_model(model,wout)
 
     """
 
@@ -1038,10 +1284,11 @@ def convolve_cannon_model(model,lsf):
     omodel : Cannon model or list
       The convolved Cannon model or list of models.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    omodel = convolve_cannon_model(model,lsf)
+         omodel = convolve_cannon_model(model,lsf)
 
     """
     
@@ -1116,10 +1363,11 @@ def prepare_cannon_model(model,spec,dointerp=False):
     omodel : Cannon model or list
         The Cannon model or list of models prepared for "spec".
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    omodel = prepare_cannon_model(model,spec)
+         omodel = prepare_cannon_model(model,spec)
 
     """
     
@@ -1277,10 +1525,11 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
       specified stellar parameters and RV prepared for the input "spec"
       observed spectrum.
 
-    Examples
-    --------
+    Example
+    -------
+    .. code-block:: python
 
-    mspec = model_spectrum(models,spec,teff=4500.0,logg=4.0,feh=-1.2,rv=55.0)
+         mspec = model_spectrum(models,spec,teff=4500.0,logg=4.0,feh=-1.2,rv=55.0)
 
     """
     

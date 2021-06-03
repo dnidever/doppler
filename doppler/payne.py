@@ -7,9 +7,9 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@montana.edu>'
-__version__ = '20200815'  # yyyymmdd
+__version__ = '20210603'  # yyyymmdd
 
-# Most of the software is from Yuan-Sen Ting's The_Payne repository
+# Some of the software is from Yuan-Sen Ting's The_Payne repository
 # https://github.com/tingyuansen/The_Payne
 
 import os
@@ -20,8 +20,6 @@ from scipy.interpolate import interp1d
 from dlnpyutils import (utils as dln, bindata, astro)
 from .spec1d import Spec1D
 from . import utils
-#from doppler.spec1d import Spec1D
-#from doppler import utils
 import copy
 import logging
 import contextlib, io, sys
