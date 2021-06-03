@@ -122,7 +122,41 @@ def tweakcontinuum(spec,model):
 
 
 def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=True,figsize=10,ispayne=False):
-    """ Make diagnostic figure."""
+    """
+    Make diagnostic figure.
+
+    Parameters
+    ----------
+    figfile : str
+       Output figure filename.
+    spec : Spec1D object
+       The observed spectrum used for the fitting (normalized, masked and tweaked).
+    fmodel : Spec1D object
+       The best-fitting model (Cannon or Payne) spectrum.
+    out : numpy structured array
+       Catalog of best-fitting values to use for the annotation.
+    annotlabels : list, optional
+       The list of labels to use for the annotation.  Default is ['teff','logg','feh','vrel'].
+    original : Spec1D object, optional
+       The original but normalized spectrum.  Not tweaked or masked.
+    verbose : boolean, optional
+       Verbose output.  Default is True.
+    figsize : float, optional
+       Figure size to use.  Default is 10 inches.
+    ispayne: boolean, optional
+       Is this a Payne model.  Default is False.
+
+    Returns
+    -------
+    Figure is saved to figfile.
+
+    Example
+    -------
+    .. code-block:: python
+           
+         specfigure(figfile,specm,fmodel,out,original=orig,verbose=True,ispayne=True,annotlabels=annotlabels)
+
+    """
     if annotlabels is None:
         annotlabels = ['teff','logg','feh','vrel']
     #import matplotlib
@@ -534,8 +568,9 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
 
     Examples
     --------
+    .. code-block:: python
 
-    out = apxcorr(wave,tempspec,spec,err)
+         out = apxcorr(wave,tempspec,spec,err)
     
     """
 
@@ -789,8 +824,9 @@ def normspec(spec=None,ncorder=6,fixbadpix=True,noerrcorr=False,
 
     Examples
     --------
+    .. code-block:: python
 
-    nspec,cont,masked = normspec(spec)
+         nspec,cont,masked = normspec(spec)
 
     """
 
@@ -960,6 +996,12 @@ def spec_resid(pars,wave,flux,err,models,spec):
     -------
     resid : array
          Array of residuals between the observed flux array and the Cannon model spectrum.
+
+    Example
+    -------
+    .. code-block:: python
+
+         resid = spec_resid(pars,wave,flux,err,models,spec)
 
     """
     #m = cannon.model_spectrum(models,spec,teff=pars[0],logg=pars[1],feh=pars[2],rv=pars[3])
@@ -1158,7 +1200,8 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
     # Step 1: Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    spec = utils.specprep(spec)
+    if spec.normalized is False:
+        spec = utils.specprep(spec)
 
     # Step 2: Load and prepare the Cannon models
     #-------------------------------------------
@@ -1330,7 +1373,8 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    #spec = utils.specprep(spec)
+    if spec.normalized is False:
+        spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
@@ -1479,7 +1523,8 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    spec = utils.specprep(spec)
+    if spec.normalized is False:
+        spec = utils.specprep(spec)
 
     # Fitting parameters
     if fitparams is None:
@@ -1708,9 +1753,6 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         
     # Construct the output
     #---------------------
-    #rvind, = np.where(lsout['labels'][0]=='RV')
-    #vrel = lsout['pars'][0][rvind[0]]
-    #vrelerr = lsout['parerr'][0][rvind[0]]
     vrel = fpars[rvind]
     vrelerr = fperror[rvind]
     bc = specm.barycorr()
@@ -2027,13 +2069,6 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             # at least need BC
             info['bc'][i] = speclist[i].barycorr()
         if verbose is True: print(' ')
-
-        
-        #import psutil
-        #v = psutil.virtual_memory()
-        #process = psutil.Process(os.getpid())
-        #print('%6.1f Percent of memory used. %6.1f GB available.  Process is using %6.2f GB of memory.' %
-        #      (v.percent,v.available/1e9,process.memory_info()[0]/1e9))
 
         
     # Step 2) Find weighted mean labels
@@ -2482,7 +2517,8 @@ def fit_lsq_cannon(spec,models=None,initpar=None,verbose=False):
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    spec = utils.specprep(spec)
+    if spec.normalized is False:
+        spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
@@ -2582,7 +2618,8 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
     # Prepare the spectrum
     #-----------------------------
     # normalize and mask spectrum
-    spec = utils.specprep(spec)
+    if spec.normalized is False:
+        spec = utils.specprep(spec)
 
     # Load and prepare the Cannon models
     #-------------------------------------------
