@@ -37,6 +37,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
+import subprocess
 
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -162,9 +163,9 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
             annotarr = [snr]
             for k,name in enumerate(annotlabels):
                 fmt += r''+name+'=%5.1f$\pm$%5.1f  '
-                annotarr += [out[name][0],out[name+'err'][0]]
+                annotarr += [dln.first_el(out[name]),dln.first_el(out[name+'err'])]
             fmt += r' chisq=%5.2f'
-            annotarr += [out['chisq'][0]]
+            annotarr += [dln.first_el(out['chisq'])]
             ax.annotate(fmt % tuple(annotarr), xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
             
     # Multi-order plot
@@ -204,9 +205,9 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
                     annotarr = [snr]
                     for k,name in enumerate(annotlabels):
                         fmt += r''+name+'=%5.1f$\pm$%5.1f  '
-                        annotarr += [out[name][0],out[name+'err'][0]]
+                        annotarr += [dln.first_el(out[name]),dln.first_el(out[name+'err'])]
                     fmt += r' chisq=%5.2f'
-                    annotarr += [out['chisq'][0]]
+                    annotarr += [dln.first_el(out['chisq'])]
                     ax[i].annotate(fmt % tuple(annotarr), xy=(np.mean(xr), yr[0]+dln.valrange(yr)*0.05),ha='center')
     plt.savefig(figfile,bbox_inches='tight')
     plt.close(fig)
@@ -955,7 +956,7 @@ def spec_resid(pars,wave,flux,err,models,spec):
     spec : Spec1D
         The observed spectrum.  Needed to run cannon.model_spectrum().
 
-    Outputs
+    Returns
     -------
     resid : array
          Array of residuals between the observed flux array and the Cannon model spectrum.
@@ -970,7 +971,36 @@ def spec_resid(pars,wave,flux,err,models,spec):
 
 
 def printpars(pars,parerr=None,names=None,units=None):
-    """ Print out the 3/4 parameters."""
+    """
+    Print out the parameters/labels with optionally uncertainties and units.
+    One parameter per line of output.
+
+    Parameters
+    ----------
+    pars : list or numpy array
+       List or array of parameter values to print out.  The default is
+         TEFF, LOGG, FE_H and VREL.
+    parerr : list or numpy array, optional
+       List or array of parameter uncertainties to print out. No uncertainties
+         are printed by default.
+    names : list, optional
+       List of parameter names.  The default is ['Teff','logg','[Fe/H]','Vrel'] if
+        4 parameters are input or ['Teff','logg','[Fe/H]','[alpha/Fe]','Vrel'] if
+        5 parameteres are input.
+    units : list, optional
+       List of parameter units.
+
+    Returns
+    -------
+    Parameter values are printed to the screen, one parameter per line.
+
+    Example
+    -------
+    .. code-block:: python
+
+         printpars(pars,parerr,names,names)
+
+    """
 
     if names is None:
         if len(pars)==4:
@@ -1013,7 +1043,7 @@ def emcee_lnlike_payne(theta, x, y, yerr, sp):
     sp : PayneSpecFitter
        Special class for fitting Payne models to data.
 
-    Outputs
+    Returns
     -------
     lnlike : float
          The log likelihood value.
@@ -1037,7 +1067,7 @@ def emcee_lnprior_payne(theta, sp):
     sp : PayneSpecFitter
        Special class for fitting Payne models to data.
 
-    Outputs
+    Returns
     -------
     lnprior : float
          The log prior value.
@@ -1070,7 +1100,7 @@ def emcee_lnprob_payne(theta, x, y, yerr, sp):
     sp : PayneSpecFitter
        Special class for fitting Payne models to data.
 
-    Outputs
+    Returns
     -------
     lnprob : float
          The log probability value, which is the sum of the log prior and the
@@ -1114,7 +1144,6 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
     .. code-block:: python
 
          out, bmodel = fit_xcorrgrid_payne(spec)
-
 
     """
     
@@ -1571,7 +1600,6 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     specm : Spec1D object
          The observed spectrum with discrepant and outlier pixels masked.
 
-
     Example
     -------
 
@@ -1852,7 +1880,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     ----------
     speclist : Spec1D object
          The observed spectrum to match.
-    model: Payne model, optional
+    model : Payne model, optional
          Payne model to use.  The default is to load the Payne model
          in the data/ directory and use those.
     fitparams : list of labels, optional
@@ -2067,7 +2095,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         printpars(stelpars1,names=fitparams)
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio1,verr1))
         print('Vscatter =  %6.3f km/s' % vscatter1)
-        print(vhelio1)
+        print('Vhelio values = ',vhelio1)
 
         
     # Step 4) Tweak continua and remove outlies
@@ -2159,10 +2187,61 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
         sumstr[name] = stelpars2[k]
         sumstr[name+'err'] = stelparerr2[k]
     sumstr['chisq'] = totchisq
-        
+
+    # Save the best-fitting plots
+    if saveplot is True:
+        if verbose is True:
+            print('')
+            print('Making best-fit plots for each spectrum')
+        pdfnames = []
+        specfiles = [s.filename for s in speclist]
+        for i,f in enumerate(specfiles):
+            # Figure the output figure filename
+            fdir,base,ext = utils.splitfilename(speclist[i].filename)
+            figname = base+'_dopjointfit.png'
+            if outdir is not None: figname = outdir+'/'+figname
+            if (outdir is None) & (fdir != ''): figname = fdir+'/'+figname
+            # Make the plot
+            spec = speclist[i]
+            specm = specmlist[i]
+            fmodel = bmodel[i]
+            fout = final[i]
+            # Apply continuum tweak to original spectrum as well
+            orig = spec.copy()
+            if orig.normalized is False: orig.normalize()
+            cratio = specm.cont/orig.cont
+            orig.flux /= cratio
+            orig.err /= cratio
+            orig.cont *= cratio
+            annotlabels = np.char.array(fitparams+['RV']).lower()
+            annotlabels[-1] = 'vrel'
+            specfigure(figname,specm,fmodel,fout,original=orig,verbose=True,
+                       ispayne=True,annotlabels=annotlabels)
+            # Make a PDF version that we will combine at the end
+            fignamepdf = figname.replace('.png','.pdf')
+            specfigure(fignamepdf,specm,fmodel,fout,original=orig,verbose=False,
+                       ispayne=True,annotlabels=annotlabels)
+            pdfnames.append(fignamepdf)
+        # Combine the PDFs into one
+        fdir,base,ext = utils.splitfilename(specfiles[0])
+        combname = base+'_dopjointfit_comb.pdf'  # png
+        if outdir is not None: combname = outdir+'/'+combname
+        if (outdir is None) & (fdir != ''): combname = fdir+'/'+combname
+        if os.path.exists(combname): os.remove(combname)
+        cmd = ['gs','-dBATCH','-dNOPAUSE','-q','-sDEVICE=pdfwrite','-sOutputFile='+combname]
+        cmd = cmd+pdfnames
+        try:
+            out = subprocess.call(cmd,stderr=subprocess.STDOUT,shell=False)
+            if verbose: print('Combined plots saved to '+combname)
+        except subprocess.CalledProcessError:
+            raise Exception("Could not combine PDFs with ghostscript")
+        # Delete individual PDFs
+        for fp in pdfnames: os.remove(fp)
+
+  
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
-    
+
     return sumstr, final, bmodel, specmlist
 
 
@@ -3131,7 +3210,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         if verbose is True: print(' ')
 
         
-    # Step 2) find weighted stellar parameters
+    # Step 2) Find weighted stellar parameters
     if verbose is True: print('Step #2: Getting weighted stellar parameters')
     gd, ngd = dln.where(np.isfinite(info['chisq']))
     if ngd>0:
@@ -3175,7 +3254,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         initpar1[gdinit+3] = info['vrel'][gdinit]
 
     
-    # Step 3) refit all spectra simultaneous fitting stellar parameters and RVs
+    # Step 3) Refit all spectra simultaneously fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #3: Fitting all spectra simultaneously')
@@ -3195,7 +3274,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
-    # Step 4) tweak continua and remove outlies
+    # Step 4) Tweak continua and remove outlies
     if verbose is True:
         print(' ')
         print('Step #4: Tweaking continuum and masking outliers')
@@ -3207,7 +3286,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
         specmlist[i] = spm.copy()
         
-    # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
+    # Step 5) Refit all spectra simultaneously fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
         print('Step #5: Re-fitting all spectra simultaneously')
@@ -3273,7 +3352,53 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
     sumstr['feh'] = stelpars2[2]
     sumstr['feherr'] = stelparerr2[2]
     sumstr['chisq'] = totchisq
-        
+
+    # Save the best-fitting plots
+    if saveplot is True:
+        if verbose is True:
+            print('')
+            print('Making best-fit plots for each spectrum')
+        pdfnames = []
+        specfiles = [s.filename for s in speclist]
+        for i,f in enumerate(specfiles):
+            # Figure the output figure filename
+            fdir,base,ext = utils.splitfilename(speclist[i].filename)
+            figname = base+'_dopjointfit.png'
+            if outdir is not None: figname = outdir+'/'+figname
+            if (outdir is None) & (fdir != ''): figname = fdir+'/'+figname
+            # Make the plot
+            spec = speclist[i]
+            specm = specmlist[i]
+            fmodel = bmodel[i]
+            fout = final[i]
+            # Apply continuum tweak to original spectrum as well
+            orig = spec.copy()
+            if orig.normalized is False: orig.normalize()
+            cratio = specm.cont/orig.cont
+            orig.flux /= cratio
+            orig.err /= cratio
+            orig.cont *= cratio
+            specfigure(figname,specm,fmodel,fout,original=orig,verbose=True)
+            # Make a PDF version that we will combine at the end
+            fignamepdf = figname.replace('.png','.pdf')
+            specfigure(fignamepdf,specm,fmodel,fout,original=orig,verbose=False)
+            pdfnames.append(fignamepdf)
+        # Combine the PDFs into one
+        fdir,base,ext = utils.splitfilename(specfiles[0])
+        combname = base+'_dopjointfit_comb.pdf'  # png
+        if outdir is not None: combname = outdir+'/'+combname
+        if (outdir is None) & (fdir != ''): combname = fdir+'/'+combname
+        if os.path.exists(combname): os.remove(combname)
+        cmd = ['gs','-dBATCH','-dNOPAUSE','-q','-sDEVICE=pdfwrite','-sOutputFile='+combname]
+        cmd = cmd+pdfnames
+        try:
+            out = subprocess.call(cmd,stderr=subprocess.STDOUT,shell=False)
+            if verbose: print('Combined plots saved to '+combname)
+        except subprocess.CalledProcessError:
+            raise Exception("Could not combine PDFs with ghostscript")
+        # Delete individual PDFs
+        for fp in pdfnames: os.remove(fp)
+    
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
@@ -3352,8 +3477,8 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
 
     
 
-def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,
-             verbose=False,outdir=None,nthreads=None,payne=False):
+def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
+             saveplot=False,verbose=False,outdir=None,nthreads=None,payne=False):
     """
     This fits a Cannon or Payne model to multiple spectra of the same star.
 
@@ -3361,9 +3486,14 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,
     ----------
     speclist : Spec1D object
          The observed spectrum to match.
-    models : list of Cannon models, optional
-         A list of Cannon models to use.  The default is to load all of the Cannon
-         models in the data/ directory and use those.
+    models : Cannon or Payne model(s), optional
+         A list of Cannon models or Payne model to use.  The default is to load all
+         the Cannon or Payne models (depending on if payne=True is set) in the data/
+         directory and use those.
+    fitparams : list, optional
+         List of Payne labels to fit.
+    fixparams : dict, optional
+         Dictionary of Payne labels to hold fixed.
     mcmc : bool, optional
          Run Markov Chain Monte Carlo (MCMC) to get improved parameter uncertainties.
          This is only run the individual spectra are being fit.
@@ -3404,11 +3534,11 @@ def jointfit(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,
     
     # Cannon model
     if payne == False:
-        return jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=sncrut,
+        return jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=snrcut,
                                saveplot=saveplot,verbose=verbose,outdir=outdir,
                                nthreads=nthreads)
     # Payne model
     else:
-        return jointfit_payne(speclist,models=models,mcmc=mcmc,snrcut=sncrut,
-                              saveplot=saveplot,verbose=verbose,outdir=outdir,
-                              nthreads=nthreads)    
+        return jointfit_payne(speclist,model=models,fitparams=fitparams,fixparams=fixparams,
+                              mcmc=mcmc,snrcut=snrcut,saveplot=saveplot,verbose=verbose,
+                              outdir=outdir,nthreads=nthreads)    

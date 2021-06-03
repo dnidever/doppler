@@ -18,10 +18,10 @@ import warnings
 from glob import glob
 from scipy.interpolate import interp1d
 from dlnpyutils import (utils as dln, bindata, astro)
-#from .spec1d import Spec1D
-#from . import utils
-from doppler.spec1d import Spec1D
-from doppler import utils
+from .spec1d import Spec1D
+from . import utils
+#from doppler.spec1d import Spec1D
+#from doppler import utils
 import copy
 import logging
 import contextlib, io, sys
@@ -136,8 +136,47 @@ def load_models():
 
 
 def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=None,lsfout=False):
-    """ Prepare a Payne spectrum for a given observed spectrum."""
+    """
+    Prepare a Payne spectrum for a given observed spectrum.
 
+    Parameters
+    ----------
+    model : Payne model
+        Payne model to use.
+    labels : list
+        List of Payne parameter/label names to fit.
+    spec : Spec1D object
+        The observed spectrum.
+    rv : float, optional
+        Doppler shift to apply to the Payne model (in km/s).  Default is 0.0.
+    vmacro : float, optional
+        Extra Gaussian broadening to apply to Payne model (in km/s) for macroturbulence.
+        Default is 0.0.
+    vsini : float, optional
+        Rotational broadening to apply to the Payne model (in km/s).  Default is 0.0.
+    wave : numpy array, optional
+        Input wavelength array to use for the output Payne model.  Default is to use the
+        observed spectrum wavelengths.
+    lsfout : boolean, optional
+        Set to output the 2D LSF and wavelength array for the Payne model.
+
+    Returns
+    -------
+    outmodel : Spec1D object
+        The output Payne model spectrum convolved to the LSF of the observd spectrum.
+    lsf_list : list
+        List of output 2D LSF array, one element per spectral order.  Only if lsfout=True.
+    lsfwave_list : list
+        List of output 2D LSF wavelength array, one element per spectral order.  Only if lsfout=True.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+         outmodel = prepare_payne_model(model,labels,spec)
+
+    """
     
     # Convert wavelength from air->vacuum or vice versa
     if model.wavevac != spec.wavevac:
@@ -292,7 +331,26 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
 
     
 def mkdxlim(fitparams):
-    """ Make array of parameter changes at which curve_fit should finish."""
+    """
+    Make array of parameter changes at which curve_fit should finish.
+
+    Parameters
+    ----------
+    fitparams : list
+        List of parameter names.
+
+    Returns
+    -------
+    dx_lim : numpy array
+       Array of parameter changes at which curve_fit should finish.
+
+    Example
+    -------
+    .. code-block:: python
+
+         dx_lim = mkdxlim(fitparams)
+
+    """
     npar = len(fitparams)
     dx_lim = np.zeros(npar,float)
     for k in range(npar):
@@ -313,7 +371,26 @@ def mkdxlim(fitparams):
     return dx_lim
 
 def mkinitlabels(labels):
-    """ Make initial guesses for Payne labels."""
+    """
+    Make initial guesses for Payne labels.
+
+    Parameters
+    ----------
+    labels : list
+        List of parameter names.
+
+    Returns
+    -------
+    initpars : numpy array
+       Array of initial label values.
+
+    Example
+    -------
+    .. code-block:: python
+
+         initpars = mkinitlabels(labels)
+
+    """
 
     labels = np.char.array(labels).upper()
     
@@ -331,7 +408,28 @@ def mkinitlabels(labels):
 
 
 def mkbounds(labels,initpars=None):
-    """ Make upper and lower bounds for Payne labels."""
+    """
+    Make upper and lower bounds for Payne labels.
+
+    Parameters
+    ----------
+    labels : list
+        List of parameter names.
+    initpars : numpy array, optional
+        Input list of initial label guesses.  Optional
+
+    Returns
+    -------
+    bounds : tuple
+       Two-element tuple of lower and upper boundaries for the input labels.
+
+    Example
+    -------
+    .. code-block:: python
+
+         bounds = mkbounds(labels,initpars)
+
+    """
 
     if initpars is None:
         initpars = mkinitlabels(labels)
@@ -372,8 +470,24 @@ def mkbounds(labels,initpars=None):
 
 
 class PayneModel(object):
+    """
+    A class to represent a Payne Artificial Neural Network model.
 
+    Parameters
+    ----------
+    coeffs : list
+        List of Payne coefficient arrays.
+    wavelength : numpy array
+        Array of wavelength values.
+    labels : list
+        List of Payne labels.
+    wavevac : boolean, optional
+        Whether wavelengths are in vacuum units.  Default is False.
+
+    """
+    
     def __init__(self,coeffs,wavelength,labels,wavevac=False):
+        """ Initialize PayneModel object. """
         self._coeffs = coeffs
         self._dispersion = wavelength
         self.labels = list(labels)
@@ -387,6 +501,7 @@ class PayneModel(object):
         
     @property
     def dispersion(self):
+        """ Wavelength array."""
         return self._dispersion
 
     @dispersion.setter
@@ -397,6 +512,7 @@ class PayneModel(object):
     
     @property
     def wavevac(self):
+        """ Whether wavelengths are in vacuum units."""
         return self._wavevac
     
     @wavevac.setter
@@ -418,7 +534,47 @@ class PayneModel(object):
 
 
     def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False,wave=None):
+        """
+        Create the Payne model spectrum given the input label values.
 
+        Parameters
+        ----------
+        labels : list or array
+            List or Array of input labels values to use.
+        spec : Spec1D object, optional
+            Observed spectrum to use for LSF convolution and wavelength array.  Default is to return
+            the full model spectrum with no convolution.
+        wr : list or array, optional
+            Two-element list or array giving the upper and lower wavelength ranges for the output
+            model spectrum.
+        rv : float, optional
+            Doppler shift to apply to the Payne model (in km/s).  Default is no Doppler shift.
+        vsini : float, optional
+            Rotational broadening to apply to the Payne model (in km/s).  Default is no rotational
+            broadening.
+        vmacro : float, optional
+            Extra Gaussian broadening to apply to Payne model (in km/s) for macroturbulence.
+            Default is no Gaussian broadening.
+        fluxonly : boolean, optional
+            Only return the flux array.  Default is to return a Spec1D object.
+        wave : numpy array, optional
+            Input wavelength array to use for the output Payne model.  Default is to use the
+            observed spectrum wavelengths.
+
+        Returns
+        -------
+        mspec : numpy array or Spec1D object
+            The output model Payne spectrum.  If fluxonly=True then only the flux array is returned,
+            otherwise a Spec1D object is returned.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model(labels)
+
+        """
+        
         if len(labels) != len(self.labels):
             raise ValueError('labels must have '+str(len(self.labels))+' elements')
         
@@ -491,7 +647,26 @@ class PayneModel(object):
 
     
     def label_arrayize(self,labeldict):
-        """ Convert labels from a dictionary or numpy structured array to array."""
+        """
+        Convert labels from a dictionary or numpy structured array to array.
+
+        Parameters
+        ----------
+        labeldict : dictionary
+            Dictionary of label values.  Values for all model labels need to be given.
+
+        Returns
+        -------
+        arr : numpy array
+            Array of label values.
+        
+        Example
+        -------
+        .. code-block:: python
+
+             labelarr = model.label_arrayize(labeldict)
+
+        """
         arr = np.zeros(len(self.labels),np.float64)
         for i in range(len(self.labels)):
             val = labeldict.get(self.labels[i])
@@ -502,7 +677,7 @@ class PayneModel(object):
     
 
     def copy(self):
-        # Make copies of the _data list of payne models
+        """ Make a full copy of the PayneModel object. """
         new_coeffs = []
         for c in self._coeffs:
             new_coeffs.append(c.copy())
@@ -510,22 +685,67 @@ class PayneModel(object):
         return new
 
     
-    def read(mfile):
+    @classmethod
+    def read(cls,mfile):
         """ Read in a single Payne Model."""
         coeffs, wavelength, labels, wavevac = load_payne_model(mfile)
         return PayneModel(coeffs, wavelength, labels, wavevac=wavevac)
 
 
     def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None,wave=None):
+        """
+        Prepare a Payne model spectrum using an observed spectrum.
+
+        Parameters
+        ----------
+        labels : list or array
+            List or Array of input labels values to use.
+        spec : Spec1D object, optional
+            Observed spectrum to use for LSF convolution and wavelength array.  Default is to return
+            the full model spectrum with no convolution.
+        rv : float, optional
+            Doppler shift to apply to the Payne model (in km/s).  Default is no Doppler shift.
+        vmacro : float, optional
+            Extra Gaussian broadening to apply to Payne model (in km/s) for macroturbulence.
+            Default is no Gaussian broadening.
+        vsini : float, optional
+            Rotational broadening to apply to the Payne model (in km/s).  Default is no rotational
+            broadening.
+        wave : numpy array, optional
+            Input wavelength array to use for the output Payne model.  Default is to use the
+            observed spectrum wavelengths.
+
+        Returns
+        -------
+        mspec : Spec1D object
+            The output model Payne Spec1D spectrum.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model.prepare(labels,spec)
+
+        """
+
         return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini,wave=wave)
 
 
         
 class PayneModelSet(object):
+    """
+    A class to represent a set of Payne Artificial Neural Network models.  This is used
+    when separate Payne models are used to cover a different "chunk" of wavelength.
 
-    ## Set of Payne models that each cover a different "chunk" of wavelength
+    Parameters
+    ----------
+    models : list of PayneModel objects
+        List of PayneModel objects.
+
+    """
     
     def __init__(self,models):
+        """ Initialize PayneModel object. """
         # Make sure it's a list
         if type(models) is not list:
             models = [models]
@@ -555,10 +775,12 @@ class PayneModelSet(object):
         
     @property
     def dispersion(self):
+        """ Wavelength array."""
         return self._dispersion
     
     @property
     def wavevac(self):
+        """ Whether wavelengths are in vacuum units."""
         return self._wavevac
     
     @wavevac.setter
@@ -585,6 +807,48 @@ class PayneModelSet(object):
             self.wr = wr
     
     def __call__(self,labels,spec=None,wr=None,rv=None,vsini=None,vmacro=None,fluxonly=False,wave=None):
+        """
+        Create the Payne model spectrum given the input label values.
+
+        Parameters
+        ----------
+        labels : list or array
+            List or Array of input labels values to use.
+        spec : Spec1D object, optional
+            Observed spectrum to use for LSF convolution and wavelength array.  Default is to return
+            the full model spectrum with no convolution.
+        wr : list or array, optional
+            Two-element list or array giving the upper and lower wavelength ranges for the output
+            model spectrum.
+        rv : float, optional
+            Doppler shift to apply to the Payne model (in km/s).  Default is no Doppler shift.
+        vsini : float, optional
+            Rotational broadening to apply to the Payne model (in km/s).  Default is no rotational
+            broadening.
+        vmacro : float, optional
+            Extra Gaussian broadening to apply to Payne model (in km/s) for macroturbulence.
+            Default is no Gaussian broadening.
+        fluxonly : boolean, optional
+            Only return the flux array.  Default is to return a Spec1D object.
+        wave : numpy array, optional
+            Input wavelength array to use for the output Payne model.  Default is to use the
+            observed spectrum wavelengths.
+
+        Returns
+        -------
+        mspec : numpy array or Spec1D object
+            The output model Payne spectrum.  If fluxonly=True then only the flux array is returned,
+            otherwise a Spec1D object is returned.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model(labels)
+
+        """
+
+        
         '''
         Predict the rest-frame spectrum (normalized) of a single star.
         We input the scaled stellar labels (not in the original unit).
@@ -707,8 +971,9 @@ class PayneModelSet(object):
             new_models.append(d.copy())
         new = PayneModelSet(new_models)
         return new
-    
-    def read(mfiles):
+
+    @classmethod
+    def read(cls,mfiles):
         """ Read a set of Payne model files."""
         n = len(mfiles)
         models = []
@@ -721,14 +986,58 @@ class PayneModelSet(object):
         return PayneModelSet(models)
 
     def prepare(self,labels,spec,rv=None,vmacro=None,vsini=None,wave=None):
+        """
+        Prepare a Payne model spectrum using an observed spectrum.
+
+        Parameters
+        ----------
+        labels : list or array
+            List or Array of input labels values to use.
+        spec : Spec1D object, optional
+            Observed spectrum to use for LSF convolution and wavelength array.  Default is to return
+            the full model spectrum with no convolution.
+        rv : float, optional
+            Doppler shift to apply to the Payne model (in km/s).  Default is no Doppler shift.
+        vmacro : float, optional
+            Extra Gaussian broadening to apply to Payne model (in km/s) for macroturbulence.
+            Default is no Gaussian broadening.
+        vsini : float, optional
+            Rotational broadening to apply to the Payne model (in km/s).  Default is no rotational
+            broadening.
+        wave : numpy array, optional
+            Input wavelength array to use for the output Payne model.  Default is to use the
+            observed spectrum wavelengths.
+
+        Returns
+        -------
+        mspec : Spec1D object
+            The output model Payne Spec1D spectrum.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model.prepare(labels,spec)
+
+        """
+        
         return prepare_payne_model(self,labels,spec,rv=rv,vmacro=vmacro,vsini=vsini,wave=wave)
 
 
     
 class DopplerPayneModel(object):
-    """ Thin wrapper around PayneModel or PayneModelSet."""
+    """
+    A class to thinly wraps the PayneModel or PayneModelSet so that VSINI, VMACRO, and RV
+    can be used as labels as well.  This is the primary Payne class to use with Doppler.
+
+    Parameters
+    ----------
+    models : PayneModel or PayneModelSet object
+        PayneModel or PayneModelSet object
+    """
 
     def __init__(self,model):
+        """ Initialize PayneModel object. """
         # Make sure it's a PayneModel or PayneModelSet
         if (not isinstance(model,PayneModel)) & (not isinstance(model,PayneModelSet)):
             raise ValueError("Model must be either PayneModel or PayneModelSet")
@@ -744,14 +1053,36 @@ class DopplerPayneModel(object):
         self._original_wavevac = self._data._wavevac
         self.wr = self._data.wr
         self._data._lsf = None
-        
-        
-    # Maybe the __call__ inputs should be a PARAM dictionary, so it's
-    # easier to specify what you want, and use "defaults" for the rest
-    # of the parameters
+
         
     def __call__(self,labels,wr=None,wave=None):
-        """ Create the model."""
+        """
+        Create the Payne model spectrum given the input label values.
+
+        Parameters
+        ----------
+        labels : list or array
+            List/array or dictionary of input labels values to use.
+        wr : list or array, optional
+            Two-element list or array giving the upper and lower wavelength ranges for the output
+            model spectrum.
+        wave : numpy array, optional
+            Input wavelength array to use for the output Payne model.  Default is to use the full
+            wavelength range or the observed spectrum wavelengths if the model is "prepared".
+
+        Returns
+        -------
+        mspec : numpy array or Spec1D object
+            The output model Payne spectrum.  If fluxonly=True then only the flux array is returned,
+            otherwise a Spec1D object is returned.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mspec = model(labels)
+
+        """
         # Dictionary input
         if isinstance(labels,dict):
             labels = self.mklabels(labels)  # convert dictionary to array of labels
@@ -764,9 +1095,31 @@ class DopplerPayneModel(object):
             return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
         else:
             return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
+
         
     def mklabels(self,inputs):
-        """ Convert input dictionary to labels."""
+        """
+        Convert input dictionary to labels.  Not all labels need to be specified.
+
+        Parameters
+        ----------
+        inputs : dict
+            Dictionary of label values. Not all labels need to be specified.
+            Unspecified labels will be determined from the inputs (e.g. FE_H and
+            ALPHA_H set elements) or default values.
+
+        Returns
+        -------
+        labels : numpy array
+            Array of label values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = model.mklabels(labeldict)
+
+        """
 
         # This assumes ALL abundances are relative to H *not* FE!!!
         
@@ -810,10 +1163,12 @@ class DopplerPayneModel(object):
                 
     @property
     def dispersion(self):
+        """ Wavelength array."""
         return self._dispersion
         
     @property
     def wavevac(self):
+        """ Whether wavelengths are in vacuum units."""
         return self._data.wavevac
     
     @wavevac.setter
@@ -823,6 +1178,7 @@ class DopplerPayneModel(object):
 
     @property
     def prepared(self):
+        """ Has the model been prepared with an observed spectrum."""
         return self._prepared
 
     @prepared.setter
@@ -842,7 +1198,37 @@ class DopplerPayneModel(object):
         self._data._lsf = None
         
     def prepare(self,spec):
-        """ Prepare the model.  Keep a copy of the spectrum."""
+        """
+        Prepare the model using an observed spectrum.  This keeps a copy of the spectrum,
+        makes sure the model wavevac matches the observed spectrum value, and obtains
+        the 2D LSF array for the model to use later on.
+
+        After a DopplerPayneModel has been prepared, then using __call__ will automatically
+        return a Payne model spectrum that has been convolved with the observed spectrum's
+        LSF and on its wavelength array.
+
+        NOTE that this prepare() method is *very* different from the PayneModel and PayneModelSet
+        prepare() method which actually returns Payne model spectrum convolved with the LSF
+        of an observed spectrum.  The DopplerPayneModel prepare() is designed to behave in a
+        synonymous manner to the DopplerCannonModel class.
+
+        Parameters
+        ----------
+        spec : Spec1D object
+            The observed spectrum to prepare with.
+
+        Returns
+        -------
+        The model object is modified in place.
+
+        Example
+        -------
+
+        .. code-block:: python
+             
+             model.prepare(spec)
+
+        """
         self._spec = spec.copy()
         self._prepared = True
         self._dispersion = spec.wave.copy()
@@ -870,14 +1256,15 @@ class DopplerPayneModel(object):
         return new
 
     def hardcopy(self):
-        """ Make a complete copy of the DopplerPayneModel."""
+        """ Make a complete copy of the DopplerPayneModel including the original data."""
         new_model = self._data.copy()
         new = DopplerPayneModel(new_model)
         if self.prepared==True:
             new.prepare(self._spec)
         return new    
 
-    def read(mfiles):
+    @classmethod
+    def read(cls,mfiles):
         """ Read a set of Payne model files."""
         if dln.size(mfiles)==1:
             model = PayneModel.read(mfiles)
@@ -888,8 +1275,27 @@ class DopplerPayneModel(object):
 
 
 class PayneSpecFitter:
+    """
+    This is a special class that helps with least-squares fitting of a Payne model
+    to an observed spectrum using functions like curve_fit().
 
+    Parameters
+    ----------
+    spec : Spec1D object
+       Observed spectrum to fit.
+    pmodel : DopplerPayneModel object
+       The DopplerPayneModel object to use for the model.
+    fitparams : list, optional
+       List of label names to fit.  Default is to fit all labels.
+    fixparams : dictionary, optional
+       Dictionary of parameter values to hold fixed.  Default is to not hold
+       any values fixed.
+    verbose : boolean, optional
+       Verbose output to the screen.  Default is False.
+    """
+    
     def __init__(self,spec,pmodel,fitparams=None,fixparams={},verbose=False):
+        """ Initialize PayneSpecFitter object."""
         # spec - observed spectrum object
         # pmodel - Payne model object
         # params - initial/fixed parameters dictionary
@@ -982,6 +1388,7 @@ class PayneSpecFitter:
 
     @property
     def fixparams(self):
+        """ Dictionary of fixed parameters."""
         return self._fixparams
 
     @fixparams.setter
@@ -991,6 +1398,7 @@ class PayneSpecFitter:
             
     @property
     def fitparams(self):
+        """ List of labels to fit."""
         return self._fitparams
 
     @fitparams.setter
@@ -999,8 +1407,27 @@ class PayneSpecFitter:
         self._fitparams = [f.upper() for f in fitparams]
 
     def mkinitlabels(self,inputs):
-        """ Convert input dictionary to Payne labels."""
+        """
+        Make initial guesses for Payne labels.
 
+        Parameters
+        ----------
+        inputs : dict
+           Dictionary of parameter values to use in the array.
+
+        Returns
+        -------
+        labels : numpy array
+           Array of initial label values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = spfitter.mkinitlabels(labeldict)
+        
+        """
+        
         # This assumes ALL abundances are relative to H *not* FE!!!
         
         params = dict((key.upper(), value) for (key, value) in inputs.items()) # all CAPS
@@ -1045,7 +1472,26 @@ class PayneSpecFitter:
 
         
     def mklabels(self,args):
-        """ Make labels for Payne model."""
+        """
+        Make labels for Payne model using values for only the fitted values.
+
+        Parameters
+        ----------
+        args : list or tuple
+           List or tuple of values for the fitted parameters (fitparams).
+
+        Returns
+        -------
+        labels : numpy array
+           Array of values for all the Payne labels.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = spfitter.mklabels(args)
+              
+        """
         # Start with initial labels and only modify the fitparams."""
 
         # Initialize with init values
@@ -1092,10 +1538,52 @@ class PayneSpecFitter:
         return labels
     
     def chisq(self,model):
+        """
+        Calculate the chi-squared between the Payne model spectrum and observed spectrum.
+       
+        Parameters
+        ----------
+        model : numpy array
+           Array of Payne model spectrum flux values.
+
+        Returns
+        -------
+        chisq : float
+           Chi-squared value of the input Payne model spectrum and the observed spectrum.
+
+        Example
+        -------
+        .. code-block:: python
+
+             chisq = spfitter.chisq(model)
+
+        """
         return np.sqrt( np.sum( (self._flux-model)**2/self._err**2 )/len(self._flux) )
             
     def model(self,xx,*args):
-        # Return model Payne spectrum given the input arguments."""
+        """
+        Return model Payne spectrum given the input arguments.  To be used with
+        curve_fit().
+
+        Parameters
+        ----------
+        xx : numpy array
+            Input indepedent wavelength values.  Not used, but needed for curve_fit().
+        args : tuple
+            Tuple of input positional arguments of fitted model labels.
+
+        Returns
+        -------
+        mflux : numpy array
+            The output model Payne spectrum flux array, flattened.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mflux = spfitter.model(wave,*labels)
+
+        """        
         # Convert arguments to Payne model inputs
         labels = self.mklabels(args)
         if self.verbose: print(args)
@@ -1103,17 +1591,57 @@ class PayneSpecFitter:
         return self._paynemodel(labels).flux.flatten()  # only return the flattened flux
 
     def mkdxlim(self,fitparams):
+        """
+        Make array of parameter changes at which curve_fit should finish.
+
+        Parameters
+        ----------
+        fitparams : list
+            List of parameter names.
+
+        Returns
+        -------
+        dx_lim : numpy array
+            Array of parameter changes at which curve_fit should finish.
+
+        Example
+        -------
+        .. code-block:: python
+
+             dx_lim = spfitter.mkdxlim(fitparams)
+
+        """
         return mkdxlim(fitparams)
 
     def mkbounds(self,labels,initpars=None):
+        """
+        Make upper and lower bounds for Payne labels.
+        
+        Parameters
+        ----------
+        labels : list
+            List of parameter names.
+        initpars : numpy array, optional
+            Input list of initial label guesses.  Optional
+
+        Returns
+        -------
+        bounds : tuple
+            Two-element tuple of lower and upper boundaries for the input labels.
+
+        Example
+        -------
+        .. code-block:: python
+        
+             bounds = spfitter.mkbounds(labels,initpars)
+
+        """
         return mkbounds(labels,initpars=initpars)
 
     def getstep(self,name,val=None,relstep=0.02):
-        """ Calculate step for a parameter."""
-        # It mainly deals with edge cases
-        #if val != 0.0:
-        #    step = relstep*val
-        #else:
+        """
+        Calculate step for a single parameter to be used to generate the Jacobian.
+        """
         if name=='TEFF':
             step = 5.0
         elif name=='RV':
@@ -1129,8 +1657,30 @@ class PayneSpecFitter:
         return step
                 
     def jac(self,x,*args):
-        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
-        is the partial derivative of f[i] with respect to x[j]). """
+        """
+        Compute the Jacobian matrix (an Npix-by-Npar matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]).  This is to be
+        used with curve_fit().
+
+        Parameters
+        ----------
+        args : tuple
+            Tuple of input positional arguments of fitted model labels at which
+            to calculate the Jacobian.
+
+        Returns
+        -------
+        jac : numpy array
+           Jacobian matrix (an Npix-by-Npar matrix) of how the model changes
+           (at each pixel) with respect to each parameter.
+
+        Example
+        -------
+         .. code-block:: python
+              
+              jac = spfitter.jac(wave,*args)
+
+        """
         
         # Boundaries
         lbounds,ubounds = self.mkbounds(self.fitparams)
@@ -1193,8 +1743,29 @@ class PayneSpecFitter:
 
     
 class PayneMultiSpecFitter:
+    """
+    This is a special class that helps with least-squares fitting of a Payne model
+    to multiple observed spectra using functions like curve_fit().
 
+    Parameters
+    ----------
+    speclist : list of Spec1D objects
+       List of bbserved spectra to fit.
+    modlist : list of DopplerPayneModel object
+       List of DopplerPayneModel objects to use for the model for each observed spectrum.
+       Each model should be prepared with their respective observed spectrum and hold
+       the 2D LSF array.
+    fitparams : list, optional
+       List of label names to fit.  Default is to fit all labels.
+    fixparams : dictionary, optional
+       Dictionary of parameter values to hold fixed.  Default is to not hold
+       any values fixed.
+    verbose : boolean, optional
+       Verbose output to the screen.  Default is False.
+    """
+    
     def __init__(self,speclist,modlist,fitparams,fixparams={},verbose=False):
+        """ Initialize PayneSpecFitter object."""        
         # speclist - observed spectrum list
         # modlist - Payne model list
         # fixparams - parameter/label names to fit
@@ -1241,6 +1812,7 @@ class PayneMultiSpecFitter:
         self._jac_array = None
 
     def fixed_labels(self,fitparams=None):
+        """ Helper function to determine which labels are fixed."""
         nlabels = len(self._labels)
         labelnames = self._labels
 
@@ -1298,6 +1870,7 @@ class PayneMultiSpecFitter:
         
     @property
     def fitparams(self):
+        """ List of labels to fit."""
         return self._fitparams
 
     @fitparams.setter
@@ -1307,6 +1880,7 @@ class PayneMultiSpecFitter:
         
     @property
     def fixparams(self):
+        """ Dictionary of fixed parameters."""
         return self._fixparams
 
     @fixparams.setter
@@ -1315,7 +1889,26 @@ class PayneMultiSpecFitter:
         self._fixparams = dict((key.upper(), value) for (key, value) in fixparams.items())  # all CAPS
 
     def mkinitlabels(self,inputs):
-        """ Convert input dictionary to Payne labels."""
+        """
+        Make initial guesses for Payne labels.
+
+        Parameters
+        ----------
+        inputs : dict
+           Dictionary of parameter values to use in the array.
+
+        Returns
+        -------
+        labels : numpy array
+           Array of initial label values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = spfitter.mkinitlabels(labeldict)
+        
+        """
 
         # This assumes ALL abundances are relative to H *not* FE!!!
         
@@ -1360,7 +1953,27 @@ class PayneMultiSpecFitter:
         return labels
 
     def mklabels(self,args,fitparams=None):
-        """ Make labels for Payne model."""
+        """
+        Make labels for Payne model using values for only the fitted values.
+
+        Parameters
+        ----------
+        args : list or tuple
+           List or tuple of values for the fitted parameters (fitparams).
+
+        Returns
+        -------
+        labels : numpy array
+           Array of values for all the Payne labels.
+
+        Example
+        -------
+        .. code-block:: python
+
+             labels = spfitter.mklabels(args)
+              
+        """
+
         # Start with initial labels and only modify the fitparams."""
 
         # Initialize with init values
@@ -1409,9 +2022,53 @@ class PayneMultiSpecFitter:
         return labels
     
     def chisq(self,modelflux):
+        """
+        Calculate the chi-squared between the Payne model spectrum and observed spectrum.
+       
+        Parameters
+        ----------
+        modelflux : numpy array
+           Array of Payne model spectrum flux values.
+
+        Returns
+        -------
+        chisq : float
+           Chi-squared value of the input Payne model spectrum and the observed spectrum.
+
+        Example
+        -------
+        .. code-block:: python
+
+             chisq = spfitter.chisq(model)
+
+        """
         return np.sqrt( np.sum( (self._flux-modelflux)**2/self._err**2 )/len(self._flux) )
             
     def model(self,xx,*args):
+        """
+        Return model Payne spectrum given the input arguments.  To be used with
+        curve_fit().
+
+        Parameters
+        ----------
+        xx : numpy array
+            Input indepedent wavelength values.  Not used, but needed for curve_fit().
+        args : tuple
+            Tuple of input positional arguments of fitted model labels.
+
+        Returns
+        -------
+        mflux : numpy array
+            The output model Payne spectrum flux array, flattened.
+
+        Example
+        -------
+        .. code-block:: python
+
+             mflux = spfitter.model(wave,*labels)
+
+        """     
+        
         # Return model Payne spectrum given the input arguments."""
         # Convert arguments to Payne model inputs
         #print(args)
@@ -1438,17 +2095,57 @@ class PayneMultiSpecFitter:
         return flux
     
     def mkdxlim(self,fitparams):
+        """
+        Make array of parameter changes at which curve_fit should finish.
+
+        Parameters
+        ----------
+        fitparams : list
+            List of parameter names.
+
+        Returns
+        -------
+        dx_lim : numpy array
+            Array of parameter changes at which curve_fit should finish.
+
+        Example
+        -------
+        .. code-block:: python
+
+             dx_lim = spfitter.mkdxlim(fitparams)
+
+        """
         return mkdxlim(fitparams)
 
     def mkbounds(self,labels,initpars=None):
+        """
+        Make upper and lower bounds for Payne labels.
+        
+        Parameters
+        ----------
+        labels : list
+            List of parameter names.
+        initpars : numpy array, optional
+            Input list of initial label guesses.  Optional
+
+        Returns
+        -------
+        bounds : tuple
+            Two-element tuple of lower and upper boundaries for the input labels.
+
+        Example
+        -------
+        .. code-block:: python
+        
+             bounds = spfitter.mkbounds(labels,initpars)
+
+        """        
         return mkbounds(labels,initpars=initpars)
 
     def getstep(self,name,val=None,relstep=0.02):
-        """ Calculate step for a parameter."""
-        # It mainly deals with edge cases
-        #if val != 0.0:
-        #    step = relstep*val
-        #else:
+        """
+        Calculate step for a single parameter to be used to generate the Jacobian.
+        """        
         if name=='TEFF':
             step = 5.0
         elif name=='RV':
@@ -1464,8 +2161,30 @@ class PayneMultiSpecFitter:
         return step
                 
     def jac(self,x,*args):
-        """ Compute the Jacobian matrix (an m-by-n matrix, where element (i, j)
-        is the partial derivative of f[i] with respect to x[j]). """
+        """
+        Compute the Jacobian matrix (an Npix-by-Npar matrix, where element (i, j)
+        is the partial derivative of f[i] with respect to x[j]).  This is to be
+        used with curve_fit().
+
+        Parameters
+        ----------
+        args : tuple
+            Tuple of input positional arguments of fitted model labels at which
+            to calculate the Jacobian.
+
+        Returns
+        -------
+        jac : numpy array
+           Jacobian matrix (an Npix-by-Npar matrix) of how the model changes
+           (at each pixel) with respect to each parameter.
+
+        Example
+        -------
+         .. code-block:: python
+              
+              jac = spfitter.jac(wave,*args)
+
+        """
 
         npix = len(x)
         npar = len(args)

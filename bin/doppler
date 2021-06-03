@@ -4,6 +4,7 @@
 
 import os
 import time
+import numpy as np
 import doppler
 from astropy.io import fits
 from astropy.table import Table
@@ -19,12 +20,11 @@ if __name__ == "__main__":
     parser.add_argument('files', type=str, nargs='+', help='Spectrum FITS files or list')
     parser.add_argument('--outfile', type=str, nargs=1, default='', help='Output filename')
     parser.add_argument('--payne', action='store_true', help='Fit a Payne model')
-    parser.add_argument('--fitpars', type=str, nargs=1, default='', help='Payne labels to fit')    
-    parser.add_argument('--fixpars', type=str, nargs=1, default='', help='Payne labels to hold fixed')
+    parser.add_argument('--fitpars', type=str, nargs=1, default='', help='Payne labels to fit (e.g. TEFF,LOGG,FE_H')    
+    parser.add_argument('--fixpars', type=str, nargs=1, default='', help='Payne labels to hold fixed (e.g. TEFF:5500,LOGG:2.3')
     parser.add_argument('--figfile', type=str, nargs=1, default='', help='Figure filename')    
     parser.add_argument('-d','--outdir', type=str, nargs=1, default='', help='Output directory')        
     parser.add_argument('-l','--list', action='store_true', help='Input is a list of FITS files')
-    #parser.add_argument('-l','--list', type=str, nargs=1, default='', help='Input list of FITS files')
     parser.add_argument('-j','--joint', action='store_true', help='Joint fit all the spectra')
     parser.add_argument('--snrcut', type=float, default=10.0, help='S/N threshold to fit spectrum separately')    
     parser.add_argument('-p','--plot', action='store_true', help='Save the plots')
@@ -86,7 +86,16 @@ if __name__ == "__main__":
         if os.path.exists(files[0]) is False:
             raise ValueError(files[0]+' NOT FOUND')
         # Read in the list
-        files = dln.readlines(files[0])
+        listfile = files[0]
+        files = dln.readlines(listfile)
+        # If the filenames are relative, add the list directory
+        listdir = os.path.dirname(listfile)
+        if listdir != '':
+            fdir = [os.path.dirname(f) for f in files]
+            rel, = np.where(np.char.array(fdir)=='')
+            if len(rel)>0:
+                for i in range(len(rel)):
+                    files[rel[i]] = listdir+'/'+files[rel[i]]
     nfiles = len(files)
 
     # Outfile and figfile can ONLY be used with a SINGLE file or JOINT fitting
@@ -219,9 +228,10 @@ if __name__ == "__main__":
     
         # Run Doppler jointfit()
         if verbose is True: print('')
-        sumstr, final, model, specmlist = doppler.jointfit(speclist,mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,
+        sumstr, final, model, specmlist = doppler.jointfit(speclist,payne=payne,fitparams=fitparams,fixparams=fixparams,
+                                                           mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,
                                                            verbose=verbose,outdir=outdir,nthreads=nthreads)
-
+        
         # Save the output
         if verbose is True:
             print('Writing output to '+outfile)
@@ -240,47 +250,3 @@ if __name__ == "__main__":
             hdulist.append(hdu)
         hdulist.writeto(outfile,overwrite=True)
         hdulist.close()
-
-        # Save the best-fitting plots
-        if saveplot is True:
-            if verbose is True:
-                print('')
-                print('Making best-fit plots for each spectrum')
-            pdfnames = []
-            for i,f in enumerate(files):
-                # Figure the output figure filename
-                fdir,base,ext = doppler.utils.splitfilename(speclist[i].filename)
-                figname = base+'_dopjointfit.png'
-                if outdir is not None: figname = outdir+'/'+figname
-                if (outdir is None) & (fdir != ''): figname = fdir+'/'+figname
-                # Make the plot
-                spec = speclist[i]
-                specm = specmlist[i]
-                fmodel = model[i]
-                fout = final[i]
-                # Apply continuum tweak to original spectrum as well
-                cratio = specm.cont/spec.cont
-                orig = spec.copy()
-                orig.flux /= cratio
-                orig.err /= cratio
-                orig.cont *= cratio    
-                doppler.rv.specfigure(figname,specm,fmodel,fout,original=orig,verbose=True)
-                # Make a PDF version that we will combine at the end
-                fignamepdf = figname.replace('.png','.pdf')
-                doppler.rv.specfigure(fignamepdf,specm,fmodel,fout,original=orig,verbose=False)
-                pdfnames.append(fignamepdf)
-            # Combine the PDFs into one
-            fdir,base,ext = doppler.utils.splitfilename(files[0])
-            combname = base+'_dopjointfit_comb.pdf'  # png
-            if outdir is not None: combname = outdir+'/'+combname
-            if (outdir is None) & (fdir != ''): combname = fdir+'/'+combname
-            if os.path.exists(combname): os.remove(combname)
-            cmd = ['gs','-dBATCH','-dNOPAUSE','-q','-sDEVICE=pdfwrite','-sOutputFile='+combname]
-            cmd = cmd+pdfnames
-            try:
-                out = subprocess.call(cmd,stderr=subprocess.STDOUT,shell=False)
-                if verbose: print('Combined plots saved to '+combname)
-            except subprocess.CalledProcessError:
-                raise Exception("Could not combine PDFs with ghostscript")
-            # Delete individual PDFs
-            for fp in pdfnames: os.remove(fp)
