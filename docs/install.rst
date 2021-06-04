@@ -29,7 +29,7 @@ Here are the required packages.  Most of them can be pip installed.
 - scipy
 - astropy
 - matplotlib
-- `thecannon <https://github.com/andycasey/AnniesLasso"`_
+- `thecannon <https://github.com/andycasey/AnniesLasso>`_
 - `dlnpyutils <https://github.com/dnidever/dlnpyutils>`_
 - emcee
 - corner

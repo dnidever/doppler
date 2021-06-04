@@ -30,6 +30,7 @@ abundances and separate radial velocities for each spectrum.
 
    install
    gettingstarted
+   examples
    
 
 Description
