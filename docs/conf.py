@@ -78,14 +78,15 @@ copyright = '{0}, {1}'.format(
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 
-import_module(setup_cfg['name'])
-package = sys.modules[setup_cfg['name']]
+#import_module(setup_cfg['name'])
+#package = sys.modules[setup_cfg['name']]
 
 # The short X.Y version.
-version = package.__version__.split('-', 1)[0]
+#version = package.__version__.split('-', 1)[0]
+version = setup_cfg['version'].split('-', 1)[0]
 # The full version, including alpha/beta/rc tags.
-release = package.__version__
-
+#release = package.__version__
+release = setup_cfg['version']
 
 # -- Options for HTML output --------------------------------------------------
 
