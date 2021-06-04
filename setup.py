@@ -11,6 +11,6 @@ setup(name='Doppler',
       url='https://github.com/dnidever/doppler',
       packages=find_packages(exclude=["tests"]),
       scripts=['bin/dopfit','bin/dopjointfit','bin/doppler'],
-      install_requires=['numpy','astropy(>=4.0)','scipy','the-cannon','dlnpyutils(>=1.0.2)','emcee'],
+      install_requires=['numpy','astropy(>=4.0)','scipy','the-cannon','dlnpyutils(>=1.0.2)','emcee','corner'],
       include_package_data=True,
 )
