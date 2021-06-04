@@ -1,18 +1,28 @@
-.. fraunhofer documentation master file, created by
+.. doppler documentation master file, created by
    sphinx-quickstart on Tue Feb 16 13:03:42 2021.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
 **********
-Fraunhofer
+Doppler
 **********
 
 Introduction
 ============
-|Fraunhofer| [#f1]_ is a generic stellar abundance determination package that fits observed spectrum with synthetic spectral (from the Synspec package).
-|Fraunhofer| uses the `Doppler <https://github.com/dnidever/doppler>`_ package to get an initial estimate of the main stellar parameters (Teff, logg,
-[Fe/H]) and radial velocity.  It then performs a least-squares fit of the data by searching through parameter space and generated a new Synspec synthetic
-spectrum (using the `synple <https://github.com/callendeprieto/synpl>`_ python wrapper package) at each position.
+|Doppler| [#f1]_ is a general-purpose stellar radial velocity determination software.  It uses a forward-modeling approach, convolving a
+model spectrum to the resolution or Line Spred Function (LSF) of the observed spectrum.  |Doppler| can be used with a high-resolution
+model of the `The Cannon <https://github.com/andycasey/AnniesLasso>`_ (`Casey et al. (2016) <https://ui.adsabs.harvard.edu/abs/2016arXiv160303040C/abstract>`_)
+and also of `The Payne <https://github.com/tingyuansen/The_Payne>`_ (`Ting et al. (2019) <https://ui.adsabs.harvard.edu/abs/2019ApJ...879...69T/abstract>`_),
+both machine-learning approaches to modeling stellar spectra.
+Doppler can determine the radial velocity (RV) and stellar parameters
+for a spectrum of any wavelength (3000-18000A) and resolution (R<20,000 at the blue end and 120,000 at the red end) with minimal setup.
+The current set of three Cannon models cover temperatures of 3,500K to 60,000K with 3-parameter (Teff, logg, [Fe/H]) and radial velocity.
+The current Payne model covers temperatures of 3,500K to XX,000K with 33 labels (Teff, logg, Vmicro, [C/H], [N/H], [O/H], [Na/H], [Mg/H], [Al/H],
+[Si/H], [P/H], [S/H], [K/H], [Ca/H], [Ti/H], [V/H], [Cr/H], [Mn/H], [Fe/H], [Co/H], [Ni/H], [Cu/H], [Ni/H], [Cu/H], [Ge/H], [Ce/H],
+[Nd/H], [Ba/H], [Eu/H], [La/H], [Y/H], [Sc/H], [Zr/H], [Pr/H], [Yb/H]) as well as radial velocity, rotational velocity and macrotubulence.
+
+|Doppler| also has the ability to simultaneously fit ("jointfit") multiple spectra of a star, with a single set of stellar parameters and elemental
+abundances and separate radial velocities for each spectrum.
 
 .. toctree::
    :maxdepth: 1
@@ -22,10 +32,12 @@ spectrum (using the `synple <https://github.com/callendeprieto/synpl>`_ python w
 
 Description
 ===========
-|Fraunhofer| has two main modes of operation: 1) a multi-step, iterative fit of the spectrum; or 2) fitting a set of input parameters directly using least-squares.
-The first option is the default and is the easiest and most automatic way to fit a spectrum.  The second option can be used for more hands-on situations.
+|Doppler| fits spectra using a multi-step approach to zero-in on the best solution.
 
 The default, multi-step approach:
+
+1. Cross-correlate the 
+2. 
 
 1. Fit Teff/logg/[Fe/H]/RV using Doppler
 2. Fit Teff/logg/[Fe/H]/RV + vsini with Doppler model
@@ -33,7 +45,10 @@ The default, multi-step approach:
 4. Fit each element one at a time holding everything else fixed
 5. Fit everything simultaneously
 
-|Fraunhofer| can be called from python directly or the command-line script `hofer` can be used.
+When jointfit is used, 
+
+   
+|Doppler| can be called from python directly or the command-line script `doppler` can be used.
 
 
 Examples
@@ -47,37 +62,40 @@ Examples
 
 hofer
 =====
-Here are the various input arguments for command-line script `hofer`::
+Here are the various input arguments for command-line script `doppler`::
 
-  usage: hofer [-h] [-e ELEM] [-f FPARS] [-i INIT] [--outfile OUTFILE]
-               [--figfile FIGFILE] [-d OUTDIR] [-l LIST] [-p] [--vmicro]
-               [--vsini] [-r READER] [-v [VERBOSE]]
+usage: doppler [-h] [--outfile OUTFILE] [--payne] [--fitpars FITPARS]
+               [--fixpars FIXPARS] [--figfile FIGFILE] [-d OUTDIR] [-l] [-j]
+               [--snrcut SNRCUT] [-p] [-c] [-m] [-r READER] [-v]
+               [-nth NTHREADS]
                files [files ...]
 
-  Run Fraunhofer fitting on spectra
+Run Doppler fitting on spectra
 
-  positional arguments:
-    files                 Spectrum FITS files
+positional arguments:
+  files                 Spectrum FITS files or list
 
-  optional arguments:
-    -h, --help            show this help message and exit
-    -e ELEM, --elem ELEM  List of elements to fit
-    -f FPARS, --fpars FPARS
-                          List of parameteres to fit
-    -i INIT, --init INIT  Initial parameters to use
-    -o, --outfile OUTFILE Output filename
-    --figfile FIGFILE     Figure filename
-    -d OUTDIR, --outdir OUTDIR
-                          Output directory
-    -l LIST, --list LIST  Input list of FITS files
-    -p, --plot            Save the plots
-    --vmicro              Fit vmicro
-    --vsini               Fit vsini
-    -r READER, --reader READER
-                          The spectral reader to use
-    -v [VERBOSE], --verbose [VERBOSE]
-                          Verbosity level (0, 1, 2)
+optional arguments:
+  -h, --help            show this help message and exit
+  --outfile OUTFILE     Output filename
+  --payne               Fit a Payne model
+  --fitpars FITPARS     Payne labels to fit (e.g. TEFF,LOGG,FE_H
+  --fixpars FIXPARS     Payne labels to hold fixed (e.g. TEFF:5500,LOGG:2.3
+  --figfile FIGFILE     Figure filename
+  -d OUTDIR, --outdir OUTDIR
+                        Output directory
+  -l, --list            Input is a list of FITS files
+  -j, --joint           Joint fit all the spectra
+  --snrcut SNRCUT       S/N threshold to fit spectrum separately
+  -p, --plot            Save the plots
+  -c, --corner          Make corner plot with MCMC results
+  -m, --mcmc            Run MCMC when fitting spectra individually
+  -r READER, --reader READER
+                        The spectral reader to use
+  -v, --verbose         Verbose output
+  -nth NTHREADS, --nthreads NTHREADS
+                        Verbose output
 
 .. rubric:: Footnotes
 
-.. [#f1] For `Joseph von Fraunhofer <https://en.wikipedia.org/wiki/Joseph_von_Fraunhofer>`_ who was a German physicist and the first one to systematically study the absorption lines in the Sun's spectrum.
+.. [#f1] For `Christian Doppler <https://en.wikipedia.org/wiki/Christian_Doppler>`_ who was an Austrian physicist who discovered the `Doppler effect <https://en.wikipedia.org/wiki/Doppler_effect>`_ which is the change in frequency of a wave due to the relative speed of the source and observer.
