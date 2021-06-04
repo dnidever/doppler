@@ -2,4 +2,4 @@ numpy
 matplotlib
 astropy
 scipy
-thecannon
+the-cannon
