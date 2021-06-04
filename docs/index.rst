@@ -29,6 +29,7 @@ abundances and separate radial velocities for each spectrum.
    :maxdepth: 1
 
    install
+   gettingstarted
    
 
 Description
@@ -53,6 +54,7 @@ The approach with the Payne is:
 4. Run MCMC (if requested).
 
 When jointfit is used,
+
 1. Run regular |Doppler| fit on each spectrum separately.
 2. Find weighted mean of all labels and Vhelio.
 3. Fit all spectra simultaneously determining one set of labels and a separate RV for each spectrum.
@@ -68,6 +70,7 @@ Examples
     :maxdepth: 1
 
     examples
+    gettingstarted
 
 
 Doppler
