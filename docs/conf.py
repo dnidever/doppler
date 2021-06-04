@@ -63,7 +63,7 @@ exclude_patterns.append('_templates')
 # This is added to the end of RST files - a good place to put substitutions to
 # be used globally.
 rst_epilog += """
-.. |fraunhofer| replace:: *Fraunhofer*
+.. |doppler| replace:: *Doppler*
 """
 
 # -- Project information ------------------------------------------------------
@@ -141,7 +141,7 @@ html_title = '{0} v{1}'.format(project, release)
 htmlhelp_basename = project + 'doc'
 
 html_static_path = ['_static']
-html_style = 'fraunhofer.css'
+html_style = 'doppler.css'
 
 # -- Options for LaTeX output -------------------------------------------------
 
