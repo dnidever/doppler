@@ -37,30 +37,25 @@ Description
 
 The default, multi-step approach using the Cannon is:
 
-1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H] parameter space (Teff/logg/[Fe/H]/[Alpha/H] for the Payne).
-2.  
-
-1. Fit Teff/logg/[Fe/H]/RV using Doppler
-2. Fit Teff/logg/[Fe/H]/RV + vsini with Doppler model
-3. Fit stellar parameters (Teff/logg/[Fe/H]/[alpha/H]), RV and broadening (Vrot/Vmicro)
-4. Fit each element one at a time holding everything else fixed
-5. Fit everything simultaneously
+1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H] parameter space.
+2. Get improved Cannon stellar parameters using initial RV.
+3. Improved RV using better Cannon template.
+4. Improved Cannon stellar parameters.
+5. Full least-squares fitting of all stellar parameters and RV.
+6. Run fine-grid in RV using template from previous step
+7. Run MCMC (if requested).
 
 The approach with the Payne is:
 
-1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H] parameter space (Teff/logg/[Fe/H]/[Alpha/H] for the Payne).
-2.  
+1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H]/[alpha/Fe] parameter space.
+2. Least-squares fitting of all desired Payne labels and RV, using best-fit of previous step as initial guess.
+3. Run fine-grid in RV using best-fit template from previous step.
+4. Run MCMC (if requested).
 
-1. Fit Teff/logg/[Fe/H]/RV using Doppler
-2. Fit Teff/logg/[Fe/H]/RV + vsini with Doppler model
-3. Fit stellar parameters (Teff/logg/[Fe/H]/[alpha/H]), RV and broadening (Vrot/Vmicro)
-4. Fit each element one at a time holding everything else fixed
-5. Fit everything simultaneously
-   
 When jointfit is used,
 1. Run regular |Doppler| fit on each spectrum separately.
-2. 
-3. 
+2. Find weighted mean of all labels and Vhelio.
+3. Fit all spectra simultaneously determining one set of labels and a separate RV for each spectrum.
 
    
 |Doppler| can be called from python directly or the command-line script `doppler` can be used.
