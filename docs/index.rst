@@ -16,6 +16,7 @@ and also of `The Payne <https://github.com/tingyuansen/The_Payne>`_ (`Ting et al
 both machine-learning approaches to modeling stellar spectra.
 Doppler can determine the radial velocity (RV) and stellar parameters
 for a spectrum of any wavelength (3000-18000A) and resolution (R<20,000 at the blue end and 120,000 at the red end) with minimal setup.
+
 The current set of three Cannon models cover temperatures of 3,500K to 60,000K with 3-parameter (Teff, logg, [Fe/H]) and radial velocity.
 The current Payne model covers temperatures of 3,500K to XX,000K with 33 labels (Teff, logg, Vmicro, [C/H], [N/H], [O/H], [Na/H], [Mg/H], [Al/H],
 [Si/H], [P/H], [S/H], [K/H], [Ca/H], [Ti/H], [V/H], [Cr/H], [Mn/H], [Fe/H], [Co/H], [Ni/H], [Cu/H], [Ni/H], [Cu/H], [Ge/H], [Ce/H],
@@ -34,10 +35,10 @@ Description
 ===========
 |Doppler| fits spectra using a multi-step approach to zero-in on the best solution.
 
-The default, multi-step approach:
+The default, multi-step approach using the Cannon is:
 
-1. Cross-correlate the 
-2. 
+1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H] parameter space (Teff/logg/[Fe/H]/[Alpha/H] for the Payne).
+2.  
 
 1. Fit Teff/logg/[Fe/H]/RV using Doppler
 2. Fit Teff/logg/[Fe/H]/RV + vsini with Doppler model
@@ -45,7 +46,21 @@ The default, multi-step approach:
 4. Fit each element one at a time holding everything else fixed
 5. Fit everything simultaneously
 
-When jointfit is used, 
+The approach with the Payne is:
+
+1. Get initial RV using cross-correlation with rough sampling of Teff/logg/[Fe/H] parameter space (Teff/logg/[Fe/H]/[Alpha/H] for the Payne).
+2.  
+
+1. Fit Teff/logg/[Fe/H]/RV using Doppler
+2. Fit Teff/logg/[Fe/H]/RV + vsini with Doppler model
+3. Fit stellar parameters (Teff/logg/[Fe/H]/[alpha/H]), RV and broadening (Vrot/Vmicro)
+4. Fit each element one at a time holding everything else fixed
+5. Fit everything simultaneously
+   
+When jointfit is used,
+1. Run regular |Doppler| fit on each spectrum separately.
+2. 
+3. 
 
    
 |Doppler| can be called from python directly or the command-line script `doppler` can be used.
@@ -60,8 +75,8 @@ Examples
     examples
 
 
-hofer
-=====
+Doppler
+=======
 Here are the various input arguments for command-line script `doppler`::
 
 usage: doppler [-h] [--outfile OUTFILE] [--payne] [--fitpars FITPARS]

@@ -111,7 +111,7 @@ release = setup_cfg['version']
 # Please update these texts to match the name of your package.
 html_theme_options = {
     'logotext1': ' ',
-    'logotext2': 'Fraunhaufer',  # white,  semi-bold
+    'logotext2': 'Doppler',  # white,  semi-bold
     'logotext3': ':docs'   # white,  light
 }
 # Add/Update "html_theme_options" like this on your conf.py
