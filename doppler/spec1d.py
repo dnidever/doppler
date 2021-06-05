@@ -6,8 +6,8 @@
 
 from __future__ import print_function
 
-__authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20210603'  # yyyymmdd                                                                                                                           
+__authors__ = 'David Nidever <dnidever@montana.edu>'
+__version__ = '20210605'  # yyyymmdd                                                                                                                           
 
 import numpy as np
 import math
@@ -21,17 +21,23 @@ from dlnpyutils import utils as dln, bindata
 import copy
 from . import utils
 from .lsf import GaussianLsf, GaussHermiteLsf
-
+try:
+    import __builtin__ as builtins # Python 2
+except ImportError:
+    import builtins # Python 3
+    
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
-# astropy.modeling can handle errors and constraints
-
 # LSF class dictionary
 lsfclass = {'gaussian': GaussianLsf, 'gauss-hermite': GaussHermiteLsf}
+
+# Get print function to be used locally, allows for easy logging
+print = utils.getprintfunc() 
+
 
 def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
     """

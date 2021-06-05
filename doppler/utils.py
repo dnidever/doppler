@@ -6,8 +6,8 @@
 
 from __future__ import print_function
 
-__authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20210603'  # yyyymmdd                                                                                                                           
+__authors__ = 'David Nidever <dnidever@montana.edu>'
+__version__ = '20210605'  # yyyymmdd                                                                                                                           
 
 import os
 import numpy as np
@@ -731,6 +731,8 @@ def maskoutliers(spec,nsig=5,verbose=False):
 
     """
 
+    print = getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     spec2 = spec.copy()
     wave = spec2.wave.copy().reshape(spec2.npix,spec2.norder)   # make 2D
     flux = spec2.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D
@@ -802,6 +804,8 @@ def maskdiscrepant(spec,model,nsig=10,verbose=False):
 
     """
 
+    print = getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     spec2 = spec.copy()
     wave = spec2.wave.copy().reshape(spec2.npix,spec2.norder)   # make 2D
     flux = spec2.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D

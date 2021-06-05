@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser.add_argument('-m','--mcmc', action='store_true', help='Run MCMC when fitting spectra individually')
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
     parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')
-    parser.add_argument('--timestamp', action='store_true', help='Add timestamp to Verbose output')    
+    parser.add_argument('-t','--timestamp', action='store_true', help='Add timestamp to Verbose output')    
     parser.add_argument('-nth','--nthreads', type=int, nargs=1, default=0, help='Verbose output')        
     args = parser.parse_args()
 

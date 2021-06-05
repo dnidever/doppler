@@ -6,8 +6,8 @@
 
 from __future__ import print_function
 
-__authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20210603'  # yyyymmdd                                                                                                                           
+__authors__ = 'David Nidever <dnidever@montana.edu>'
+__version__ = '20210605'  # yyyymmdd                                                                                                                           
 
 import os
 #import sys, traceback
@@ -1672,7 +1672,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     """
 
     print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
-
+    
     # Set threads
     if nthreads is not None:
         os.environ["OMP_NUM_THREADS"] = str(nthreads)
@@ -1691,7 +1691,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
     else:
         fitparams = [f.upper() for f in fitparams]
-    if verbose: print('Fitting: '+', '.join(fitparams))        
+    if verbose: print('Fitting Payne model to spectrum with parameters: '+', '.join(fitparams))        
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
     
@@ -2017,6 +2017,9 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     fitparams = list(fitparams[np.char.array(fitparams).upper().find('RV')==-1])
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
+
+    if verbose: print('Jointly fitting Payne model to '+str(nspec)+' spectra with parameters: '+
+                      ', '.join(fitparams)+' and RV for each spectrum')
     
     # Creating catalog of info on each spectrum
     dtlist = [('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float)]
@@ -2776,6 +2779,8 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     
     t0 = time.time()
 
+    if verbose: print('Fitting Cannon model to spectrum with parameters: '+', '.join(['Teff','logg','[Fe/H]','RV']))        
+    
     # Make internal copy
     spec = spectrum.copy()
     
@@ -3212,7 +3217,10 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         os.environ["MKL_NUM_THREADS"] = str(nthreads)
         os.environ["VECLIB_MAXIMUM_THREADS"] = str(nthreads)
         os.environ["NUMEXPR_NUM_THREADS"] = str(nthreads)    
-    
+
+    if verbose: print('Jointly fitting Cannon model to '+str(nspec)+' spectra with parameters: '+
+                      ', '.join(['Teff','logg','[Fe/H]'])+' and RV for each spectrum')
+        
     # If list of filenames input, then load them
     
     # Creating catalog of info on each spectrum
@@ -3545,7 +3553,7 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
         logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
         logger.handlers[0].setStream(sys.stdout)
         builtins.logger = logger   # make it available globally across all modules
-    
+        
     # Cannon model
     if payne == False:
         return fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,

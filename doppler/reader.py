@@ -6,8 +6,8 @@
 
 from __future__ import print_function
 
-__authors__ = 'David Nidever <dnidever@noao.edu>'
-__version__ = '20210312'  # yyyymmdd
+__authors__ = 'David Nidever <dnidever@montana.edu>'
+__version__ = '20210605'  # yyyymmdd
 
 import os
 import numpy as np
@@ -18,12 +18,19 @@ from astropy.table import Table
 from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
 import functools
-from . import spec1d
+from . import spec1d,utils
 from .spec1d import Spec1D
-
+try:
+    import __builtin__ as builtins # Python 2
+except ImportError:
+    import builtins # Python 3
+    
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+
+# Get print function to be used locally, allows for easy logging
+print = utils.getprintfunc() 
 
 astropy.io.fits.Conf.use_memmap = False  # load into memory
 

@@ -7,7 +7,7 @@
 from __future__ import print_function
 
 __authors__ = 'David Nidever <dnidever@montana.edu>'
-__version__ = '20210603'  # yyyymmdd
+__version__ = '20210605'  # yyyymmdd
 
 # Some of the software is from Yuan-Sen Ting's The_Payne repository
 # https://github.com/tingyuansen/The_Payne
@@ -24,14 +24,19 @@ import copy
 import logging
 import contextlib, io, sys
 import time
-
+try:
+    import __builtin__ as builtins # Python 2
+except ImportError:
+    import builtins # Python 3
+    
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
-# astropy.modeling can handle errors and constraints
+# Get print function to be used locally, allows for easy logging
+print = utils.getprintfunc() 
 
     
 def leaky_relu(z):
