@@ -8,7 +8,10 @@ Authors
 -------
 
 - **David Nidever** (Montana State University)
-
+- **Jon Holtzman** (New Mexico State University)
+- **Drew Chojnowski** (Montana State University)
+- **Yuan-Sen Time** (Institute of Advanced Study)  
+  
 Installation
 ------------
 
