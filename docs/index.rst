@@ -61,7 +61,7 @@ When jointfit is used,
 3. Fit all spectra simultaneously determining one set of labels and a separate RV for each spectrum.
 
    
-|Doppler| can be called from python directly or the command-line script `doppler` can be used.
+|Doppler| can be called from python directly or the command-line script ``doppler`` can be used.
 
 
 Examples
@@ -76,39 +76,39 @@ Examples
 
 Doppler
 =======
-Here are the various input arguments for command-line script `doppler`::
+Here are the various input arguments for command-line script ``doppler``::
 
-usage: doppler [-h] [--outfile OUTFILE] [--payne] [--fitpars FITPARS]
-               [--fixpars FIXPARS] [--figfile FIGFILE] [-d OUTDIR] [-l] [-j]
-               [--snrcut SNRCUT] [-p] [-c] [-m] [-r READER] [-v]
-               [-nth NTHREADS]
-               files [files ...]
+  usage: doppler [-h] [--outfile OUTFILE] [--payne] [--fitpars FITPARS]
+                 [--fixpars FIXPARS] [--figfile FIGFILE] [-d OUTDIR] [-l] [-j]
+                 [--snrcut SNRCUT] [-p] [-c] [-m] [-r READER] [-v]
+                 [-nth NTHREADS]
+                 files [files ...]
 
-Run Doppler fitting on spectra
+  Run Doppler fitting on spectra
 
-positional arguments:
-  files                 Spectrum FITS files or list
+  positional arguments:
+    files                 Spectrum FITS files or list
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --outfile OUTFILE     Output filename
-  --payne               Fit a Payne model
-  --fitpars FITPARS     Payne labels to fit (e.g. TEFF,LOGG,FE_H
-  --fixpars FIXPARS     Payne labels to hold fixed (e.g. TEFF:5500,LOGG:2.3
-  --figfile FIGFILE     Figure filename
-  -d OUTDIR, --outdir OUTDIR
-                        Output directory
-  -l, --list            Input is a list of FITS files
-  -j, --joint           Joint fit all the spectra
-  --snrcut SNRCUT       S/N threshold to fit spectrum separately
-  -p, --plot            Save the plots
-  -c, --corner          Make corner plot with MCMC results
-  -m, --mcmc            Run MCMC when fitting spectra individually
-  -r READER, --reader READER
-                        The spectral reader to use
-  -v, --verbose         Verbose output
-  -nth NTHREADS, --nthreads NTHREADS
-                        Verbose output
+  optional arguments:
+    -h, --help            show this help message and exit
+    --outfile OUTFILE     Output filename
+    --payne               Fit a Payne model
+    --fitpars FITPARS     Payne labels to fit (e.g. TEFF,LOGG,FE_H
+    --fixpars FIXPARS     Payne labels to hold fixed (e.g. TEFF:5500,LOGG:2.3
+    --figfile FIGFILE     Figure filename
+    -d OUTDIR, --outdir OUTDIR
+                          Output directory
+    -l, --list            Input is a list of FITS files
+    -j, --joint           Joint fit all the spectra
+    --snrcut SNRCUT       S/N threshold to fit spectrum separately
+    -p, --plot            Save the plots
+    -c, --corner          Make corner plot with MCMC results
+    -m, --mcmc            Run MCMC when fitting spectra individually
+    -r READER, --reader READER
+                          The spectral reader to use
+    -v, --verbose         Verbose output
+    -nth NTHREADS, --nthreads NTHREADS
+                          Verbose output
 
 .. rubric:: Footnotes
 

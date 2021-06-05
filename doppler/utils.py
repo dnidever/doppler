@@ -16,13 +16,30 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from dlnpyutils import utils as dln
 import matplotlib.pyplot as plt
-
+try:
+    import __builtin__ as builtins # Python 2
+except ImportError:
+    import builtins # Python 3
+        
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 cspeed = 2.99792458e5  # speed of light in km/s
 
+def getprintfunc(inplogger=None):
+    """ Allows you to modify print() locally with a logger."""
+    
+    # Input logger
+    if inplogger is not None:
+        return inplogger.info  
+    # Check if a global logger is defined
+    elif hasattr(builtins,"logger"):
+        return builtins.logger.info
+    # Return the buildin print function
+    else:
+        return builtins.print
+    
 
 # Convert wavelengths to pixels for a dispersion solution
 def w2p(dispersion,w,extrapolate=True):

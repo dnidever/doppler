@@ -5,61 +5,58 @@ Examples
 
 Running doppler
 ===============
-The simplest way to run |Fraunhofer| is with the command-line script ``hofer``.  The only required argument is the name of a spectrum fits file.
+The simplest way to run |Doppler| is with the command-line script ``doppler``.  The only required argument is the name of a spectrum fits file.
 
 
 
 
-# Examples
+Examples
+--------
 
 
 Read in the example spectrum
-```python
-datadir = doppler.utils.datadir()
-spec = doppler.read(datadir+'spec-3586-55181-0500.fits')
-```
+
+.. code-block:: python
+
+	datadir = doppler.utils.datadir()
+	spec = doppler.read(datadir+'spec-3586-55181-0500.fits')
+
 
 Print out it's properties:
-```python
-spec
-<class 'doppler.spec1d.Spec1D'>
-BOSS spectrum
-File = /Users/nidever/projects/doppler/doppler/data/spec-3586-55181-0500.fits
-S/N =   54.98
-Flux = [ 53.945076 118.17894   80.38118  ...  35.32331   42.468388  39.03381 ]
-Err = [11.138297   7.801231   8.071927  ...  5.9317183  6.7650976  6.505177 ]
-Wave = [ 3561.2297  3562.0508  3562.8704 ... 10322.862  10325.231  10327.612 ]
-```
+
+.. code-block:: python
+
+	spec
+	<class 'doppler.spec1d.Spec1D'>
+	BOSS spectrum
+	File = /Users/nidever/projects/doppler/doppler/data/spec-3586-55181-0500.fits
+	S/N =   54.98
+	Flux = [ 53.945076 118.17894   80.38118  ...  35.32331   42.468388  39.03381 ]
+	Err = [11.138297   7.801231   8.071927  ...  5.9317183  6.7650976  6.505177 ]
+	Wave = [ 3561.2297  3562.0508  3562.8704 ... 10322.862  10325.231  10327.612 ]
+
 
 Now fit the spectrum:
-```python
-out,model = doppler.rv.fit(spec)
-```
+
+.. code-block:: python
+		
+	out,model = doppler.rv.fit(spec)
+
 
 The output will be a table with the final results and the best-fitting model spectrum.
 
-# Future improvements
-- Add white dwarf Cannon models.
-- Modify to fit in the specutils and astropy framework.
-- Add jointfit() function to the rv module that will allow fitting of multiple spectra of the same star at one time.
-- Add unit support.
-- Move docs to readthedocs.
-
-
-
 
 
 
 .. code-block:: bash
 
-    hofer spectrum.fits
+    doppler spectrum.fits
 
-By default, |hofer| doesn't print anything to the screen.  So let's set the ``--verbose`` or ``-v`` parameter.  And, for starters, let's not fit
-any elements, just the main stellar parameters.  We can do that by setting ``--elem none``.
+By default, |Doppler| doesn't print anything to the screen.  So let's set the ``--verbose`` or ``-v`` parameter.
 
 .. code-block:: bash
 		
-    hofer spectrum.fits -v --elem none
+    doppler spectrum.fits -v
 
     2021-02-16 12:34:54,342 [INFO ]  Start: 2021-02-16 12:34:54
     2021-02-16 12:34:54,342 [INFO ]   
@@ -123,18 +120,18 @@ This will fit Teff, logg, [Fe/H], and RV.
 
 .. code-block:: bash
 
-    hofer spectrum.fits -v --fpars teff,logg,fe_h,rv
+    doppler spectrum.fits -v --fpars teff,logg,fe_h,rv
 
 We can give it some initial estimates and fix certain abundances.
 
 .. code-block:: bash
 
-    hofer spectrum.fits -v --fpars teff,logg,fe_h,rv --init teff:5100,logg:3.0,rv:100.0,ca_h:-0.5
+    doppler spectrum.fits -v --fpars teff,logg,fe_h,rv --init teff:5100,logg:3.0,rv:100.0,ca_h:-0.5
 
 
-Running Fraunhofer from python
+Running Doppler from python
 ==============================
-The main |Fraunhofer| module for spectral fitting is ``specfit``.  The ``fit()`` function performs the default multi-step, iterative fitting,
+The main |Doppler| module for spectral fitting is ``specfit``.  The ``fit()`` function performs the default multi-step, iterative fitting,
 while ``fit_lsq()`` performs least-squares fitting for a specific set of parameters.
 
 This will run the multi-step approach:

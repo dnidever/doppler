@@ -38,7 +38,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
 import subprocess
-
+try:
+    import __builtin__ as builtins # Python 2
+except ImportError:
+    import builtins # Python 3
+    
 # Ignore these warnings, it's a bug
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
@@ -157,6 +161,9 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
          specfigure(figfile,specm,fmodel,out,original=orig,verbose=True,ispayne=True,annotlabels=annotlabels)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging    
+    
     if annotlabels is None:
         annotlabels = ['teff','logg','feh','vrel']
     #import matplotlib
@@ -1044,6 +1051,8 @@ def printpars(pars,parerr=None,names=None,units=None):
 
     """
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     if names is None:
         if len(pars)==4:
             names = ['Teff','logg','[Fe/H]','Vrel']
@@ -1188,6 +1197,8 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
          out, bmodel = fit_xcorrgrid_payne(spec)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     # Check that the samples input has the right columns
     if samples is not None:
@@ -1369,6 +1380,8 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
          out, bmodel = fit_lsq_payne(spec,model)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging    
     
     # Prepare the spectrum
     #-----------------------------
@@ -1521,6 +1534,8 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
          out, bmodel = fit_mcmc_payne(spec)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     # Prepare the spectrum
     #-----------------------------
@@ -1656,6 +1671,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
 
     """
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
 
     # Set threads
     if nthreads is not None:
@@ -1844,6 +1860,8 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
          out, bmodel = multifit_lsq_payne(speclist,modlist,initpar)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     nspec = len(speclist)
 
@@ -1970,9 +1988,9 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
          sumstr, final, bmodel, specmlist = jointfit_payne(speclist)
 
     """
-    
-    # speclist is list of Spec1D objects.
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     nspec = len(speclist)
     t0 = time.time()
 
@@ -2417,6 +2435,8 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
 
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     # Check that the samples input has the right columns
     if samples is not None:
@@ -2520,6 +2540,8 @@ def fit_lsq_cannon(spec,models=None,initpar=None,verbose=False):
          out, bmodel = fit_lsq_cannon(spec)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     # Prepare the spectrum
     #-----------------------------
@@ -2621,6 +2643,8 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
          out, bmodel = fit_mcmc(spec)
 
     """
+
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
     
     # Prepare the spectrum
     #-----------------------------
@@ -2736,6 +2760,8 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
 
     """
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     # Turn off the Cannon's info messages
     tclogger = logging.getLogger('thecannon.utils')
     tclogger.disabled = True
@@ -2976,6 +3002,8 @@ def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
 
     """
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     nspec = len(speclist)
     
     ## Prepare the spectrum
@@ -3171,9 +3199,9 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
          sumstr, final, bmodel, specmlist = jointfit_cannon(speclist)
 
     """
-    
-    # speclist is list of Spec1D objects.
 
+    print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
+    
     nspec = len(speclist)
     t0 = time.time()
 
@@ -3455,7 +3483,8 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
 
 
 def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=False,
-        mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None):
+        mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None,
+        timestamp=False):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -3487,6 +3516,8 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
          Return the prepared models (only if Cannon models used).
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
+    timestamp : boolean, optional
+         Add timestamp in verbose output (if verbose=True). Default is False.
 
     Returns
     -------
@@ -3507,6 +3538,13 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
          out, model = fit(spec)
 
     """
+
+    # Set up the logger
+    if timestamp and verbose:
+        logger = dln.basiclogger()
+        logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
+        logger.handlers[0].setStream(sys.stdout)
+        builtins.logger = logger   # make it available globally across all modules
     
     # Cannon model
     if payne == False:
@@ -3522,7 +3560,8 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
     
 
 def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
-             saveplot=False,verbose=False,outdir=None,nthreads=None,payne=False):
+             saveplot=False,verbose=False,outdir=None,nthreads=None,payne=False,
+             timestamp=False):
     """
     This fits a Cannon or Payne model to multiple spectra of the same star.
 
@@ -3554,6 +3593,8 @@ def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=
          The number of threads to use.  By default the number of threads is not limited.
     payne : bool, optional
          Fit a Payne model.  By default, a Cannon model is used.
+    timestamp : boolean, optional
+         Add timestamp in verbose output (if verbose=True). Default is False.
 
     Returns
     -------
@@ -3575,6 +3616,14 @@ def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=
 
     """
 
+
+    # Set up the logger
+    if timestamp and verbose:
+        logger = dln.basiclogger()
+        logger.handlers[0].setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s"))
+        logger.handlers[0].setStream(sys.stdout)
+        builtins.logger = logger   # make it available globally across all modules
+    
     
     # Cannon model
     if payne == False:

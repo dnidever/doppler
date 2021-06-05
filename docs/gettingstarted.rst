@@ -35,8 +35,8 @@ Now fit the spectrum:
 		
 	out, model, specm = doppler.rv.fit(spec)
 
-`out` is a catalog that contains the best-fit parameters, uncertainties, chi-squared and so on. `model` is the best-fitting model spectrum.
-`specm` is the observed spectrum that has been masked and continuum tweaked by |Doppler| and was used in the fitting.
+``out`` is a catalog that contains the best-fit parameters, uncertainties, chi-squared and so on. ``model`` is the best-fitting model spectrum.
+``specm`` is the observed spectrum that has been masked and continuum tweaked by |Doppler| and was used in the fitting.
 
 	
 
@@ -58,8 +58,8 @@ they are flux versus wavelength.  The main properties of a Spec1D object are:
 Some important Spec1D methods are:
 
 - **normalize()**: Normalize the spectrum.
-- **wave2pix()**: Convert wavelengths to pixels (takes `order` keyword).
-- **pix2wave()**: Convert pixels to wavelengths (takes `order` keyword).
+- **wave2pix()**: Convert wavelengths to pixels (takes ``order`` keyword).
+- **pix2wave()**: Convert pixels to wavelengths (takes ``order`` keyword).
 - **interp()**: Interpolate the spectrum onto a new wavelength scale.
 - **copy()**: Make a copy of this spectrum.
 - **barycorr()**: Compute the barycentric correction for this spectrum.
@@ -77,7 +77,7 @@ If you don't have the LSF information, you can derive it by using comparison or 
 Fit Gaussians to all of the mission lines and then fit the Gaussian sigma as a function of pixel or wavelength.  Make sure that the
 sigma units and X units are the same (e.g., wavelength in Angstroms or pixels).
 
-The LSF can be easily computed for the entire spectrum by using the `array()` method:
+The LSF can be easily computed for the entire spectrum by using the ``array()`` method:
 
 .. code-block:: python
 		
@@ -85,7 +85,7 @@ The LSF can be easily computed for the entire spectrum by using the `array()` me
 
 The output will be a 2D array [Npix,Nlsf] if there is only one order, otherwise 3D [Npix,Nlsf,Norder].
 
-You can obtain the LSF for specific pixels or wavelengths with the `anyarray()` method:
+You can obtain the LSF for specific pixels or wavelengths with the ``anyarray()`` method:
 
 .. code-block:: python
 
@@ -94,10 +94,10 @@ You can obtain the LSF for specific pixels or wavelengths with the `anyarray()` 
 
 The output will be [Npix,Nlsf].
 
-The default of `anyarray()` is to put the LSF on the original wavelength scale.  If you want your own new wavelength scale,
-then set `original=False`.
+The default of ``anyarray()`` is to put the LSF on the original wavelength scale.  If you want your own new wavelength scale,
+then set ``original=False``.
 
-You can use `utils.convolve_sparse()` to convolve a flux array with an LSF.
+You can use ``utils.convolve_sparse()`` to convolve a flux array with an LSF.
 
 .. code-block:: python
 	
@@ -108,10 +108,10 @@ You can use `utils.convolve_sparse()` to convolve a flux array with an LSF.
 The Mask
 --------
 
-The Spec1D object uses an internal boolean bad pixel mask called `mask`, where good pixels have `False` and bad pixels `True` values.
+The Spec1D object uses an internal boolean bad pixel mask called ``mask``, where good pixels have ``False`` and bad pixels ``True`` values.
 Normally spectra come with bitmasks which give specific information for each pixel, such as "bad pixel", "saturated", "bright sky line", etc.
 But this information is survey or instrument-specific.  Therefore, it is best for each spectral reader (see below) to specify the good
-and bad pixels in `mask`.  It is also good to save the bitmask information (if it exists) in `bitmask`.
+and bad pixels in ``mask``.  It is also good to save the bitmask information (if it exists) in ``bitmask``.
 
 
 Spectral Orders
@@ -127,12 +127,12 @@ of [4096,3] is okay, but [3,4096] is not.
 
 If the order spectra do not have the same number of pixels (e.g., 1900, 2000, and 2100 pixels for three orders), then the arrays should
 use the largest number of pixels for a given order, say Npix_max (2100 pixels in the example).  For orders that have less pixels than
-this, put the spectrum at the beginning of the array and leave the rest blank but be sure to set the `mask` to `True` for these pixels
+this, put the spectrum at the beginning of the array and leave the rest blank but be sure to set the ``mask`` to ``True`` for these pixels
 so that they will be ignored by |Doppler|.  For the first order in the example, fill the first 1900 elements of the 2100 element flux
-array with the spectrum and leave the rest of the pixels at zero.  Then set the last 200 elements of the `mask` array to `True` to mark
+array with the spectrum and leave the rest of the pixels at zero.  Then set the last 200 elements of the ``mask`` array to ``True`` to mark
 those pixels as bad.
 
-Most |Doppler| functions and methods have an `order=X` keyword if a specific order is desired.
+Most |Doppler| functions and methods have an ``order=X`` keyword if a specific order is desired.
 
 
 Vacuum or Air Wavelengths
@@ -140,7 +140,7 @@ Vacuum or Air Wavelengths
 
 In the past it was the norm to use "air" wavelengths (standard temperature and pressure), but more recently "vacuum" wavelengths are
 becoming more common.  |Doppler| can handle wavelengths in both vacuum or air and will properly convert between them as long as it knows
-what the observed spectrum uses.  Make sure to set the `wavevac` property is properly set.  `True` for vacuum wavelengths, and `False`
+what the observed spectrum uses.  Make sure to set the ``wavevac`` property is properly set.  ``True`` for vacuum wavelengths, and ``False``
 for air wavelengths.
 
 Normalization
@@ -151,8 +151,8 @@ Normalization
 You may choose to normalize your spectrum using a different method.  To do so:
 
 - normalize the ERR array as well the FLUX, i.e. divide both by the continuum
-- save the continuum used in CONT, e.g., `spec.cont = cont`
-- indicate that the spectrum is normalized by setting `spec.normalized = True`
+- save the continuum used in CONT, e.g., ``spec.cont = cont``
+- indicate that the spectrum is normalized by setting ``spec.normalized = True``
 
 Then you can use the rest of the |Doppler| functions just as if the normalize() method was used.
 
@@ -188,27 +188,28 @@ If you are going to add LSF information (highly recommended):
         spec = Spec1D(flux,wave=wave,lsfcoef=lsfcoef,lsftype='Gaussian',lsfxtype='Wave')
         return spec
 
-If you know the Gaussian sigma as a polynomial function of Wavelength or Pixels, use `lsfcoef`.  For multiple orders, the
-dimensionality of `lsfcoef` should be [Ncoeff, Norder].  The coefficients should be sorted with the highest orders first and
+If you know the Gaussian sigma as a polynomial function of Wavelength or Pixels, use ``lsfcoef``.  For multiple orders, the
+dimensionality of ``lsfcoef`` should be [Ncoeff, Norder].  The coefficients should be sorted with the highest orders first and
 the constant term last, as is usual in python.  **Note**, if your lsfxtype is "Wave", then it is assumed that the resulting
-sigmas are also in wavelength units (Angstroms).  If you want to input an array of sigma values per pixel instead, then use `lsfsigma`.
+sigmas are also in wavelength units (Angstroms).  If you want to input an array of sigma values per pixel instead, then use ``lsfsigma``.
 
 There is also a "Gauss-Hermite" LSF type, but currently this is only used for APOGEE spectra.
 
-It's useful to check at the beginning of your reader that the file/spectrum is of the right type.  If it's not then just return `None`.
+It's useful to check at the beginning of your reader that the file/spectrum is of the right type.  If it's not then just return ``None``.
 
 |Doppler| can handle wavelengths in both vacuum or air and will properly convert between them as long as it knows what the
-observed spectrum uses.  Make sure to set `wavevac = True` for vacuum wavelengths or `False` for air wavelengths.
+observed spectrum uses.  Make sure to set ``wavevac = True`` for vacuum wavelengths or ``False`` for air wavelengths.
 
 Readers can specify a custom continuum function that will be used by the normalize() method for the continuum normalization.  Set the
-Spec1D property `continuum_func` to the function you want to use.  The `spec1d` module has a function called `continuum` that is
-normally used to |Doppler|.  A simple approach is to just modify the default parameters for `continuum` using the `partial` capability:
+Spec1D property ``continuum_func`` to the function you want to use.  The ``spec1d`` module has a function called ``continuum`` that is
+normally used to |Doppler|.  A simple approach is to just modify the default parameters for ``continuum`` using the ``partial`` capability:
 
 For example,
 
 .. code-block:: python
 
-	spec.continuum_func = functools.partial(spec1d.continuum,norder=4,perclevel=75.0,binsize=0.15,interp=True)
+	spec.continuum_func = functools.partial(spec1d.continuum,norder=4,perclevel=75.0,
+	                                        binsize=0.15,interp=True)
 
 But a completely separate function can also be used.  It just needs to accept a Spec1D object as the first positional argument and
 return the continuum array with the same dimensions as the flux array.
@@ -217,7 +218,7 @@ return the continuum array with the same dimensions as the flux array.
 Using a custom reader
 ---------------------
 
-If you are |Doppler| directly from python, you can add the custrom reader to the list of readers.
+If you are using |Doppler| directly from python, you can add the custrom reader to the list of readers.
 
 .. code-block:: python
 		
@@ -225,9 +226,9 @@ If you are |Doppler| directly from python, you can add the custrom reader to the
     from mymodule import myreader
     reader._readers['myreader'] = myreader
 
-Now your reader should work with `doppler.read()`.
+Now your reader should work with ``doppler.read()``.
 
-If you are use the `doppler` command-like tool, you can use the custom reader by giving the python filename in the call.
+If you are using the ``doppler`` command-line tool, you can use the custom reader by giving the python script filename in the call.
 
 .. code-block:: bash
 		
