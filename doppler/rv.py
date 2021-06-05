@@ -2496,10 +2496,8 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
     for i in range(len(samples)):
         m = models([samples['teff'][i],samples['logg'][i],samples['feh'][i]],rv=0,wave=wavelog)
         outstr1 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
-        #if outstr1['chisq'] > 1000:
-        #    import pdb; pdb.set_trace()
         if verbose is True:
-            print('%-7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
+            print('%7.2f  %5.2f  %5.2f  %5.2f  %5.2f  %5.2f' % (teff[i],logg[i],feh,outstr1['vrel'][0],outstr1['ccpeak'][0],outstr1['chisq'][0]))
         for n in ['xshift','vrel','vrelerr','ccpeak','ccpfwhm','chisq']: outstr[n][i] = outstr1[n]
         outstr['teff'][i] = teff[i]
         outstr['logg'][i] = logg[i]
