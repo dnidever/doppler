@@ -1052,18 +1052,22 @@ def printpars(pars,parerr=None,names=None,units=None):
     """
 
     print = utils.getprintfunc() # Get print function to be used locally, allows for easy logging
-    
+
+    npars = len(pars)
     if names is None:
-        if len(pars)==4:
+        if npars==3:
+            names = ['Teff','logg','[Fe/H]']
+            units = ['K','','']
+        if npars==4:
             names = ['Teff','logg','[Fe/H]','Vrel']
             units = ['K','','','km/s']
-        if len(pars)==5:
+        if npars==5:
             names = ['Teff','logg','[Fe/H]','[alpha/Fe]','Vrel']
             units = ['K','','','','km/s']
     if units is None:
         units = [' ' for l in pars]
             
-    for i in range(len(pars)):
+    for i in range(npars):
         if parerr is None:
             err = None
         else:
@@ -3556,16 +3560,20 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
         
     # Cannon model
     if payne == False:
-        return fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
-                          cornername=cornername,retpmodels=retpmodels,nthreads=nthreads)
+        out = fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
+                         cornername=cornername,retpmodels=retpmodels,nthreads=nthreads)
     # Payne model
     else:
-        return fit_payne(spectrum,model=models,fitparams=fitparams,fixparams=fixparams,
-                         verbose=verbose,mcmc=mcmc,figfile=figfile,
-                         cornername=cornername,nthreads=nthreads)
+        out = fit_payne(spectrum,model=models,fitparams=fitparams,fixparams=fixparams,
+                        verbose=verbose,mcmc=mcmc,figfile=figfile,
+                        cornername=cornername,nthreads=nthreads)
+        
+    # Breakdown logger
+    if timestamp and verbose:
+        del builtins.logger
 
-
-    
+    return out
+        
 
 def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
              saveplot=False,verbose=False,outdir=None,nthreads=None,payne=False,
@@ -3635,11 +3643,17 @@ def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=
     
     # Cannon model
     if payne == False:
-        return jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=snrcut,
-                               saveplot=saveplot,verbose=verbose,outdir=outdir,
-                               nthreads=nthreads)
+        out = jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=snrcut,
+                              saveplot=saveplot,verbose=verbose,outdir=outdir,
+                              nthreads=nthreads)
     # Payne model
     else:
-        return jointfit_payne(speclist,model=models,fitparams=fitparams,fixparams=fixparams,
-                              mcmc=mcmc,snrcut=snrcut,saveplot=saveplot,verbose=verbose,
-                              outdir=outdir,nthreads=nthreads)    
+        out = jointfit_payne(speclist,model=models,fitparams=fitparams,fixparams=fixparams,
+                             mcmc=mcmc,snrcut=snrcut,saveplot=saveplot,verbose=verbose,
+                             outdir=outdir,nthreads=nthreads)    
+
+    # Breakdown logger
+    if timestamp and verbose:
+        del builtins.logger
+
+    return out

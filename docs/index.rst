@@ -18,7 +18,7 @@ Doppler can determine the radial velocity (RV) and stellar parameters
 for a spectrum of any wavelength (3000-18000A) and resolution (R<20,000 at the blue end and 120,000 at the red end) with minimal setup.
 
 The current set of three Cannon models cover temperatures of 3,500K to 60,000K with 3-parameter (Teff, logg, [Fe/H]) and radial velocity.
-The current Payne model covers temperatures of 3,500K to XX,000K with 33 labels (Teff, logg, Vmicro, [C/H], [N/H], [O/H], [Na/H], [Mg/H], [Al/H],
+The current Payne model covers temperatures of 3,500K to 6,000K with 33 labels (Teff, logg, Vmicro, [C/H], [N/H], [O/H], [Na/H], [Mg/H], [Al/H],
 [Si/H], [P/H], [S/H], [K/H], [Ca/H], [Ti/H], [V/H], [Cr/H], [Mn/H], [Fe/H], [Co/H], [Ni/H], [Cu/H], [Ni/H], [Cu/H], [Ge/H], [Ce/H],
 [Nd/H], [Ba/H], [Eu/H], [La/H], [Y/H], [Sc/H], [Zr/H], [Pr/H], [Yb/H]) as well as radial velocity, rotational velocity and macrotubulence.
 
