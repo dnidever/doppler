@@ -1744,21 +1744,26 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
                'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
     lsout0, lsmodel0 = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
                                    fixparams=fixparams,verbose=verbose)
-    lspars0 = lsout['pars'][0]
-    lsperror0 = lsout['parerr'][0]    
+    lspars0 = lsout0['pars'][0]
+    lsperror0 = lsout0['parerr'][0]    
 
     # Tweak the continuum normalization
     if notweak is False:
-        specm = tweakcontinuum(specm,lsmodel0,usepoly=usepoly,polyorder=polyorder)
+        specm = tweakcontinuum(specm,lsmodel0,usepoly=tpoly,polyorder=tpolyorder)
         # Mask out very discrepant pixels when compared to the best-fit model
         specm = utils.maskdiscrepant(specm,lsmodel0,verbose=verbose)  
     
-    # Refit with Payne
-    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=lspars0,fitparams=fitparams,
-                                   fixparams=fixparams,verbose=verbose)
-    lspars = lsout['pars'][0]
-    lsperror = lsout['parerr'][0] 
-
+        # Refit with Payne
+        lsout, lsmodel = fit_lsq_payne(specm,model,initpar=lspars0,fitparams=fitparams,
+                                       fixparams=fixparams,verbose=verbose)
+        lspars = lsout['pars'][0]
+        lsperror = lsout['parerr'][0] 
+    else:
+        lsout = lsout0
+        lsmodel = lsmodel0
+        lspars = lspars0
+        lsperror = lsperror0
+        
         
     # Step 5: Run fine grid in RV, forward modeling
     #----------------------------------------------
@@ -2251,8 +2256,8 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     final = info.copy()
     for k in range(nfitparams):                
         name = fitparams[k].lower()
-        info[name][i] = stelpars2[k]
-        info[name+'err'][i] = stelparerr2[k]
+        info[name] = stelpars2[k]
+        info[name+'err'] = stelparerr2[k]
     final['vrel'] = vrel2
     final['vrelerr'] = vrelerr2
     final['vhelio'] = vhelio2
