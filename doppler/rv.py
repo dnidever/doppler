@@ -88,13 +88,17 @@ def mute():
     sys.stderr = saved_stderr
 
     
-def tweakcontinuum(spec,model):
+def tweakcontinuum(spec,model,smlen=None,usepoly=False,polyorder=3):
     """ Tweak the continuum normalization of an observed spectrum using a good-fit model."""
 
+    if smlen is None:
+        smlen = spec.npix/10.0
+    
     if hasattr(spec,'cont') is False:
         spec.cont = spec.flux.copy()*0+1
+
+    # Loop over orders
     for i in range(spec.norder):
-        smlen = spec.npix/10.0
         if spec.norder==1:
             ratio = spec.flux/model.flux
             mask = spec.mask
@@ -108,7 +112,14 @@ def tweakcontinuum(spec,model):
             ratio[bd] = np.nan
         ratio[0] = np.nanmedian(ratio[0:np.int(smlen/2)])
         ratio[-1] = np.nanmedian(ratio[-np.int(smlen/2):-1])
-        sm = dln.gsmooth(ratio,smlen,boundary='extend')
+        # Use Gaussian Smoothing
+        if usepoly is False:
+            sm = dln.gsmooth(ratio,smlen,boundary='extend')
+        # Use low-order,polynomial
+        else:
+            x = np.linspace(-1,1,spec.npix)
+            coef = dln.poly_fit(x[gd],ratio[gd]-1,polyorder)
+            sm = dln.poly(x,coef)+1
         # Deal with any remaining NaNs
         bd, = np.where(np.isfinite(sm)==False)
         if len(bd)>0:
@@ -1627,7 +1638,8 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
  
 
 def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
-              figfile=None,mcmc=False,cornername=None,nthreads=None):
+              figfile=None,mcmc=False,cornername=None,nthreads=None,
+              notweak=False,tpoly=False,tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
 
@@ -1656,6 +1668,14 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
          the MCMC run.
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -1722,12 +1742,24 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     # Initial estimates
     initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
                'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
-    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
+    lsout0, lsmodel0 = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
+                                   fixparams=fixparams,verbose=verbose)
+    lspars0 = lsout['pars'][0]
+    lsperror0 = lsout['parerr'][0]    
+
+    # Tweak the continuum normalization
+    if notweak is False:
+        specm = tweakcontinuum(specm,lsmodel0,usepoly=usepoly,polyorder=polyorder)
+        # Mask out very discrepant pixels when compared to the best-fit model
+        specm = utils.maskdiscrepant(specm,lsmodel0,verbose=verbose)  
+    
+    # Refit with Payne
+    lsout, lsmodel = fit_lsq_payne(specm,model,initpar=lspars0,fitparams=fitparams,
                                    fixparams=fixparams,verbose=verbose)
     lspars = lsout['pars'][0]
-    lsperror = lsout['parerr'][0]    
+    lsperror = lsout['parerr'][0] 
 
-    
+        
     # Step 5: Run fine grid in RV, forward modeling
     #----------------------------------------------
     maxv = 10.0
@@ -1751,11 +1783,6 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         print('Fine grid best RV = %5.2f km/s' % finerv)
         print('chisq = %5.2f' % finechisq)
     
-    ## Tweak the continuum normalization
-    #specm = tweakcontinuum(specm,bestmodelspec0)
-    ## Mask out very discrepant pixels when compared to the best-fit model
-    #specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
-
     # Final parameters and uncertainties (so far)
     fpars = lsout['pars'][0]
     fperror = lsout['parerr'][0]
@@ -1942,7 +1969,8 @@ def multifit_lsq_payne(speclist,modlist,fitparams=None,fixparams={},initpar=None
 
 
 def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
-                   saveplot=False,verbose=False,outdir=None,nthreads=None):
+                   saveplot=False,verbose=False,outdir=None,nthreads=None,
+                   notweak=False,tpoly=False,tpolyorder=3):
     """
     This fits a Payne model to multiple spectra of the same star.
 
@@ -1972,6 +2000,14 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
          The directory for output files.  The default is to use the current directory.
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -2067,7 +2103,8 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             # Fit the spectrum
             fitparams1 = fitparams+['RV']  # make sure to fit the RV
             out, bmodel, specm = fit_payne(spec,fitparams=fitparams1,fixparams=fixparams,
-                                          verbose=verbose,mcmc=mcmc,figfile=figfile)
+                                           verbose=verbose,mcmc=mcmc,figfile=figfile,
+                                           notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
             # Save the "prepared" DopplerPayneModel object, but don't
             # copy the original data (~200MB).
             pmodel = model.copy()  # points to original data
@@ -2169,20 +2206,22 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     if verbose is True:
         print(' ')
         print('Step #4: Tweaking continuum and masking outliers')
-    for i,spm in enumerate(specmlist):
-        # Create parameter list that includes RV at the end
-        params1 = list(stelpars1)+[vrel1[i]]
-        paramnames1 = fitparams+['RV']
-        parinput1 = dict(zip(paramnames1,params1))
-        model1 = modlist[i]
-        labels1 = model1.mklabels(parinput1)
-        bestm = model1(labels1)
-        # Tweak the continuum normalization
-        spm = tweakcontinuum(spm,bestm)
-        # Mask out very discrepant pixels when compared to the best-fit model
-        spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
-        specmlist[i] = spm.copy()
-
+    if notweak is False:
+        for i,spm in enumerate(specmlist):
+            # Create parameter list that includes RV at the end
+            params1 = list(stelpars1)+[vrel1[i]]
+            paramnames1 = fitparams+['RV']
+            parinput1 = dict(zip(paramnames1,params1))
+            model1 = modlist[i]
+            labels1 = model1.mklabels(parinput1)
+            bestm = model1(labels1)
+            # Tweak the continuum normalization
+            spm = tweakcontinuum(spm,bestm,usepoly=tpoly,polyorder=tpolyorder)
+            # Mask out very discrepant pixels when compared to the best-fit model
+            spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
+            specmlist[i] = spm.copy()
+    else:
+        if verbose: print('Skipping tweaking')
         
     # Step 5) refit all spectra simultaneous fitting stellar parameters and RVs
     if verbose is True:
@@ -2718,7 +2757,7 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
 
 
 def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
-               retpmodels=False,nthreads=None):
+               retpmodels=False,nthreads=None,notweak=False,tpoly=False,tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -2744,6 +2783,14 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
          Return the prepared moels.
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -2824,9 +2871,10 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
         printpars(labels0) 
 
     # Tweak the continuum normalization
-    specm = tweakcontinuum(specm,bestmodelspec0)
-    # Mask out very discrepant pixels when compared to the best-fit model
-    specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
+    if notweak is False:
+        specm = tweakcontinuum(specm,bestmodelspec0,usepoly=tpoly,polyorder=tpolyorder)        
+        # Mask out very discrepant pixels when compared to the best-fit model
+        specm = utils.maskdiscrepant(specm,bestmodelspec0,verbose=verbose)  
     
     # Refit the Cannon
     labels, cov, meta = bestmodelinterp.test(specm)
@@ -2876,7 +2924,8 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     # Get best model so far
     m = models(teff=beststr2['teff'],logg=beststr2['logg'],feh=beststr2['feh'],rv=beststr2['vrel'])
     # Tweak the continuum
-    specm = tweakcontinuum(specm,m)
+    if notweak is False:
+        specm = tweakcontinuum(specm,m,usepoly=tpoly,polyorder=tpolyorder)
 
     # Get initial estimates
     initpar = [beststr2['teff'],beststr2['logg'],beststr2['feh'],beststr2['vrel']]
@@ -3161,7 +3210,7 @@ def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
 
 
 def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,verbose=False,
-                    outdir=None,nthreads=None):
+                    outdir=None,nthreads=None,notweak=False,tpoly=False,tpolyorder=3):
     """
     This fits a Cannon model to multiple spectra of the same star.
 
@@ -3186,6 +3235,14 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
          The directory for output files.  The default is to use the current directory.
     nthreads : int, optional
          The number of threads to use.  By default the number of threads is not limited.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -3262,7 +3319,9 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
                 if outdir is not None: figfile = outdir+'/'+figfile
                 if (outdir is None) & (fdir != ''): figfile = fdir+'/'+figfile
             # Fit the spectrum    
-            out, model, specm, pmodels = fit_cannon(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,retpmodels=True)
+            out, model, specm, pmodels = fit_cannon(spec,verbose=verbose,mcmc=mcmc,figfile=figfile,
+                                                    retpmodels=True,notweak=notweak,tpoly=tpoly,
+                                                    tpolyorder=tpolyorder)
             modlist.append(pmodels.copy())
             del pmodels
             specmlist.append(specm.copy())
@@ -3356,18 +3415,22 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
-    # Step 4) Tweak continua and remove outlies
+    # Step 4) Tweak continua and remove outliers
     if verbose is True:
         print(' ')
         print('Step #4: Tweaking continuum and masking outliers')
-    for i,spm in enumerate(specmlist):
-        bestm = modlist[i](stelpars1,rv=vrel1[i])
-        # Tweak the continuum normalization
-        spm = tweakcontinuum(spm,bestm)
-        # Mask out very discrepant pixels when compared to the best-fit model
-        spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
-        specmlist[i] = spm.copy()
-        
+    if notweak is False:
+        for i,spm in enumerate(specmlist):
+            bestm = modlist[i](stelpars1,rv=vrel1[i])
+            # Tweak the continuum normalization
+            spm = tweakcontinuum(spm,bestm,usepoly=tpoly,polyorder=tpolyorder)
+            # Mask out very discrepant pixels when compared to the best-fit model
+            spm = utils.maskdiscrepant(spm,bestm,verbose=verbose)
+            specmlist[i] = spm.copy()
+    else:
+        if verbose: print('Skipping tweaking')
+            
+            
     # Step 5) Refit all spectra simultaneously fitting stellar parameters and RVs
     if verbose is True:
         print(' ')
@@ -3494,7 +3557,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
 
 def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=False,
         mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None,
-        timestamp=False):
+        timestamp=False,notweak=False,tpoly=False,tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -3528,6 +3591,14 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
          The number of threads to use.  By default the number of threads is not limited.
     timestamp : boolean, optional
          Add timestamp in verbose output (if verbose=True). Default is False.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -3559,12 +3630,14 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
     # Cannon model
     if payne == False:
         out = fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
-                         cornername=cornername,retpmodels=retpmodels,nthreads=nthreads)
+                         cornername=cornername,retpmodels=retpmodels,nthreads=nthreads,
+                         notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
     # Payne model
     else:
         out = fit_payne(spectrum,model=models,fitparams=fitparams,fixparams=fixparams,
                         verbose=verbose,mcmc=mcmc,figfile=figfile,
-                        cornername=cornername,nthreads=nthreads)
+                        cornername=cornername,nthreads=nthreads,
+                        notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
         
     # Breakdown logger
     if timestamp and verbose:
@@ -3575,7 +3648,7 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
 
 def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=10.0,
              saveplot=False,verbose=False,outdir=None,nthreads=None,payne=False,
-             timestamp=False):
+             timestamp=False,notweak=False,tpoly=False,tpolyorder=3):
     """
     This fits a Cannon or Payne model to multiple spectra of the same star.
 
@@ -3609,6 +3682,14 @@ def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=
          Fit a Payne model.  By default, a Cannon model is used.
     timestamp : boolean, optional
          Add timestamp in verbose output (if verbose=True). Default is False.
+    notweak : boolean, optional
+         Don't tweak the observed continuum using the model.  Default is False.
+    tpoly : boolean, optional
+         Use a low-order polynomial fit for continuum tweaking.  Default is False,
+           it uses Gaussian smoothing instead.
+    tpolyorder : int, optional
+         Polynomial order to use for continuum tweaking if tpoly=True.
+           Default is 3 (cubic).
 
     Returns
     -------
@@ -3643,12 +3724,14 @@ def jointfit(speclist,models=None,fitparams=None,fixparams={},mcmc=False,snrcut=
     if payne == False:
         out = jointfit_cannon(speclist,models=models,mcmc=mcmc,snrcut=snrcut,
                               saveplot=saveplot,verbose=verbose,outdir=outdir,
-                              nthreads=nthreads)
+                              nthreads=nthreads,notweak=notweak,tpoly=tpoly,
+                              tpolyorder=tpolyorder)
     # Payne model
     else:
         out = jointfit_payne(speclist,model=models,fitparams=fitparams,fixparams=fixparams,
                              mcmc=mcmc,snrcut=snrcut,saveplot=saveplot,verbose=verbose,
-                             outdir=outdir,nthreads=nthreads)    
+                             outdir=outdir,nthreads=nthreads,notweak=notweak,tpoly=tpoly,
+                             tpolyorder=tpolyorder)
 
     # Breakdown logger
     if timestamp and verbose:

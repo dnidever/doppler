@@ -39,7 +39,10 @@ if __name__ == "__main__":
     parser.add_argument('-r','--reader', type=str, nargs=1, default='', help='The spectral reader to use')
     parser.add_argument('-v','--verbose', action='store_true', help='Verbose output')
     parser.add_argument('-t','--timestamp', action='store_true', help='Add timestamp to Verbose output')    
-    parser.add_argument('-nth','--nthreads', type=int, nargs=1, default=0, help='Verbose output')        
+    parser.add_argument('-nth','--nthreads', type=int, nargs=1, default=0, help='Verbose output')
+    parser.add_argument('--notweak', action='store_true', help='Do not tweak the continuum using the model')
+    parser.add_argument('--tpoly', action='store_true', help='Use low-order polynomial for tweaking')
+    parser.add_argument('--tpolyorder', type=int, nargs=1, default=3, help='Polynomial order to use for tweaking')
     args = parser.parse_args()
 
     t0 = time.time()
@@ -87,6 +90,9 @@ if __name__ == "__main__":
     inlist = dln.first_el(args.list)
     nthreads = dln.first_el(args.nthreads)
     if nthreads==0: nthreads = None
+    notweak = args.notweak
+    tpoly = args.tpoly
+    tpolyorder = dln.first_el(args.tpolyorder)
 
     # Timestamp requested, set up logger
     if timestamp and verbose:
@@ -177,7 +183,8 @@ if __name__ == "__main__":
                 # Run Doppler
                 out, model, specm = doppler.fit(spec,payne=payne,fitparams=fitparams,fixparams=fixparams,
                                                 mcmc=mcmc,figfile=figfile,verbose=verbose,
-                                                cornername=cornername,nthreads=nthreads)
+                                                cornername=cornername,nthreads=nthreads,notweak=notweak,
+                                                tpoly=tpoly,tpolyorder=tpolyorder)
                 
                 # Save the output
                 if inpoutfile!='':
@@ -245,7 +252,8 @@ if __name__ == "__main__":
         if verbose is True: print('')
         sumstr, final, model, specmlist = doppler.jointfit(speclist,payne=payne,fitparams=fitparams,fixparams=fixparams,
                                                            mcmc=mcmc,saveplot=saveplot,snrcut=snrcut,
-                                                           verbose=verbose,outdir=outdir,nthreads=nthreads)
+                                                           verbose=verbose,outdir=outdir,nthreads=nthreads,
+                                                           notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
         
         # Save the output
         if verbose is True:
