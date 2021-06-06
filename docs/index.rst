@@ -108,8 +108,13 @@ Here are the various input arguments for command-line script ``doppler``::
                           The spectral reader to use
     -v, --verbose         Verbose output
     -nth NTHREADS, --nthreads NTHREADS
-                          Verbose output
+                          Number of threads to use
+    --notweak             Do not tweak the continuum using the model
+    --tpoly               Use low-order polynomial for tweaking
+    --tpolyorder TPOLYORDER
+                          Polynomial order to use for tweaking
 
+			  
 .. rubric:: Footnotes
 
 .. [#f1] For `Christian Doppler <https://en.wikipedia.org/wiki/Christian_Doppler>`_ who was an Austrian physicist who discovered the `Doppler effect <https://en.wikipedia.org/wiki/Doppler_effect>`_ which is the change in frequency of a wave due to the relative speed of the source and observer.
