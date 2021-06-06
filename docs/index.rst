@@ -81,7 +81,7 @@ Here are the various input arguments for command-line script ``doppler``::
   usage: doppler [-h] [--outfile OUTFILE] [--payne] [--fitpars FITPARS]
                  [--fixpars FIXPARS] [--figfile FIGFILE] [-d OUTDIR] [-l] [-j]
                  [--snrcut SNRCUT] [-p] [-c] [-m] [-r READER] [-v]
-                 [-nth NTHREADS]
+                 [-nth NTHREADS] [--notweak] [--tpoly] [--tpolyorder TPOLYORDER]
                  files [files ...]
 
   Run Doppler fitting on spectra
