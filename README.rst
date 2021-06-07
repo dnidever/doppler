@@ -26,7 +26,9 @@ Attribution
 .. image:: https://zenodo.org/badge/191846537.svg
         :target: https://zenodo.org/badge/latestdoi/191846537
 
-If you make use of this code, please cite the Nidever et al. (2021).
+If you make use of this code, please cite this work using the DOI:
+Nidever, D. L., Holtzman, H., Chojnowski, S. D., & Ting, Y.-S. 2021, dnidever/doppler, doi:10.5281/zenodo.4906680
+
 
     
 Documentation
