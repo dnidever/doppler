@@ -19,6 +19,16 @@ To install the latest version::
 
     pip install git+https://github.com/dnidever/doppler
 
+
+Attribution
+-----------
+
+.. image:: https://zenodo.org/badge/191846537.svg
+        :target: https://zenodo.org/badge/latestdoi/191846537
+
+If you make use of this code, please cite the Nidever et al. (2021).
+
+    
 Documentation
 -------------
 
