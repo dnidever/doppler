@@ -33,3 +33,9 @@ License
 
 .. image:: http://img.shields.io/badge/license-MIT-blue.svg?style=flat
         :target: https://github.com/dnidever/doppler/blob/main/LICENSE
+
+Citation
+--------
+
+.. image:: https://zenodo.org/badge/191846537.svg
+	:target https://zenodo.org/badge/191846537.svg
