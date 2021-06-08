@@ -1095,9 +1095,9 @@ class DopplerPayneModel(object):
         vsini,vmacro,rv = labels[-3:]
         plabels = labels[0:-3]  # just the payne labels
         if self.prepared==True:
-            return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
+            return self._data(plabels,spec=self._spec,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave,wr=wr)
         else:
-            return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave)
+            return self._data(plabels,vsini=vsini,vmacro=vmacro,rv=rv,wave=wave,wr=wr)
 
         
     def mklabels(self,inputs):
