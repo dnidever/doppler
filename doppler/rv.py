@@ -1427,10 +1427,12 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
         initpar = {'TEFF':5000.0, 'LOGG':3.5, 'FE_H':0.0, 'ALPHA_H':0.0, 'RV':0.0}
     else:
         if isinstance(initpar,dict) is False:
-            if len(initpar)==5:
+            if len(initpar)==4:
                 initparlabels = ['TEFF','LOGG','FE_H','RV']
-            if len(initpar)==5:
-                initparlabels = ['TEFF','LOGG','FE_H','ALPHA_H','RV']                
+            elif len(initpar)==5:
+                initparlabels = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
+            else:
+                raise Exception('INITPAR array labels unclear.  Please input as dictionary.')
             initpar = dict(zip(initparlabels,initpar))
             
     # Make initial parameters for all labels
