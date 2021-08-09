@@ -1370,8 +1370,10 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
          Payne model to use.  The default is to load all of the Payne
          models in the data/ directory and use those.
     initpar : dictionary or array, optional
-         Initial estimate for [teff, logg, feh, alphafe, RV] or a dictionary
-         of initial values. Optional.
+         Initial estimates for parameters.  If it is an array, then it is
+         assumbed that these are for the FITPARAMS parameters.  If it is a
+         dictionary, then the parameters are clear and they do not need to
+         cover all FITPARAMS parameters.  Optional.
     fitparams : list of labels, optional
          List of Payne parameter/label names to fit. Optional.
          The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
@@ -1423,24 +1425,20 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
     # Get initial estimates
     #  this does not need to include initial guess for all fitparams
     #  that's taken care of below
-    if initpar is None:
-        initpar = {'TEFF':5000.0, 'LOGG':3.5, 'FE_H':0.0, 'ALPHA_H':0.0, 'RV':0.0}
-    else:
-        if isinstance(initpar,dict) is False:
-            if len(initpar)==4:
-                initparlabels = ['TEFF','LOGG','FE_H','RV']
-            elif len(initpar)==5:
-                initparlabels = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
-            else:
-                raise Exception('INITPAR array labels unclear.  Please input as dictionary.')
-            initpar = dict(zip(initparlabels,initpar))
+    if initpar is not None and isinstance(initpar,dict) is False:
+        # Array input
+        #  must be the initial parameters for FITPARAMS        
+        if len(initpar)!=len(fitparams):
+            raise Exception("INITPAR must have same number of elements as FITPARAMS")
+        initpar = dict(zip(fitparams,initpar))  # make dictionary
             
     # Make initial parameters for all labels
     allinitpar = make_payne_initlabels(fitparams)
-    for name in initpar.keys():
-        ind, = np.where(np.char.array(fitparams)==name)
-        if len(ind)>0:
-            allinitpar[ind[0]] = initpar[name]
+    if initpar is not None:
+        for name in initpar.keys():
+            ind, = np.where(np.char.array(fitparams)==name)
+            if len(ind)>0:
+                allinitpar[ind[0]] = initpar[name]
             
     # Initialize spectral fitter
     sp = payne.PayneSpecFitter(spec,model,fitparams,fixparams,verbose=False)
@@ -1756,8 +1754,8 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         specm = utils.maskdiscrepant(specm,lsmodel0,verbose=verbose)  
     
         # Refit with Payne
-        lsout, lsmodel = fit_lsq_payne(specm,model,initpar=lspars0,fitparams=fitparams,
-                                       fixparams=fixparams,verbose=verbose)
+        lsout, lsmodel = fit_lsq_payne(specm,model,initpar=dict(zip(fitparams,lspars0)),
+                                       fitparams=fitparams,fixparams=fixparams,verbose=verbose)
         lspars = lsout['pars'][0]
         lsperror = lsout['parerr'][0] 
     else:
