@@ -1715,6 +1715,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         fitparams = ['TEFF','LOGG','FE_H','ALPHA_H','RV']
     else:
         fitparams = [f.upper() for f in fitparams]
+        
     if verbose: print('Fitting Payne model to spectrum with parameters: '+', '.join(fitparams))        
     nfitparams = len(fitparams)
     nfixparams = len(fixparams)
@@ -1730,7 +1731,12 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     #------------------------------
     if model is None: model = payne.load_models()
     model.prepare(specm)
-
+    
+    # Check the input labels against the Paybe model labels
+    fitparams = payne.check_params(model,fitparams)
+    if nfixparams>0:
+        fixparams = payne.check_params(model,fixparams)    
+        
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
     beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  

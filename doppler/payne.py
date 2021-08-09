@@ -137,6 +137,45 @@ def load_models():
         raise Exception("No Payne model files in "+datadir)
     return DopplerPayneModel.read(files)
 
+def check_params(model,params):
+    """ Check input fit or fixed parameters against Payne model labels."""
+    # Check the input labels against the Paybe model labels
+
+    if isinstance(params,dict):
+        paramdict = params.copy()
+        params = list(paramdict.keys())
+        isdict = True
+    else:
+        isdict = False
+
+    # Check for duplicates
+    uparams = np.unique(np.array(params))
+    if len(uparams)!=len(params):
+        raise ValueError('There are duplicates in '+','.join(params))
+        
+    # Loop over parameters
+    for i,par in enumerate(params):
+        # replace VROT with VSINI        
+        if par=='VROT' and 'VSINI' in model.labels:
+            print('Replacing VROT -> VSINI')
+            params[i] = 'VSINI'
+            par = 'VSINI'
+        # replace VMICRO with VTURB            
+        elif par=='VMICRO' and 'VTURB' in model.labels:
+            print('Replacing VMICRO -> VTURB')
+            params[i] = 'VTURB'
+            par = 'VTURB'
+        # check against model labels
+        if (par != 'ALPHA_H') and (not par in model.labels):
+            raise ValueError(par+' NOT a Payne label. Available labels are '+','.join(model.labels)+' and ALPHA_H')
+
+    # Return "adjusted" params
+    if isdict==True:
+        paramdict = dict(zip(params,paramdict.values()))
+        return paramdict
+    else:    
+        return params
+
 
 def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=None,lsfout=False):
     """
@@ -365,6 +404,8 @@ def mkdxlim(fitparams):
             dx_lim[k] = 0.1
         elif (fitparams[k]=='VSINI' or fitparams[k]=='VROT'):
             dx_lim[k] = 0.1
+        elif fitparams[k]=='VMACRO':
+            dx_lim[k] = 0.1
         elif fitparams[k]=='RV':
             dx_lim[k] = 0.01
         elif fitparams[k].endswith('_H'):
@@ -448,7 +489,7 @@ def mkbounds(labels,initpars=None):
         if par.upper()=='LOGG':
             lbounds[i] = np.maximum(initpars[i]-2,0)
             ubounds[i] = np.minimum(initpars[i]+2,5)
-        if par.upper()=='VTURB':
+        if par.upper()=='VMICRO' or par.upper()=='VTURB':
             lbounds[i] = np.maximum(initpars[i]-2,0)
             ubounds[i] = initpars[i]+2
         if par.upper().endswith('_H'):
@@ -457,7 +498,7 @@ def mkbounds(labels,initpars=None):
         if par.upper()=='FE_H':
             lbounds[i] = -2.5
             ubounds[i] = 0.5
-        if par.upper()=='VSINI':
+        if par.upper()=='VSINI' or par.upper()=='VROT':
             lbounds[i] = np.maximum(initpars[i]-20,0)
             ubounds[i] = initpars[i]+50
         if par.upper()=='VMACRO':
@@ -1660,10 +1701,12 @@ class PayneSpecFitter:
             step = 5.0
         elif name=='RV':
             step = 0.1
-        elif name=='VROT':
-            step = 0.5
-        elif name=='VMICRO':
-            step = 0.5
+        elif (name=='VROT' or name=='VSINI'):
+            step = 1.0
+        elif (name=='VMICRO' or name=='VTURB'):
+            step = 0.25
+        elif name=='VMACRO':
+            step = 0.25
         elif name.endswith('_H'):
             step = 0.01
         else:
