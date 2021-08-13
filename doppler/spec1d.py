@@ -609,3 +609,61 @@ class Spec1D:
             self.bc = bc.value
         return self.bc
         
+
+    def write(self,outfile,overwrite=True):
+        """ Write the spectrum to a FITS file."""
+
+        hdu = fits.HDUList()
+        # header
+        hdu.append(fits.PrimaryHDU(header=self.head))
+        hdu[0].header['COMMENT'] = 'HDU0: header'
+        hdu[0].header['COMMENT'] = 'HDU1: flux'
+        hdu[0].header['COMMENT'] = 'HDU2: flux error'
+        hdu[0].header['COMMENT'] = 'HDU3: wavelength'
+        hdu[0].header['COMMENT'] = 'HDU4: mask'
+        hdu[0].header['COMMENT'] = 'HDU5: LSF'
+        hdu[0].header['COMMENT'] = 'HDU6: continuum'
+        hdu[0].header['SPECTYPE'] = 'SPEC1D'
+        hdu[0].header['WAVEVAC'] = self.wavevac
+        hdu[0].header['NORMLIZD'] = self.normalized
+        hdu[0].header['NDIM'] = self.ndim
+        hdu[0].header['NPIX'] = self.npix
+        hdu[0].header['NORDER'] = self.norder
+        hdu[0].header['SNR'] = self.snr
+        # flux
+        hdu.append(fits.ImageHDU(self.flux))
+        hdu[1].header['BUNIT'] = 'Flux'
+        # error
+        hdu.append(fits.ImageHDU(self.err))
+        hdu[2].header['BUNIT'] = 'Flux Error'        
+        # wavelength
+        hdu.append(fits.ImageHDU(self.wave))
+        hdu[3].header['BUNIT'] = 'Wavelength (Ang)'
+        # mask
+        hdu.append(fits.ImageHDU(self.mask))
+        hdu[4].header['BUNIT'] = 'Mask'
+        # LSF
+        ### NEED TO FIX THIS ####
+        hdu.append(fits.ImageHDU(self.lsf.sigma))
+        hdu[5].header['BUNIT'] = 'LSF'
+        hdu[5].header['XTYPE'] = self.lsf.xtype
+        hdu[5].header['LSFTYPE'] = self.lsf.lsftype
+        hdu[5].header['NDIM'] = self.lsf.ndim
+        hdu[5].header['NPIX'] = self.lsf.npix
+        hdu[5].header['NORDER'] = self.lsf.norder
+        # should we put PARS in the header, or should it be a separate extension??
+        if self.lsf.pars is not None:
+            hdu[5].header['NPARS'] = np.array(self.lsf.pars).size
+            npars1, npars2 = np.array(self.lsf.pars).shape
+            hdu[5].header['NPARS1'] = npars1
+            hdu[5].header['NPARS2'] = npars2      
+            for i,p in enumerate(np.array(self.lsf.pars).flatten()):
+                hdu[5].header['PAR'+str(i+1)] = p
+        else:
+            hdu[5].header['NPARS'] = 0
+            hdu[5].header['NPARS1'] = 0
+            hdu[5].header['NPARS2'] = 0            
+        # continuum
+        hdu.append(fits.ImageHDU(self.continuum))
+        hdu[6].header['BUNIT'] = 'Continuum'
+        hdu.writeto(outfile,overwrite=overwrite)
