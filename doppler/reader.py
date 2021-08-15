@@ -17,6 +17,7 @@ from astropy.io import fits
 from astropy.table import Table
 from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
+import dill as pickle
 import functools
 from . import spec1d,utils
 from .spec1d import Spec1D
@@ -127,7 +128,7 @@ def read(filename=None,format=None):
     try:
         nreaders = len(_readers)
     except:
-        # _readers is defined in __init__.py
+        # _readers is defined at bottom of readers.py
         raise ValueError("No readers defined")
     # Format input
     if format is not None:
@@ -138,6 +139,13 @@ def read(filename=None,format=None):
         out = _readers[format](filename)
         datacheck(out)
         if out is not None: return out
+    # Check if it's spec1d
+    else:
+        head = fits.getheader(filename)
+        if head.get('SPECTYPE')=='SPEC1D':
+            out = spec1d(filename)
+            datacheck(out)
+            if out is not None: return out
         
     # Loop over all readers until we get a spectrum out
     for k in _readers.keys():
@@ -151,6 +159,87 @@ def read(filename=None,format=None):
     print('No reader recognized '+filename)
     print('Current list of readers: '+', '.join(_readers.keys()))
     return
+
+
+# read spectrum written with Spec1D.write()
+def spec1d(filename):
+    """
+    Read a Doppler written spectrum.
+
+    Parameters
+    ----------
+    filename : string
+         The name of the spectrum file to load.
+
+    Returns
+    -------
+    spec : Spec1D object
+       The spectrum as a Spec1D object.
+
+    Examples
+    --------
+    
+    spec = spec1d('spec.fits')
+
+    """
+
+    base, ext = os.path.splitext(os.path.basename(filename))
+
+    # Get number of extensions
+    hdu = fits.open(filename)
+    
+    # Check that this has the right format
+    if hdu[0].header['SPECTYPE'] != 'SPEC1D':
+        return None
+
+    # HDU0: header
+    wavevac = hdu[0].header['WAVEVAC']
+    instrument = hdu[0].header['INSTRMNT']
+    normalized = hdu[0].header['NORMLIZD']
+    ndim = hdu[0].header['NDIM']
+    npix = hdu[0].header['NPIX']
+    norder = hdu[0].header['NORDER']
+    snr = hdu[0].header['SNR']    
+    # HDU1: flux
+    flux = hdu[1].data
+    # HDU2: flux error
+    err = hdu[2].data
+    # HDU3: wavelength
+    wave = hdu[3].data
+    # HDU4: mask
+    mask = hdu[4].data
+    # HDU5: LSF
+    lsfsigma = hdu[5].data
+    lsfxtype = hdu[5].header['XTYPE']
+    lsftype = hdu[5].header['LSFTYPE']
+    npars = hdu[5].header['NPARS']
+    npars1 = hdu[5].header['NPARS1']
+    npars2 = hdu[5].header['NPARS2']
+    if npars>0:
+        lsfpars = np.zeros(npars,float)
+        for i in range(npars):
+            lsfpars[i] = hdu[5].header['PAR'+str(i)]
+        lsfpars = lsfpars.reshape(npars1,npars2)
+    # HDU6: continuum
+    cont = hdu[6].data
+    # HDU7: continuum function
+    cont_func_tab = hdu[7].data
+
+    spec = Spec1D(flux,wave=wave,lsfpars=lsfpars,lsftype=lsftype,lsfxtype=lsfxtype)
+    spec.reader = 'spec1d'
+    spec.filename = filename
+    spec.err = err
+    if mask is not None:
+        spec.mask = mask.astype(bool)
+    if cont is not None:
+        spec._cont = cont
+    spec.continuum_func = pickle.loads(cont_func_tab['func'][0])
+    spec.instrument = instrument
+    spec.snr = snr
+    spec.wavevac = True
+    hdu.close()
+
+    return spec
 
 
 # Load APOGEE apVisit/asVisit spectra
@@ -779,4 +868,5 @@ def iraf(filename):
     return spec
 
 # List of readers
-_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf, 'imacs':imacs, 'hydra':hydra}
+_readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf,
+            'spec1d':spec1d, 'imacs':imacs, 'hydra':hydra}

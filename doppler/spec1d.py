@@ -16,11 +16,14 @@ from scipy.interpolate import interp1d
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.io import fits
+from astropy.table import Table
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata
 import copy
 from . import utils
 from .lsf import GaussianLsf, GaussHermiteLsf
+import dill as pickle
 try:
     import __builtin__ as builtins # Python 2
 except ImportError:
@@ -623,7 +626,9 @@ class Spec1D:
         hdu[0].header['COMMENT'] = 'HDU4: mask'
         hdu[0].header['COMMENT'] = 'HDU5: LSF'
         hdu[0].header['COMMENT'] = 'HDU6: continuum'
+        hdu[0].header['COMMENT'] = 'HDU7: continuum function'        
         hdu[0].header['SPECTYPE'] = 'SPEC1D'
+        hdu[0].header['INSTRMNT'] = self.instrument
         hdu[0].header['WAVEVAC'] = self.wavevac
         hdu[0].header['NORMLIZD'] = self.normalized
         hdu[0].header['NDIM'] = self.ndim
@@ -640,11 +645,12 @@ class Spec1D:
         hdu.append(fits.ImageHDU(self.wave))
         hdu[3].header['BUNIT'] = 'Wavelength (Ang)'
         # mask
-        hdu.append(fits.ImageHDU(self.mask))
+        hdu.append(fits.ImageHDU(self.mask.astype(int)))
         hdu[4].header['BUNIT'] = 'Mask'
         # LSF
-        ### NEED TO FIX THIS ####
-        hdu.append(fits.ImageHDU(self.lsf.sigma))
+        #  ADD A WRITE() METHOD TO LSF class
+        #  can write to FITS or hdu if hdu=True is set
+        hdu.append(fits.ImageHDU(self.lsf._sigma))
         hdu[5].header['BUNIT'] = 'LSF'
         hdu[5].header['XTYPE'] = self.lsf.xtype
         hdu[5].header['LSFTYPE'] = self.lsf.lsftype
@@ -658,12 +664,18 @@ class Spec1D:
             hdu[5].header['NPARS1'] = npars1
             hdu[5].header['NPARS2'] = npars2      
             for i,p in enumerate(np.array(self.lsf.pars).flatten()):
-                hdu[5].header['PAR'+str(i+1)] = p
+                hdu[5].header['PAR'+str(i)] = p
         else:
             hdu[5].header['NPARS'] = 0
             hdu[5].header['NPARS1'] = 0
             hdu[5].header['NPARS2'] = 0            
         # continuum
-        hdu.append(fits.ImageHDU(self.continuum))
+        hdu.append(fits.ImageHDU(self._cont))
         hdu[6].header['BUNIT'] = 'Continuum'
+        # continuum function
+        cont_func_ser = pickle.dumps(self.continuum_func)    # serialise the function
+        tab = Table(np.atleast_1d(np.array(cont_func_ser)),names=['func'])  # save as FITS binary table
+        hdu.append(fits.table_to_hdu(tab))
+        hdu[7].header['BUNIT'] = 'Continuum function'
+        
         hdu.writeto(outfile,overwrite=overwrite)
