@@ -736,6 +736,7 @@ class Lsf:
         Wavelength array.
     pars : array, optional
         The LSF coefficients giving the LSF as a function of wavelength or pixels (specified in xtype).
+          For Gaussian type this should be the polynomial coefficients for Gaussian sigma.
     xtype : string, optional
         The dependence of pars.  Either 'wave' or 'pixel'.
     lsftype : string, optional
@@ -932,6 +933,9 @@ class GaussianLsf(Lsf):
         Wavelength array.
     pars : array, optional
         The LSF coefficients giving the LSF as a function of wavelength or pixels (specified in xtype).
+          These are polynomial coefficients for Gaussian sigma.  If xtype='pixel', then PARS should
+          be used with X pixel values and return the Gaussian sigma values in pixels.  If xtype='wave',
+          then PARS should be used with wavelength in A and return the Gaussian sigma values in A as well.
     xtype : string, optional
         The dependence of pars.  Either 'wave' or 'pixel'.
     sigma : array, optional
