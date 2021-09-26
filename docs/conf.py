@@ -199,7 +199,7 @@ exclude_patterns.append('*/make-data.*')
 #extensions += ['nbsphinx']
 #extensions += ['IPython.sphinxext.ipython_console_highlighting']
 
-extensions += ['sphinx.ext.mathjax']
+extensions += ['sphinx.ext.mathjax','sphinx.ext.autodoc']
 mathjax_path = "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_HTMLorMML"
 
 # nbsphinx_execute_arguments = [
