@@ -31,7 +31,8 @@ abundances and separate radial velocities for each spectrum.
    install
    gettingstarted
    examples
-   
+   modules
+	      
 
 Description
 ===========
@@ -114,6 +115,13 @@ Here are the various input arguments for command-line script ``doppler``::
     --tpolyorder TPOLYORDER
                           Polynomial order to use for tweaking
 
+*****
+Index
+*****
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`			  
 			  
 .. rubric:: Footnotes
 
