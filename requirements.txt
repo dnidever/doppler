@@ -3,4 +3,4 @@ matplotlib
 astropy
 scipy
 #the-cannon
-git+https://github.com/AnniesLasso
+git+https://github.com/andycasey/AnniesLasso
