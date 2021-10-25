@@ -324,8 +324,11 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         # need at least ~4 pixels per LSF FWHM across the spectrum
         #  using 3 affects the final profile shape
         nbin = np.round(np.min(fwhmpix)//4).astype(int)
-        if nbin==0:
-            raise Exception('Model has lower resolution than the observed spectrum')
+        if np.min(fwhmpix) < 3.7:
+            warnings.warn('Model has lower resolution than the observed spectrum. Only '+str(np.min(fwhmpix))+' model pixels per resolution element') 
+        if np.min(fwhmpix) < 2.8:
+            raise Exception('Model has lower resolution than the observed spectrum. Only '+str(np.min(fwhmpix))+' model pixels per resolution element')
+
         if nbin>1:
             npix2 = np.round(len(tmodelflux) // nbin).astype(int)
             rmodelflux = dln.rebin(tmodelflux[0:npix2*nbin],npix2)
