@@ -6,17 +6,18 @@ Installation
 Installing Doppler
 ==================
 
-Until I get Doppler set up with PyPi, it's best to install it from source using GitHub.
+
+The easiest way to install |Doppler| is using pip:
 
 .. code-block:: bash
 
-    git clone https://github.com/dnidever/doppler.git
+    pip install doppler
 
-Then install it:
+To get the very lastest version:
 
 .. code-block:: bash
 
-    python setup.py install
+    pip install git+https://github.com/dnidever/doppler
 
 
 
