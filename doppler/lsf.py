@@ -68,20 +68,21 @@ def ghlsf(x,xcenter,params,nowings=False):
 
     2015-02-26 - Written based on Nidever's code in apogeereduce - Bovy (IAS)
     Heavily modified by D.Nidever to work with Nidever's translated IDL routines Jan 2020.
-    """    
+    """
+    nxcenter = dln.size(xcenter)
     # Parse x
-    if len(x.shape) == 1:
-        x = np.tile(x,(len(xcenter),1))
+    if x.ndim==1:
+        x = np.tile(x,(nxcenter,1))
     # Unpack the LSF parameters
     if type(params) is not dict:
         params = unpack_ghlsf_params(params)
     # Get the wing parameters at each x
-    wingparams = np.empty((params['nWpar'],len(xcenter)))
+    wingparams = np.empty((params['nWpar'],nxcenter))
     for ii in range(params['nWpar']):
         poly = np.polynomial.Polynomial(params['Wcoefs'][ii])       
         wingparams[ii] = poly(xcenter+params['Xoffset'])
     # Get the GH parameters at each x
-    ghparams = np.empty((params['Horder']+2,len(xcenter)))
+    ghparams = np.empty((params['Horder']+2,nxcenter))
 
     # note that this is modified/corrected a bit from Bovy's routines based on comparison
     # with LSF from IDL routines, noticeable when wings are non-negligible
@@ -98,7 +99,7 @@ def ghlsf(x,xcenter,params,nowings=False):
 
     # Calculate the GH part of the LSF
     # x is [Npix,Nlsf]
-    npix = len(xcenter)
+    npix = nxcenter
     nlsf = x.shape[1]
     xcenter2 = np.tile(xcenter,nlsf).reshape(nlsf,npix).T
     xlsf = x + xcenter2   # absolute X-values
@@ -106,7 +107,7 @@ def ghlsf(x,xcenter,params,nowings=False):
     xlsf = xlsf.flatten()
     xcenter2 = xcenter2.flatten()
     # Add in height and center for gausshermitebin() and flatten to 2D
-    ghparams1 = np.empty((params['Horder']+4,len(xcenter)))
+    ghparams1 = np.empty((params['Horder']+4,nxcenter))
     ghparams1[0,:] = 1.0
     ghparams1[1,:] = xcenter
     ghparams1[2:,:] = ghparams
@@ -117,7 +118,7 @@ def ghlsf(x,xcenter,params,nowings=False):
     
     # Calculate the Wing part of the LSF
     # Add in center for ghwingsbin() and flatten to 2D
-    wingparams1 = np.empty((params['nWpar']+1,len(xcenter)))
+    wingparams1 = np.empty((params['nWpar']+1,nxcenter))
     wingparams1[0,:] = wingparams[0,:]
     wingparams1[1,:] = xcenter
     wingparams1[2:,:] = wingparams[1:,:]
@@ -781,6 +782,9 @@ class Lsf:
             self.pars = np.array([2.5 / 2.35])
             self.xtype = 'Pixels'
 
+    def __call__(self):
+        """ Returns the Gaussian array.  Must be defined by the subclass."""
+        pass
             
     def wave2pix(self,w,extrapolate=True,order=0):
         """
@@ -958,6 +962,86 @@ class GaussianLsf(Lsf):
         super().__init__(wave=wave,pars=pars,xtype=xtype,lsftype='Gaussian',sigma=sigma,verbose=False)        
 
         
+    def __call__(self,xcen=None,x=None,xtype='pixels',nlsf=15,order=0):
+        """
+        Create LSF.
+
+        Parameters
+        ----------
+        xcenter : int or array
+           Position of the LSF center (in units specified by xtype).
+        x : array
+           Array of X values for which to compute the LSF (in pixel offset relative to xcenter;
+             the LSF is calculated at the x offsets for each xcenter if x is 1D,
+             otherwise x has to be [nxcenter,nx])).
+        xtype : string, optional
+           The type of x-value input, either 'wave' or 'pixels'.  Default is 'pixels'.
+        order : int, optional
+            The order to use if there are multiple orders.
+            The default is 0.
+
+        Returns
+        -------
+        lsf : array
+           The LSF array.
+
+        Example
+        -------
+
+        lsfarr = mylsf([1000.0],np.arange(15)-7)
+
+        """
+
+        if xcen is None:
+            xcen = self.npix//2
+        xcen = np.atleast_1d(xcen)
+        nxcen = xcen.size
+        
+        if x is None:
+            x = np.arange(nlsf)-nlsf//2
+        else:
+            if x.ndim==1:
+                nlsf = len(x)
+            else:
+                nlsf = x.shape[1]
+        
+        # Get wavelength and pixel arrays
+        if xtype.lower().find('pix') > -1:
+            wcen = self.pix2wave(xcen,order=order)
+            w = self.pix2wave(x,order=order)
+        else:
+            wcen = xcen.copy()
+            xcen = self.wave2pix(wcen,order=order)
+            w = x.copy()
+            x = self.wave2pix(w,order=order)
+        
+        # returns xsigma in units of self.xtype not necessarily xtype
+        xsigma = self.sigma(xcen,xtype=xtype,order=order)
+
+        # Convert sigma from wavelength to pixels, if necessary
+        if self.xtype.lower().find('wave') > -1:
+            wsigma = xsigma.copy()
+            w1 = self.pix2wave(np.array(xcen)+1,order=order)
+            dw = np.abs(w1-w)
+            xsigma = wsigma / dw
+
+        # Make LSF array
+        if x.ndim==2:  # [Nxcenter,Nx]
+            xsigma2 = np.repeat(xsigma,nlsf).reshape((nxcen,nlsf))
+            lsf = np.exp(-0.5*x**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)            
+        else:
+            xlsf2 = np.repeat(x,nxcen).reshape((nlsf,nxcen)).T
+            xsigma2 = np.repeat(xsigma,nlsf).reshape((nxcen,nlsf))
+            lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
+        lsf[lsf<0.] = 0.
+        if lsf.ndim==2:
+            lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
+        else:
+            lsf /= np.sum(lsf)
+            
+        return lsf
+    
+        
     # Return Gaussian sigma
     def sigma(self,x=None,xtype='pixels',order=0,extrapolate=True):
         """
@@ -980,7 +1064,8 @@ class GaussianLsf(Lsf):
         Returns
         -------
         sigma : array
-            The array of Gaussian sigma values.
+            The array of Gaussian sigma values.  The sigma values will
+             be in units of lsf.xtype.
 
         Example
         -------
@@ -1223,8 +1308,11 @@ class GaussianLsf(Lsf):
         xsigma2 = np.repeat(xsigma,nlsf).reshape((nx,nlsf))
         lsf = np.exp(-0.5*xlsf2**2 / xsigma2**2) / (np.sqrt(2*np.pi)*xsigma2)
         lsf[lsf<0.] = 0.
-        lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
-        
+        if lsf.ndim==2:
+            lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
+        else:
+            lsf /= np.sum(lsf)
+            
         # should I use gaussbin????
         return lsf
 
@@ -1241,7 +1329,7 @@ class GaussHermiteLsf(Lsf):
     pars : array
         The LSF coefficients giving the Gauss-Hermite LSF as a function of pixels.
     verbose : bool, optional
-      Verbose output.  False by default.
+        Verbose output.  False by default.
 
     The inputs below are not used and only for consistency with the other LSF classes.
     lsftype : LSF type
@@ -1258,8 +1346,70 @@ class GaussHermiteLsf(Lsf):
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
         super().__init__(wave=wave,pars=pars,xtype='pixel',lsftype='Gauss-Hermite',sigma=sigma,verbose=False)
+
         
+    def __call__(self,xcen=None,x=None,xtype='pixels',nlsf=15,order=0):
+        """
+        Create LSF.
+
+        Parameters
+        ----------
+        xcenter : int or array
+           Position of the LSF center (in units specified by xtype).
+        x : array
+           Array of X values for which to compute the LSF (in pixel offset relative to xcenter;
+             the LSF is calculated at the x offsets for each xcenter if x is 1D,
+             otherwise x has to be [nxcenter,nx])).
+        xtype : string, optional
+           The type of x-value input, either 'wave' or 'pixels'.  Default is 'pixels'.
+        order : int, optional
+            The order to use if there are multiple orders.
+            The default is 0.
+
+        Returns
+        -------
+        lsf : array
+           The LSF array.
+
+        Example
+        -------
+
+        lsfarr = mylsf([1000.0],np.arange(15)-7)
+
+        """
+
+        # Wavelengths input
+        if xtype.lower().find('wave') > -1:
+            w = x.copy()
+            x = self.wave2pix(w,order=order)
+            wcen = xcen.copy()
+            xcen = self.wave2pix(wcen,order=order)            
+            
+        if xcen is None:
+            xcen = self.npix//2
+        xcen = np.atleast_1d(xcen)
+            
+        if x is None:
+            x = np.arange(nlsf)-nlsf//2
+        else:
+            if x.ndim==1:
+                nlsf = len(x)
+            else:
+                nlsf = x.shape[1]
+            
+        # Make the LSF using ghlsf()
+        lsf = ghlsf(x,xcen,self.pars[:,order])
         
+        # Make sure it's normalized
+        lsf[lsf<0.] = 0.
+        if lsf.ndim==2:
+            lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
+        else:
+            lsf /= np.sum(lsf)
+            
+        return lsf
+
+    
     # Return Gaussian sigma
     def sigma(self,x=None,xtype='pixels',order=0,extrapolate=True):
         """
@@ -1407,6 +1557,7 @@ class GaussHermiteLsf(Lsf):
 
         """
         
+        x = np.atleast_1d(x)
         # Make sure nLSF is odd
         if nlsf % 2 == 0: nlsf+=1
         
@@ -1422,8 +1573,8 @@ class GaussHermiteLsf(Lsf):
         if original==False:
             dx = x[1:]-x[0:-1]
             dx = np.hstack((dx,dx[-1]))
-            xlsf = np.arange(nlsf)-nlsf//2
-            xlsf2 = np.outer(dx,xlsf)
+            xlsf1 = np.arange(nlsf)-nlsf//2
+            xlsf = np.outer(dx,xlsf1)
         # Original pixel scale
         else:
             xlsf = np.arange(nlsf)-nlsf//2
@@ -1433,6 +1584,12 @@ class GaussHermiteLsf(Lsf):
         
         # Make sure it's normalized
         lsf[lsf<0.] = 0.
-        lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
-        
+        if lsf.ndim==2:
+            lsf /= np.tile(np.sum(lsf,axis=1),(nlsf,1)).T
+        else:
+            lsf /= np.sum(lsf)
+
+        # if original=False, then this normalization might not be
+        # right, need to multiply by dx.
+            
         return lsf

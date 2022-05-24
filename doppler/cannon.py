@@ -253,7 +253,7 @@ class DopplerCannonModelSet(object):
         
         # Create Spec1D object
         mspec = Spec1D(model_spec,err=model_spec*0.0,wave=model_wave,lsfsigma=sigma,instrument='Model')
-	for i in range(len(self.labels)):
+        for i in range(len(self.labels)):
             setattr(mspec,self.labels[i],labels[i])
         mspec.rv = rv
         mspec.snr = np.inf
