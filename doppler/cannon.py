@@ -548,6 +548,9 @@ class DopplerCannonModel(object):
                 gind,ngind = dln.where((owave1>=np.min(zwave)) & (owave1<=np.max(zwave)))  # wavelengths we can cover
                 if ngind>0:
                     f[gind] = dln.interp(zwave,f0,owave1[gind])
+            # Force normalized flux <=1.0
+            #  sometimes there are "spikes" above 1.0
+            f = np.minimum(f,1.0)
             # Get Continuum
             if (norm is False):
                 if hasattr(m,'continuum'):
