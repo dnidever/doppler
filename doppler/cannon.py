@@ -260,6 +260,47 @@ class DopplerCannonModelSet(object):
         
         return mspec
 
+    def derivative(self,pars=None,teff=None,logg=None,feh=None,rv=None):
+        """
+        Return the derivative/Jacobian.
+
+        Parameters
+        ----------
+        pars : array, optional
+            Array or list of Cannon parameters/labels.  This is normally [teff,logg,feh].
+            If pars is not input then teff, logg, and feh need to be input separately.
+        teff : float, optional
+            Temperature value.  Used if pars is not input.
+        logg : float, optional
+            Surface gravity value.  Used if pars is not input.
+        feh : float, optional
+            Metallicity value.  Used if pars is not input.
+        rv : float, optional
+            Doppler shift to apply to the Cannon model (in km/s).  Default is no Doppler shift.
+
+        Returns
+        -------
+        deriv : numpy array
+            The derivative of the spectrum with respect to the labels [Nlabels,Npix,Norder].
+              If rv=None, then the RV dimension is not included.  If Norder=1, then the
+              "extra" last dimension is trimmed.
+
+        Example
+        -------
+        .. code-block:: python
+
+             der = derivative(pars)
+
+        """
+        
+        if pars is None:
+            pars = np.array([teff,logg,feh])
+            pars = pars.flatten()
+        # Get best cannon model
+        model = self.get_best_model(pars)
+        if model is None: return None
+        return model.derivative(pars,rv=rv)
+    
     def test(self,spec):
         """
         Fit the Cannon model label values for a given input spectrum.
@@ -540,7 +581,10 @@ class DopplerCannonModel(object):
                 f = m(labels)
                 zfactor = 1
             else:
-                m = self._data_nointerp[i]
+                if self.prepared:
+                    m = self._data_nointerp[i]
+                else:
+                    m = self._data[i]
                 f0 = m(labels)
                 zfactor = 1 + rv/cspeed   # redshift factor
                 zwave = m.dispersion*zfactor  # redshift the wavelengths
@@ -570,14 +614,14 @@ class DopplerCannonModel(object):
             owave[0:len(f),i] = owave1
             omask[0:len(f),i] = False
 
-        # Only return the flux
-        if fluxonly is True: return oflux
-
         # Change single order 2D arrays to 1D
         if norders==1:
             oflux = oflux.flatten()
             owave = owave.flatten()
             omask = omask.flatten()            
+            
+        # Only return the flux
+        if fluxonly is True: return oflux
         
         # Create Spec1D object
         mspec = Spec1D(oflux,err=oflux*0.0,wave=owave,mask=omask,lsfsigma=None,instrument='Model')
@@ -587,6 +631,81 @@ class DopplerCannonModel(object):
         
         return mspec
 
+    def derivative(self,labels,rv=None):
+        """
+        Return the derivative/Jacobian.
+
+        Parameters
+        ----------
+        labels : list or array
+            List/array or dictionary of input labels values to use.
+        rv : float, optional
+            Doppler shift to apply to the Cannon model (in km/s).  Default is no Doppler shift.
+
+        Returns
+        -------
+        deriv : numpy array
+            The derivative of the spectrum with respect to the labels [Nlabels,Npix,Norder].
+              If rv=None, then the RV dimension is not included.  If Norder=1, then the
+              "extra" last dimension is trimmed.
+
+        Example
+        -------
+        .. code-block:: python
+
+             der = derivative(labels)
+
+        """
+            
+        # Loop over orders
+        if rv is None:
+            deriv = np.zeros((3,len(self.dispersion),self.norder),float)
+        else:
+            deriv = np.zeros((4,len(self.dispersion),self.norder),float)            
+        for o in range(self.norder):
+            # NO RVs to deal with
+            if (rv is None) or (self.prepared==False):
+                model1 = self._data[o]
+            # Need to deal with RV and doppler shift
+            else:
+                model1 = self._data_nointerp[o]
+            # Use the label vector derivative.
+            scaled_labels = (np.atleast_2d(labels) - model1._fiducials)/model1._scales
+            scaled_labels = scaled_labels[0,:]
+            dflux = np.dot(model1.theta,model1.vectorizer.get_label_vector_derivative(scaled_labels)).T
+            # This is the derivative w.r.t the scaled labels
+            #  need to use _scales to scale it
+            dflux /= model1._scales.reshape(-1,1)
+
+            # Deal with doppler shift if necessary
+            if (rv is not None):
+                owave1 = self._data[o].dispersion
+                zfactor = 1 + rv/cspeed   # redshift factor
+                zwave = model1.dispersion*zfactor  # redshift the wavelengths
+                gind,ngind = dln.where((owave1>=np.min(zwave)) & (owave1<=np.max(zwave)))  # wavelengths we can cover
+                if ngind>0:
+                    # Loop over labels
+                    for i in range(3):
+                        deriv[i,gind,o] = dln.interp(zwave,dflux[i,:],owave1[gind])                        
+            # No doppler shift to deal with
+            else:
+                deriv[:,:,o] = dflux
+
+        # Add derivative for RV
+        if rv is not None:
+            flux0 = self(labels,rv=rv,fluxonly=True)
+            flux1 = self(labels,rv=rv+1,fluxonly=True)
+            if self.norder==1:
+                deriv[3,:,0] = flux1.squeeze()-flux0.squeeze()
+            else:
+                deriv[3,:,:] = flux1-flux0                
+                
+        if self.norder==1:
+            deriv = deriv.squeeze()
+            
+        return deriv
+    
+    
     def test(self,spec):
         """
         Fit the Cannon model label values for a given input spectrum.
