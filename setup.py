@@ -12,7 +12,7 @@ setup(name='Doppler',
       packages=find_packages(exclude=["tests"]),
       scripts=['bin/doppler'],
       install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','dill','emcee','corner',
-                        'the-cannon @ git+https://github.com/dnidever/AnniesLasso@v1.0.0#egg=the-cannon'],
-      dependency_links=['http://github.com/dnidever/AnniesLasso/tarball/v1.0.0#egg=the-cannon'],      
+                        'annieslasso']
+      #dependency_links=['http://github.com/dnidever/AnniesLasso/tarball/v1.0.0#egg=the-cannon'],      
       include_package_data=True,
 )

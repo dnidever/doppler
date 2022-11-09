@@ -2,5 +2,6 @@ numpy
 matplotlib
 astropy
 scipy
+annieslasso
 #the-cannon
-git+https://github.com/andycasey/AnniesLasso
+#git+https://github.com/andycasey/AnniesLasso
