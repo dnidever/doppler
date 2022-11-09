@@ -4,7 +4,7 @@
 from setuptools import setup, find_packages
 
 setup(name='Doppler',
-      version='1.1.1',
+      version='1.1.2',
       description='Generic Radial Velocity Software',
       author='David Nidever',
       author_email='dnidever@montana.edu',

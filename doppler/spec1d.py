@@ -663,9 +663,11 @@ class Spec1D:
         # should we put PARS in the header, or should it be a separate extension??
         if self.lsf.pars is not None:
             hdu[5].header['NPARS'] = np.array(self.lsf.pars).size
-            npars1, npars2 = np.array(self.lsf.pars).shape
-            hdu[5].header['NPARS1'] = npars1
-            hdu[5].header['NPARS2'] = npars2      
+            lparshape = np.array(self.lsf.pars).shape
+            if len(lparshape)>=1:
+                hdu[5].header['NPARS1'] = lparshape[0]
+            if len(lparshape)==2:
+                hdu[5].header['NPARS2'] = lparshape[1]
             for i,p in enumerate(np.array(self.lsf.pars).flatten()):
                 hdu[5].header['PAR'+str(i)] = p
         else:
