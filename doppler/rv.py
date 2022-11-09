@@ -34,7 +34,6 @@ import corner
 import logging
 import time
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.legend import Legend
 import subprocess
@@ -178,6 +177,7 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
     if annotlabels is None:
         annotlabels = ['teff','logg','feh','vrel']
     #import matplotlib
+    backend = matplotlib.rcParams['backend']
     matplotlib.use('Agg')
     #import matplotlib.pyplot as plt
     if os.path.exists(figfile): os.remove(figfile)
@@ -200,7 +200,7 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
         yr = [np.min([spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]
         if original is not None:
             yr = [np.min([original.flux,spec.flux,fmodel.flux]), np.max([spec.flux,fmodel.flux])]            
-        yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.005]
+        yr = [yr[0]-dln.valrange(yr)*0.15,yr[1]+dln.valrange(yr)*0.15]
         yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
         plt.xlim(xr)
         plt.ylim(yr)
@@ -264,7 +264,7 @@ def specfigure(figfile,spec,fmodel,out,annotlabels=None,original=None,verbose=Tr
     plt.savefig(figfile,bbox_inches='tight')
     plt.close(fig)
     if verbose is True: print('Figure saved to '+figfile)
-
+    matplotlib.use(backend)  # back to the original backend
 
 def ccorrelate(x, y, lag, yerr=None, covariance=False, double=None, nomean=False):
     """This function computes the cross correlation of two samples.
@@ -1628,12 +1628,14 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
     
     # Corner plot
     if cornername is not None:
+        backend = matplotlib.rcParams['backend']        
         matplotlib.use('Agg')
         fig = corner.corner(samples, labels=fitparams, truths=pars)
         plt.savefig(cornername)
         plt.close(fig)
         print('Corner plot saved to '+cornername)
-
+        matplotlib.use(backend)  # back to the original backend
+        
     return out,mcmodel
  
 
@@ -2758,12 +2760,14 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
     
     # Corner plot
     if cornername is not None:
+        backend = matplotlib.rcParams['backend']        
         matplotlib.use('Agg')
         fig = corner.corner(samples, labels=["T$_eff$", "$\log{g}$", "[Fe/H]", "Vrel"], truths=pars)
         plt.savefig(cornername)
         plt.close(fig)
         print('Corner plot saved to '+cornername)
-
+        matplotlib.use(backend)  # back to the original backend
+        
     return out,mcmodel
 
 
