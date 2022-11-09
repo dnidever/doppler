@@ -634,7 +634,10 @@ class Spec1D:
         hdu[0].header['NDIM'] = self.ndim
         hdu[0].header['NPIX'] = self.npix
         hdu[0].header['NORDER'] = self.norder
-        hdu[0].header['SNR'] = self.snr
+        if np.isfinite(self.snr):
+            hdu[0].header['SNR'] = self.snr
+        else:
+            hdu[0].header['SNR'] = str(self.snr)
         # flux
         hdu.append(fits.ImageHDU(self.flux))
         hdu[1].header['BUNIT'] = 'Flux'
