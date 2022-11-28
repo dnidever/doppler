@@ -692,8 +692,8 @@ class Spec1D:
                  'norder','snr','barycorr','continuum_func','copy','filename','interp','normalize',
                  'pix2wave','reader','wave2pix','write','cont','head']
         for a in attributes:
-            val = getattr(self,a)
             if a.lower() not in ckeys and a[0]!='_':
+                val = getattr(self,a)
                 # Scalar attributes
                 if dln.size(val)<=1:
                     if val is None:
