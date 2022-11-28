@@ -199,7 +199,7 @@ def spec1d(filename):
     ndim = hdu[0].header['NDIM']
     npix = hdu[0].header['NPIX']
     norder = hdu[0].header['NORDER']
-    snr = hdu[0].header['SNR']    
+    snr = float(hdu[0].header['SNR'])
     # HDU1: flux
     flux = hdu[1].data
     # HDU2: flux error
@@ -214,17 +214,21 @@ def spec1d(filename):
     lsftype = hdu[5].header['LSFTYPE']
     npars = hdu[5].header['NPARS']
     npars1 = hdu[5].header['NPARS1']
-    npars2 = hdu[5].header['NPARS2']
+    npars2 = hdu[5].header.get('NPARS2')
     if npars>0:
         lsfpars = np.zeros(npars,float)
         for i in range(npars):
             lsfpars[i] = hdu[5].header['PAR'+str(i)]
-        lsfpars = lsfpars.reshape(npars1,npars2)
+        if npars2 is not None:
+            lsfpars = lsfpars.reshape(npars1,npars2)
+        else:
+            lsfpars = lsfpars.reshape(npars1)            
     # HDU6: continuum
     cont = hdu[6].data
     # HDU7: continuum function
     cont_func_tab = hdu[7].data
 
+    # Create the Spec1D object
     spec = Spec1D(flux,wave=wave,lsfpars=lsfpars,lsftype=lsftype,lsfxtype=lsfxtype)
     spec.reader = 'spec1d'
     spec.filename = filename
@@ -237,6 +241,23 @@ def spec1d(filename):
     spec.instrument = instrument
     spec.snr = snr
     spec.wavevac = True
+
+    # Add extra attributes
+    if len(hdu)>8:
+        for i in np.arange(8,len(hdu)):
+            val = hdu[i].data
+            vector = hdu[i].header.get('vector')
+            attribut = hdu[i].header.get('attribut')
+            name = hdu[i].header.get('name')
+            if attribut==True and vector==False:  # scalar table
+                tab = hdu[i].data
+                for c in tab.dtype.names:
+                    val = tab[c][0]
+                    if val=='None': val=None
+                    setattr(spec,c,val)
+            elif attribut==True and vector==True:  # vector
+                setattr(spec,name,val)
+
     hdu.close()
 
     return spec

@@ -682,5 +682,45 @@ class Spec1D:
         tab = Table(np.atleast_1d(np.array(cont_func_ser)),names=['func'])  # save as FITS binary table
         hdu.append(fits.table_to_hdu(tab))
         hdu[7].header['BUNIT'] = 'Continuum function'
-        
+        # Add other attributes to the primary header
+        #   these were added by the user
+        attributes = dir(self)
+        nexten = 8
+        sdict = {}   # scalar dictionary
+        vdict = {}   # vector dictionary
+        ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized','ndim','npix',
+                 'norder','snr','barycorr','continuum_func','copy','filename','interp','normalize',
+                 'pix2wave','reader','wave2pix','write','cont','head']
+        for a in attributes:
+            val = getattr(self,a)
+            if a.lower() not in ckeys and a[0]!='_':
+                # Scalar attributes
+                if dln.size(val)<=1:
+                    if val is None:
+                        sdict[a] = ['None']
+                    else:
+                        sdict[a] = [val]   # needs to be a list to construct the table later
+                # Arrays
+                else:
+                    vdict[a] = val
+        # Put scalars in a separate table
+        if len(sdict)>0:
+            tab = Table(sdict)
+            hdu.append(fits.table_to_hdu(tab))
+            hdu[nexten].header['COMMENT'] = 'Extra scalar attributes'
+            hdu[nexten].header['ATTRIBUT'] = True
+            hdu[nexten].header['VECTOR'] = False
+            hdu[nexten].header['NAME'] = 'scalars'
+            nexten += 1
+        # Put arrays in separate extensions
+        if len(vdict)>0:
+            for k in vdict.keys():
+                val = vdict[k]
+                hdu.append(fits.ImageHDU(val))
+                hdu[nexten].header['ATTRIBUT'] = True
+                hdu[nexten].header['VECTOR'] = True
+                hdu[nexten].header['NAME'] = k           
+                nexten += 1
+                
         hdu.writeto(outfile,overwrite=overwrite)
+
