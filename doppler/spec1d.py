@@ -270,9 +270,6 @@ class Spec1D:
         self.instrument = instrument
         self.filename = filename
         self.wavevac = wavevac
-        self.snr = None
-        if self.err is not None:
-            self.snr = np.nanmedian(self.flux[~self.mask])/np.nanmedian(self.err[~self.mask])
         self.normalized = False
         if flux.ndim==1:
             npix = len(flux)
@@ -307,6 +304,16 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    @property
+    def snr(self):
+        """ Return the S/N"""
+        if self.flux is not None and self.err is not None:
+            if self.mask is not None:
+                return np.nanmedian(self.flux[~self.mask])/np.nanmedian(self.err[~self.mask])
+            else:
+                return np.nanmedian(self.flux)/np.nanmedian(self.err)                
+        else:
+            return None
     
     @property
     def cont(self,**kwargs):
