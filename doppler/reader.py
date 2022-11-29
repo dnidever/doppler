@@ -239,7 +239,7 @@ def spec1d(filename):
         spec._cont = cont
     spec.continuum_func = pickle.loads(cont_func_tab['func'][0])
     spec.instrument = instrument
-    spec.snr = snr
+    #spec.snr = snr
     spec.wavevac = True
 
     # Add extra attributes
@@ -365,7 +365,7 @@ def apvisit(filename):
     if (nhdu>=11):
         spec.meta = fits.getdata(filename,11)   # catalog of RV and other meta-data
     # Spectrum, error, sky, skyerr are in units of 1e-17
-    spec.snr = spec.head["SNR"]
+    #spec.snr = spec.head["SNR"]
     if base.find("apVisit") > -1:
         spec.observatory = 'apo'
     else:
@@ -489,7 +489,7 @@ def apstar(filename):
         spec.mask[bd] = True
     if nhdu>=9:
         spec.meta = fits.getdata(filename,9)    # meta-data
-    spec.snr = spec.head["SNR"]
+    #spec.snr = spec.head["SNR"]
     if base.find("apStar") > -1:
         spec.observatory = 'apo'
     else:
@@ -575,7 +575,7 @@ def boss(filename):
     spec.model = tab1["model"].data
     spec.meta = cat1
     # What are the units?
-    spec.snr = cat1["SN_MEDIAN_ALL"].data[0]
+    #spec.snr = cat1["SN_MEDIAN_ALL"].data[0]
     spec.observatory = 'apo'
     spec.wavevac = True
     return spec        
@@ -654,7 +654,7 @@ def mastar(filename):
             'MJDQUAL':tab["MJDQUAL"].data,'SNR':tab["SNR"].data,'PARS':tab["PARS"].data,'PARERR':tab["PARERR"].data}
     spec.meta = meta
     # What are the units?
-    spec.snr = tab["SNR"].data
+    #spec.snr = tab["SNR"].data
     spec.observatory = 'apo'
     spec.wavevac = True        
     return spec        
