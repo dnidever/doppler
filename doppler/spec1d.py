@@ -309,9 +309,9 @@ class Spec1D:
         """ Return the S/N"""
         if self.flux is not None and self.err is not None:
             if self.mask is not None:
-                return np.nanmedian(self.flux[~self.mask])/np.nanmedian(self.err[~self.mask])
+                return np.nanmedian(self.flux[~self.mask]/self.err[~self.mask])
             else:
-                return np.nanmedian(self.flux)/np.nanmedian(self.err)                
+                return np.nanmedian(self.flux/self.err)                
         else:
             return None
     
@@ -648,20 +648,25 @@ class Spec1D:
         # flux
         hdu.append(fits.ImageHDU(self.flux))
         hdu[1].header['BUNIT'] = 'Flux'
+        hdu[1].header['EXTNAME'] = 'FLUX'
         # error
         hdu.append(fits.ImageHDU(self.err))
-        hdu[2].header['BUNIT'] = 'Flux Error'        
+        hdu[2].header['BUNIT'] = 'Flux Error'
+        hdu[2].header['EXTNAME'] = 'FLUX_ERROR' 
         # wavelength
         hdu.append(fits.ImageHDU(self.wave))
         hdu[3].header['BUNIT'] = 'Wavelength (Ang)'
+        hdu[3].header['EXTNAME'] = 'WAVELENGTH'  
         # mask
         hdu.append(fits.ImageHDU(self.mask.astype(int)))
         hdu[4].header['BUNIT'] = 'Mask'
+        hdu[4].header['EXTNAME'] = 'MASK'        
         # LSF
         #  ADD A WRITE() METHOD TO LSF class
         #  can write to FITS or hdu if hdu=True is set
         hdu.append(fits.ImageHDU(self.lsf._sigma))
         hdu[5].header['BUNIT'] = 'LSF'
+        hdu[5].header['EXTNAME'] = 'LSF'        
         hdu[5].header['XTYPE'] = self.lsf.xtype
         hdu[5].header['LSFTYPE'] = self.lsf.lsftype
         hdu[5].header['NDIM'] = self.lsf.ndim
@@ -684,6 +689,7 @@ class Spec1D:
         # continuum
         hdu.append(fits.ImageHDU(self._cont))
         hdu[6].header['BUNIT'] = 'Continuum'
+        hdu[6].header['EXTNAME'] = 'CONTINUUM'
         # continuum function
         cont_func_ser = pickle.dumps(self.continuum_func)    # serialise the function
         tab = Table(np.atleast_1d(np.array(cont_func_ser)),names=['func'])  # save as FITS binary table
