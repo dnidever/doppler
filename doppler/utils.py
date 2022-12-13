@@ -508,14 +508,17 @@ def make_logwave_scale(wave,vel=1000.0):
 
     # Multi-order wavelength array
     if wave.ndim==2:
-        norder = wave.shape[1]
+        npix,norder = wave.shape
 
         # Ranges
         wr = np.empty((2,norder),np.float64)
         wlo = np.empty(norder,np.float64)
         whi = np.empty(norder,np.float64)
+        dw = np.empty((npix,norder),np.float64)
         for i in range(norder):
-            wr[:,i] = dln.minmax(wave[:,i])
+            gdwave, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
+            wr[:,i] = dln.minmax(wave[gdwave,i])
+            dw[gdwave,i] = np.gradient(np.log10(np.float64(wave[gdwave,i])))
             wlo[i] = wr[0,i]-vel/cspeed*wr[0,i]
             whi[i] = wr[1,i]+vel/cspeed*wr[1,i]
             
@@ -524,9 +527,9 @@ def make_logwave_scale(wave,vel=1000.0):
         # The extra pixels will have to be "padded" with masked out values.
         
         # We want the same logarithmic step for all order
-        dw = np.log10(np.float64(wave[1:,:])) - np.log10(np.float64(wave[0:-1,:]))
+        #dw = np.log10(np.float64(wave[1:,:])) - np.log10(np.float64(wave[0:-1,:]))
         dwlog = np.median(np.abs(dw))   # positive
-
+        
         # Extend at the ends
         if vel>0:
             nlo = np.empty(norder,int)
@@ -561,12 +564,15 @@ def make_logwave_scale(wave,vel=1000.0):
 
         # Make sure the element that's associated with the first input wavelength is identical
         for i in range(norder):
+            gdwave, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
             # Increasing input wavelength arrays
-            if np.median(dw[:,i])>0:
-                fwave[:,i] -= fwave[nlo,i]-wave[0,i]
+            if np.median(dw[gdwave,i])>0:
+                #fwave[:,i] -= fwave[nlo,i]-wave[0,i]
+                fwave[:,i] -= fwave[nlo,i]-wave[gdwave[0],i]
             # Decreasing input wavelength arrays
             else:
-                fwave[:,i] -= fwave[nlo,i]-wave[-1,i]
+                #fwave[:,i] -= fwave[nlo,i]-wave[-1,i]
+                fwave[:,i] -= fwave[nlo,i]-wave[gdwave[-1],i]
         
     # Single-order wavelength array
     else:
@@ -575,7 +581,8 @@ def make_logwave_scale(wave,vel=1000.0):
         whi = wr[1]+vel/cspeed*wr[1]
 
         # logarithmic step
-        dwlog = np.median(dln.slope(np.log10(np.float64(wave))))
+        gdwave, = np.where((wave>0) & np.isfinite(wave))
+        dwlog = np.median(np.gradient(np.log10(np.float64(wave[gdwave]))))
         
         # extend at the ends
         if vel>0:
@@ -744,15 +751,20 @@ def maskoutliers(spec,nsig=5,verbose=False):
         x = (w-np.median(w))/(np.max(w*0.5)-np.min(w*0.5))  # -1 to +1
         y = flux[:,o].copy()
         m = mask[:,o].copy()
+        gpix, = np.where(~m & np.isfinite(y))
+        if len(gpix)==0:
+            continue
         # Divide by median
-        medy = np.nanmedian(y)
+        medy = np.nanmedian(y[gpix])
         if medy <= 0.0:
             medy = 1.0
-        y /= medy
+        y[gpix] /= medy
         # Perform sigma clipping out large positive outliers
-        coef = dln.poly_fit(x,y,2,robust=True)
-        sig = dln.mad(y-dln.poly(x,coef))
-        bd,nbd = dln.where( ((y-dln.poly(x,coef)) > nsig*sig) | (y<0))
+        coef = dln.poly_fit(x[gpix],y[gpix],2,robust=True)
+        sig = dln.mad(y[gpix]-dln.poly(x[gpix],coef))
+        bd1,nbd = dln.where( ((y[gpix]-dln.poly(x[gpix],coef)) > nsig*sig) | (y[gpix]<0))
+        if nbd>0:
+            bd = gpix[bd1]
         totnbd += nbd
         if nbd>0:
             flux[bd,o] = dln.poly(x[bd],coef)*medy

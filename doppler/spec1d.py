@@ -88,16 +88,21 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
         x = (w-np.mean(wr))/dln.valrange(wr)*2    # -1 to +1
         y = flux[:,o].copy()
         m = mask[:,o].copy()
+        gpix, = np.where((~m) & np.isfinite(x) & np.isfinite(y))
+        if len(gpix)==0:
+            continue
         # Divide by median
-        medy = np.nanmedian(y)
+        medy = np.nanmedian(y[gpix])
         if medy <= 0.0:
             medy = 1.0
-        y /= medy
+        y[gpix] /= medy
         # Perform sigma clipping out large positive outliers
-        coef = dln.poly_fit(x[~m],y[~m],2,robust=True)
-        sig = dln.mad(y-dln.poly(x,coef))
-        bd,nbd = dln.where((y-dln.poly(x,coef)) > 5*sig)
-        if nbd>0: m[bd]=True
+        coef = dln.poly_fit(x[gpix],y[gpix],2,robust=True)
+        sig = dln.mad(y[gpix]-dln.poly(x[gpix],coef))
+        bd1,nbd = dln.where((y[gpix]-dln.poly(x[gpix],coef)) > 5*sig)
+        if nbd>0:
+            bd = gpix[bd1]
+            m[bd] = True
         gdmask = (y>0) & (m==False)        # need positive fluxes and no mask set          
         if np.sum(gdmask)==0:
             continue

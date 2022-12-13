@@ -1833,7 +1833,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     dtlist = [('vhelio',np.float32),('vrel',np.float32),('vrelerr',np.float32)]
     for k in range(nfitparams):
         name = fitparams[k].lower()
-        if name is not 'rv':  # Skip RV
+        if name != 'rv':  # Skip RV
             dtlist += [(name,np.float32),(name+'err',np.float32)]
     dtlist += [('chisq',np.float32),('bc',np.float32)]
     dtype = np.dtype(dtlist)
@@ -1843,7 +1843,7 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     out['vrelerr'] = vrelerr    
     for k in range(nfitparams):
         name = fitparams[k].lower()
-        if name is not 'rv':  # Skip RV
+        if name != 'rv':  # Skip RV
             out[name] = fpars[k]
             out[name+'err'] = fperror[k]
     out['chisq'] = fchisq

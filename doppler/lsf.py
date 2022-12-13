@@ -819,9 +819,11 @@ class Lsf:
             raise Exception("No wavelength information")
         if self.ndim==2:
             # Order is always the second dimension
-            return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
+            wave = self.wave[:,order]
         else:
-            return utils.w2p(self.wave,w,extrapolate=extrapolate)
+            wave = self.wave
+        gdwave, = np.where((wave>0) & np.isfinite(wave))
+        return utils.w2p(wave[gdwave],w,extrapolate=extrapolate)
         
     def pix2wave(self,x,extrapolate=True,order=0):
         """
@@ -856,9 +858,11 @@ class Lsf:
             raise Exception("No wavelength information")
         if self.ndim==2:
              # Order is always the second dimension
-            return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
+            wave = self.wave[:,order]
         else:
-            return utils.p2w(self.wave,x,extrapolate=extrapolate)        
+            wave = self.wave
+        gdwave, = np.where((wave>0) & np.isfinite(wave))
+        return utils.p2w(wave[gdwave],x,extrapolate=extrapolate)        
 
         
     # Return FWHM at some positions

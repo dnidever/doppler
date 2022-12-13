@@ -256,7 +256,7 @@ class DopplerCannonModelSet(object):
         for i in range(len(self.labels)):
             setattr(mspec,self.labels[i],labels[i])
         mspec.rv = rv
-        mspec.snr = np.inf
+        #mspec.snr = np.inf
         
         return mspec
 
@@ -563,7 +563,7 @@ class DopplerCannonModel(object):
                 raise ValueError("Number of orders in WAVE must match orders in the model")
             npix = wave.shape[0]
         # Initialize output arrays
-        oflux = np.zeros((npix,norders),np.float32)+np.nan
+        oflux = np.zeros((npix,norders),np.float32)
         owave = np.zeros((npix,norders),np.float64)
         omask = np.zeros((npix,norders),bool)+True
         # Order loop
@@ -613,7 +613,7 @@ class DopplerCannonModel(object):
             oflux[0:len(f),i] = f
             owave[0:len(f),i] = owave1
             omask[0:len(f),i] = False
-
+            
         # Change single order 2D arrays to 1D
         if norders==1:
             oflux = oflux.flatten()
@@ -627,7 +627,7 @@ class DopplerCannonModel(object):
         mspec = Spec1D(oflux,err=oflux*0.0,wave=owave,mask=omask,lsfsigma=None,instrument='Model')
         for i in range(len(self.labels)):
             setattr(mspec,self.labels[i],labels[i])
-        mspec.snr = np.inf
+        #mspec.snr = np.inf
         
         return mspec
 
@@ -800,6 +800,7 @@ class DopplerCannonModel(object):
         self._original_model = self.copy()
         # Keep uninterpolated model in ._data_nointerp, and the interpolated
         #  data in ._data
+        #  a model for each order
         newm_nointerp = prepare_cannon_model(self._data[0],spec,dointerp=False)
         if type(newm_nointerp) is not list: newm_nointerp=[newm_nointerp]  # make sure it's a list
         # Interpolate onto the observed wavelength scale
@@ -807,7 +808,8 @@ class DopplerCannonModel(object):
         for i in range(spec.norder):
             wave = spec.wave
             if wave.ndim==1: wave=np.atleast_2d(spec.wave).T
-            newm1 = interp_cannon_model(newm_nointerp[i],wout=wave[:,i])
+            gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
+            newm1 = interp_cannon_model(newm_nointerp[i],wout=wave[gdpix,i])
             newm1.interp = True
             newm.append(newm1)
 
@@ -1322,7 +1324,7 @@ def interp_cannon_model(model,xout=None,wout=None):
     xout : array, optional
       The desired output pixel array.
     wout : array, optional
-      The desired output wavelength aray.
+      The desired output wavelength array.
 
     Returns
     -------
@@ -1524,6 +1526,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
 
         # Observed spectrum values
         wave = spec.wave
+        mask = spec.mask
         ndim = wave.ndim
         if ndim==2:
             npix,norder = wave.shape
@@ -1531,14 +1534,17 @@ def prepare_cannon_model(model,spec,dointerp=False):
             norder = 1
             npix = len(wave)
             wave = wave.reshape(npix,norder)
+            mask = mask.reshape(npix,norder)
         # Loop over the orders
         outmodel = []
         for o in range(norder):
+            m = mask[:,o]
             w = wave[:,o]
+            gdpix, = np.where(~m)
+            w = w[gdpix]
             w0 = np.min(w)
             w1 = np.max(w)
-            dw = dln.slope(w)
-            dw = np.hstack((dw,dw[-1]))
+            dw = np.gradient(w)
             dw = np.abs(dw)
             meddw = np.median(dw)
             npix = len(w)
@@ -1547,7 +1553,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 raise Exception('Model does not cover the observed wavelength range')
             
             # Trim
-            nextend = int(np.ceil(len(w)*0.25))  # extend 25% on each end
+            nextend = int(np.ceil(npix*0.25))  # extend 25% on each end
             nextend = np.maximum(nextend,200)    # or 200 pixels
             if (np.min(model.dispersion)<(w0-nextend*meddw)) | (np.max(model.dispersion)>(w1+nextend*meddw)):
                 tmodel = trim_cannon_model(model,w0=w0-nextend*meddw,w1=w1+nextend*meddw)
@@ -1593,14 +1599,14 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 
             # Convolve
             lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=o,original=False)
-            
+
             #import pdb; pdb.set_trace()
             cmodel = convolve_cannon_model(rmodel,lsf)
             cmodel.convolve = True
             
             # Interpolate
             if dointerp is True:
-                omodel = interp_cannon_model(cmodel,wout=spec.wave)
+                omodel = interp_cannon_model(cmodel,wout=w)
                 omodel.interp = True
             else:
                 omodel = cannon_copy(cmodel)
@@ -1613,14 +1619,14 @@ def prepare_cannon_model(model,spec,dointerp=False):
           #  # Copy continuum information
           #  if hasattr(model,'continuum'):
           #      omodel.continuum = cannon_copy(model.continuum)
-                
+          
             # Append to final output
             outmodel.append(omodel)
 
     # Single-element list
     if (type(outmodel) is list) & (len(outmodel)==1):
         outmodel = outmodel[0] 
-            
+        
     return outmodel
 
 
@@ -1717,7 +1723,7 @@ def model_spectrum(models,spec,teff=None,logg=None,feh=None,rv=None):
     mspec.logg = logg
     mspec.feh = feh
     mspec.rv = rv
-    mspec.snr = np.inf
+    #mspec.snr = np.inf
         
     return mspec
 
