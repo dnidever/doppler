@@ -1821,7 +1821,10 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     #---------------------
     vrel = fpars[rvind]
     vrelerr = fperror[rvind]
-    bc = specm.barycorr()
+    if specm.bc is None:
+        bc = specm.barycorr()
+    else:
+        bc = specm.bc
     vhelio = vrel + bc
     if verbose is True:
         print('Final parameters:')
@@ -2149,7 +2152,10 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
             modlist.append(pmodel)
             specmlist.append(specm.copy())
             # at least need BC
-            info['bc'][i] = speclist[i].barycorr()
+            if speclist[i].bc is None:
+                info['bc'][i] = speclist[i].barycorr()
+            else:
+                info['bc'][i] = speclist[i].bc                
         if verbose is True: print(' ')
 
         
@@ -2876,7 +2882,7 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     bestmodel = models.get_best_model([beststr['teff'],beststr['logg'],beststr['feh']])
     bestmodelinterp = bestmodel.interp(restwave)
     labels0, cov0, meta0 = bestmodelinterp.test(specm)
-
+    
     # Make sure the labels are within the ranges
     labels0 = labels0.flatten()
     for i in range(3): labels0[i]=dln.limit(labels0[i],bestmodelinterp.ranges[i,0],bestmodelinterp.ranges[i,1])
@@ -2985,7 +2991,10 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
         
     # Construct the output
     #---------------------
-    bc = specm.barycorr()
+    if specm.bc is None:
+        bc = specm.barycorr()
+    else:
+        bc = specm.bc
     # Check if we should apply the barycentric correction
     #  some spectra already this applied to the wavelength solution
     nobc = False
@@ -3362,7 +3371,10 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
             sp = utils.maskoutliers(sp)
             specmlist.append(sp)
             # at least need BC
-            info['bc'][i] = speclist[i].barycorr()
+            if speclist[i].bc is None:
+                info['bc'][i] = speclist[i].barycorr()
+            else:
+                info['bc'][i] = speclist[i].bc
         if verbose is True: print(' ')
 
         

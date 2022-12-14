@@ -562,6 +562,9 @@ class DopplerCannonModel(object):
             if wnorders != norders:
                 raise ValueError("Number of orders in WAVE must match orders in the model")
             npix = wave.shape[0]
+        # Use original input spectrum wavelength array
+        elif wave is None and self.prepared:
+            npix = self._specwave.shape[0]
         # Initialize output arrays
         oflux = np.zeros((npix,norders),np.float32)
         owave = np.zeros((npix,norders),np.float64)
@@ -569,7 +572,15 @@ class DopplerCannonModel(object):
         # Order loop
         for i in orders:
             if wave is None:
-                owave1 = self._data[i].dispersion  # final wavelength array for this order
+                # Use original input wavelengths
+                if self.prepared:
+                    if self._specwave.ndim==1:
+                        owave1 = self._specwave.copy()
+                    else:
+                        owave1 = self._specwave[:,i].copy()
+                # User cannon model wavelengths
+                else:
+                    owave1 = self._data[i].dispersion  # final wavelength array for this order
             else:
                 if wave.ndim==1:
                     owave1 = wave.copy()
@@ -588,7 +599,7 @@ class DopplerCannonModel(object):
                 f0 = m(labels)
                 zfactor = 1 + rv/cspeed   # redshift factor
                 zwave = m.dispersion*zfactor  # redshift the wavelengths
-                f = np.zeros(len(owave1),np.float32)+np.nan
+                f = np.zeros(len(owave1),np.float32)
                 gind,ngind = dln.where((owave1>=np.min(zwave)) & (owave1<=np.max(zwave)))  # wavelengths we can cover
                 if ngind>0:
                     f[gind] = dln.interp(zwave,f0,owave1[gind])
@@ -813,12 +824,13 @@ class DopplerCannonModel(object):
             newm1.interp = True
             newm.append(newm1)
 
+        self._specwave = spec.wave.copy()  # save a copy of the original wavelengths
         self._data = newm
         self._data_nointerp = newm_nointerp
         self.norder = len(newm)
         self._prepared = True
         self.wavevac = self._data[0].wavevac
-
+        
     @property
     def prepared(self):
         """ Has the model been prepared with an observd spectrum."""
@@ -838,6 +850,7 @@ class DopplerCannonModel(object):
         self.wavevac = self._original_model.wavevac
         self._original_model = None
         self._prepared = False
+        self._specwave = None
         self.flattened = False
     
     def interp(self,wave):
@@ -862,6 +875,7 @@ class DopplerCannonModel(object):
             newm_nointerp.append(cannon_copy(self._data_nointerp[i]))
         new._data_nointerp = newm_nointerp
         new._prepared = self._prepared
+        new._specwave = wave.copy()   # Save the input wavelengths
         new.norder = len(newm)
         return new
             
@@ -1541,6 +1555,8 @@ def prepare_cannon_model(model,spec,dointerp=False):
             m = mask[:,o]
             w = wave[:,o]
             gdpix, = np.where(~m)
+            if len(gdpix)==0:
+                raise ValueError('No unmasked pixels in order ',o)
             w = w[gdpix]
             w0 = np.min(w)
             w1 = np.max(w)
@@ -1599,8 +1615,6 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 
             # Convolve
             lsf = spec.lsf.anyarray(rmodel.dispersion,xtype='Wave',order=o,original=False)
-
-            #import pdb; pdb.set_trace()
             cmodel = convolve_cannon_model(rmodel,lsf)
             cmodel.convolve = True
             

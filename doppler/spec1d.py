@@ -285,7 +285,8 @@ class Spec1D:
         self.npix = npix
         self.norder = norder
         self.continuum_func = continuum
-        self._cont = None        
+        self._cont = None
+        self.bc = None
         return
 
     

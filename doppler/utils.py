@@ -511,10 +511,10 @@ def make_logwave_scale(wave,vel=1000.0):
         npix,norder = wave.shape
 
         # Ranges
-        wr = np.empty((2,norder),np.float64)
-        wlo = np.empty(norder,np.float64)
-        whi = np.empty(norder,np.float64)
-        dw = np.empty((npix,norder),np.float64)
+        wr = np.zeros((2,norder),np.float64)
+        wlo = np.zeros(norder,np.float64)
+        whi = np.zeros(norder,np.float64)
+        dw = np.zeros((npix,norder),np.float64)
         for i in range(norder):
             gdwave, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
             wr[:,i] = dln.minmax(wave[gdwave,i])
@@ -532,8 +532,8 @@ def make_logwave_scale(wave,vel=1000.0):
         
         # Extend at the ends
         if vel>0:
-            nlo = np.empty(norder,int)
-            nhi = np.empty(norder,int)
+            nlo = np.zeros(norder,int)
+            nhi = np.zeros(norder,int)
             for i in range(norder):
                 nlo[i] = np.int(np.ceil((np.log10(np.float64(wr[0,i]))-np.log10(np.float64(wlo[i])))/dwlog))
                 nhi[i] = np.int(np.ceil((np.log10(np.float64(whi[i]))-np.log10(np.float64(wr[1,i])))/dwlog))
@@ -545,7 +545,7 @@ def make_logwave_scale(wave,vel=1000.0):
             nhi = 0
 
         # Number of pixels for the input wavelength range
-        n = np.empty(norder,int)
+        n = np.zeros(norder,int)
         for i in range(norder):
             if vel==0:
                 n[i] = np.int((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog)
@@ -558,7 +558,7 @@ def make_logwave_scale(wave,vel=1000.0):
         nf = n+nlo+nhi
 
         # Final wavelength array
-        fwave = np.empty((nf,norder),np.float64)
+        fwave = np.zeros((nf,norder),np.float64)
         for i in range(norder):
             fwave[:,i] = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0,i])) )
 
@@ -705,6 +705,25 @@ def specprep(spec):
             spec.flux[bd[0]] = 0.0
             spec.err[bd[0]] = 1e30
             spec.mask[bd[0]] = True
+
+    # Check for orders that are entirely masked
+    if spec.norder>1:
+        ngood = np.sum(~spec.mask,axis=0)
+        bdorder, = np.where(ngood==0)
+        if len(bdorder)>0:
+            print('Removing order '+str(bdorder)+' that are entirely masked')
+            np.delete(spec.flux,bdorder,axis=1)
+            np.delete(spec.err,bdorder,axis=1)
+            np.delete(spec.wave,bdorder,axis=1)
+            np.delete(spec.mask,bdorder,axis=1)
+            np.delete(spec.lsf.wave,bdorder,axis=1)
+            np.delete(spec.lsf.pars,bdorder,axis=1)
+            spec.norder -= 1
+    else:
+        ngood = np.sum(~spec.mask)
+        if ngood==0:
+            raise ValueError('Entire spectrum is masked')
+            
     # normalize spectrum
     if spec.normalized is False: spec.normalize()  
 

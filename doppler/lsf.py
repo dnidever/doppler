@@ -77,12 +77,12 @@ def ghlsf(x,xcenter,params,nowings=False):
     if type(params) is not dict:
         params = unpack_ghlsf_params(params)
     # Get the wing parameters at each x
-    wingparams = np.empty((params['nWpar'],nxcenter))
+    wingparams = np.zeros((params['nWpar'],nxcenter))
     for ii in range(params['nWpar']):
         poly = np.polynomial.Polynomial(params['Wcoefs'][ii])       
         wingparams[ii] = poly(xcenter+params['Xoffset'])
     # Get the GH parameters at each x
-    ghparams = np.empty((params['Horder']+2,nxcenter))
+    ghparams = np.zeros((params['Horder']+2,nxcenter))
 
     # note that this is modified/corrected a bit from Bovy's routines based on comparison
     # with LSF from IDL routines, noticeable when wings are non-negligible
@@ -107,22 +107,22 @@ def ghlsf(x,xcenter,params,nowings=False):
     xlsf = xlsf.flatten()
     xcenter2 = xcenter2.flatten()
     # Add in height and center for gausshermitebin() and flatten to 2D
-    ghparams1 = np.empty((params['Horder']+4,nxcenter))
+    ghparams1 = np.zeros((params['Horder']+4,nxcenter))
     ghparams1[0,:] = 1.0
     ghparams1[1,:] = xcenter
     ghparams1[2:,:] = ghparams
-    ghparams2 = np.empty((nlsf*npix,params['Horder']+4))
+    ghparams2 = np.zeros((nlsf*npix,params['Horder']+4))
     for i in range(params['Horder']+4):
         ghparams2[:,i] = np.repeat(ghparams1[i,:],nlsf)
     out = gausshermitebin(xlsf,ghparams2,params['binsize'])
     
     # Calculate the Wing part of the LSF
     # Add in center for ghwingsbin() and flatten to 2D
-    wingparams1 = np.empty((params['nWpar']+1,nxcenter))
+    wingparams1 = np.zeros((params['nWpar']+1,nxcenter))
     wingparams1[0,:] = wingparams[0,:]
     wingparams1[1,:] = xcenter
     wingparams1[2:,:] = wingparams[1:,:]
-    wingparams2 = np.empty((nlsf*npix,params['nWpar']+1))
+    wingparams2 = np.zeros((nlsf*npix,params['nWpar']+1))
     for i in range(params['nWpar']+1):
         wingparams2[:,i] = np.repeat(wingparams1[i,:],nlsf)
     out += ghwingsbin(xlsf,wingparams2,params['binsize'],params['Wproftype'])
@@ -573,12 +573,12 @@ def ghlsf_bovy(x,xcenter,params,nowings=False):
     if type(params) is not dict:
         params = unpack_ghlsf_params(params)
     # Get the wing parameters at each x
-    wingparams = np.empty((params['nWpar'],len(xcenter)))
+    wingparams = np.zeros((params['nWpar'],len(xcenter)))
     for ii in range(params['nWpar']):
         poly = np.polynomial.Polynomial(params['Wcoefs'][ii])       
         wingparams[ii] = poly(xcenter+params['Xoffset'])
     # Get the GH parameters at each x
-    ghparams = np.empty((params['Horder']+2,len(xcenter)))
+    ghparams = np.zeros((params['Horder']+2,len(xcenter)))
 
     # note that this is modified/corrected a bit from Bovy's routines based on comparison
     # with LSF from IDL routines, noticeable when wings are non-negligible
@@ -603,8 +603,8 @@ def ghlsf_bovy(x,xcenter,params,nowings=False):
 def gausshermitebin_bovy(x,params,binsize=1.0):
     """Evaluate the integrated APOGEE Gauss-Hermite function"""
     ncenter = params.shape[1]
-    out = np.empty((ncenter,x.shape[1]))
-    integ = np.empty((params.shape[0]-1,x.shape[1]))
+    out = np.zeros((ncenter,x.shape[1]))
+    integ = np.zeros((params.shape[0]-1,x.shape[1]))
     for ii in range(ncenter):
         poly = np.polynomial.HermiteE(params[1:,ii])
         # Convert to regular polynomial basis for easy integration
@@ -630,7 +630,7 @@ def gausshermitebin_bovy(x,params,binsize=1.0):
 def ghwingsbin_bovy(x,params,binsize,Wproftype):
     """Evaluate the wings of the APOGEE LSF"""
     ncenter = params.shape[1]
-    out = np.empty((ncenter,x.shape[1]))
+    out = np.zeros((ncenter,x.shape[1]))
     for ii in range(ncenter):
         if Wproftype == 1: # Gaussian
             w1 = (x[ii]-0.5*binsize)/params[1,ii]
