@@ -224,9 +224,9 @@ class Spec1D:
 
     Parameters
     ----------
-    flux : array
+    flux : array or list
         Array of flux values.  Can 2D if there are multiple orders, e.g. [Npix,Norder].
-        The order dimension must always be the last/trailing dimension.
+        If the orders do not have the same size, you can pass a list of arrays.
     err : array, optional
         Array of uncertainties in the flux array.  Same shape as flux.
     wave : array, optional
@@ -260,35 +260,146 @@ class Spec1D:
     def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
         """ Initialize Spec1D object."""
-        self.flux = flux
-        self.err = err
-        self.wave = wave
-        self.mask = mask
+        # Figure out orders
+        npix,norder,dtype = self._info_from_input(flux)
+        self.npix = npix
+        self.norder = norder
+        if norder==1:
+            self.ndim = 1
+        else:
+            self.ndim = 2
+        self.flux = self._merge_multiorder_data(flux)
+        if err is not None:
+            self.err = self._merge_multiorder_data(err)
+            if self.err.shape != self.flux.shape:
+                raise ValueError('Error and Flux array sizes do not match')
+        else:
+            self.err = err
+        if wave is not None:
+            self.wave = self._merge_multiorder_data(wave)
+            if self.wave.shape != self.flux.shape:
+                raise ValueError('Wave and Flux array sizes do not match')            
+        else:
+            self.wave = None
+        if mask is not None:
+            self.mask = self._merge_multiorder_data(mask)
+            if self.mask.shape != self.flux.shape:
+                raise ValueError('Mask and Flux array sizes do not match')            
         if mask is None:
             self.mask = np.zeros(flux.shape,bool)
-        self.bitmask = bitmask
+        if bitmask is not None:
+            self.bitmask = self._merge_multiorder_data(bitmask)
+            if self.bitmask.shape != self.flux.shape:
+                raise ValueError('Bitmask and Flux array sizes do not match')                        
         self.head = head
         if lsftype.lower() not in lsfclass.keys():
             raise ValueError(lsftype+' not supported yet')
         self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        #self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
         self.instrument = instrument
         self.filename = filename
         self.wavevac = wavevac
         self.normalized = False
-        if flux.ndim==1:
-            npix = len(flux)
-            norder = 1
-        else:
-            npix,norder = flux.shape
-        self.ndim = flux.ndim
-        self.npix = npix
-        self.norder = norder
         self.continuum_func = continuum
         self._cont = None
         self.bc = None
         return
 
+    def __len__(self):
+        return self.norder
+    
+    def __getitem__(self,index):
+        """
+        Return a separate spectral order
+
+        This returns a new Spec1D with arrays/attributes that are passed by REFERENCE.
+        This way you can modify the values in the returned object
+        and it will modify the original arrays.
+
+        For example,
+        sp[0].flux[0] = 1000
+        print(sp[0].flux[0:2])
+        [1.00000000e+03, 1.57173725e-09]
+        print(sp.flux[0:2,0])
+        [1.00000000e+03 1.57173725e-09]
+
+        User-added SCALAR attributes will be passed on with this method, but ARRAY/LIST
+        attributes with *NOT*.
+        """
+        if type(index) is not int:
+            raise IndexError('Index must be an integer')
+        if index>=self.norder:
+            raise IndexError('Index is too large')
+        # Single order, return self
+        if self.norder==1:
+            return self
+        # Only return good pixels with good wavelengths
+        gdpix, = np.where((self.wave[:,index]>0) & np.isfinite(self.wave[:,index]))
+        if len(gdpix)==0:
+            raise ValueError('All masked pixels')
+        # We want to use a slice because that returns the data by reference
+        #   using an index will return the data by value
+        slc = slice(np.min(gdpix),np.max(gdpix)+1)
+        if len(gdpix) != len(self.wave[slc,index]):
+            raise ValueError('There are gaps in the spectrum')
+        # Initialize the flux only
+        if self.err is not None:
+            err = self.err[slc,index]
+        else:
+            err = None
+        if self.bitmask is not None:
+            bitmask = self.bitmask[slc,index]
+        else:
+            bitmask = None
+        if self.lsf._sigma is not None:
+            lsfsigma = self.lsf._sigma[:,index]
+        else:
+            lsfsigma = None
+        ospec = Spec1D(self.flux[slc,index],err=err,mask=self.mask[slc,index],wave=self.wave[slc,index],
+                       bitmask=bitmask,lsfpars=self.lsf.pars[:,index],lsftype=self.lsf.lsftype,
+                       lsfxtype=self.lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
+                       filename=self.filename,wavevac=self.wavevac)
+        if self.bc is not None:
+            ospec.bc = self.bc
+        # Add user-added scalar attributes
+        sdict,vdict = self._userattributes
+        for n in sdict:
+            setattr(ospec,n,sdict[n])
+        return ospec
+    
+    def _info_from_input(self,data):
+        """ Figure out the number of orders, maximum npix, and data type for input multi-order data."""
+        if type(data) in [list,tuple]:
+            if type(data[0]) in (list,tuple,np.ndarray):
+                npix = 0
+                norder = len(data)
+                for d in data:
+                    npix = np.max([npix,np.array(d).size])
+                return npix,norder,np.array(data[0][0]).dtype
+            else:
+                return np.array(data).size,1,np.array(data[0]).dtype
+        elif type(data) is np.ndarray:
+            if data.ndim==1:
+                return data.size,1,data.dtype
+            else:
+                return data.shape[0],data.shape[1],data.dtype
+        else:
+            raise ValueError('Data type '+type(data)+' not supported')
+        
+    def _merge_multiorder_data(self,data):
+        """ Combine multi-order data into a single array with buffer (if necessary)."""
+        npix,norder,dtype = self._info_from_input(data)
+        if norder==1 or type(data) is np.ndarray:
+            return data
+        else:
+            # list or tuple
+            out = np.zeros((npix,norder),dtype)
+            for i in range(norder):
+                d = np.array(data[i],dtype)
+                out[0:len(d),i] = d
+        return out
+
+    def __array__(self):
+        return self.flux
     
     def __repr__(self):
         """ Print out the string representation of the Spec1D object."""
@@ -310,6 +421,10 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
+    @property
+    def shape(self):
+        return self.npix,self.norder
+    
     @property
     def snr(self):
         """ Return the S/N"""
@@ -365,11 +480,12 @@ class Spec1D:
         
         if self.wave is None:
             raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-            # Order is always the second dimension
-            return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
-        else:
-            return utils.w2p(self.wave,w,extrapolate=extrapolate)
+        return utils.w2p(self[order].wave,w,extrapolate=extrapolate)        
+        #if self.wave.ndim==2:
+        #    # Order is always the second dimension
+        #    return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
+        #else:
+        #    return utils.w2p(self.wave,w,extrapolate=extrapolate)
 
         
     def pix2wave(self,x,extrapolate=True,order=0):
@@ -403,11 +519,12 @@ class Spec1D:
         
         if self.wave is None:
             raise Exception("No wavelength information")
-        if self.wave.ndim==2:
-             # Order is always the second dimension
-            return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
-        else:
-            return utils.p2w(self.wave,x,extrapolate=extrapolate)            
+        return utils.p2w(self[order].wave,x,extrapolate=extrapolate)        
+        #if self.wave.ndim==2:
+        #     # Order is always the second dimension
+        #    return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
+        #else:
+        #    return utils.p2w(self.wave,x,extrapolate=extrapolate)            
 
         
     def normalize(self,**kwargs):
@@ -624,13 +741,35 @@ class Spec1D:
             bc = barycorr.to(u.km/u.s)  
             self.bc = bc.value
         return self.bc
-        
+
+    @property
+    def _userattributes(self):
+        """ Return a dictionary of user-added attributes.  Scalars and vectors separately"""
+        attributes = dir(self)
+        sdict = {}   # scalar dictionary
+        vdict = {}   # vector dictionary
+        ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
+                 'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
+                 'interp','normalize','pix2wave','reader','wave2pix','write','cont','head','bc']
+        for a in attributes:
+            if a.lower() not in ckeys and a[0]!='_':
+                val = getattr(self,a)
+                # Scalar attributes
+                if dln.size(val)<=1:
+                    if val is None:
+                        sdict[a] = ['None']
+                    else:
+                        sdict[a] = [val]   # needs to be a list to construct the table later
+                # Arrays
+                else:
+                    vdict[a] = val
+        return sdict,vdict
 
     def write(self,outfile,overwrite=True):
         """ Write the spectrum to a FITS file."""
 
         hdu = fits.HDUList()
-        # header
+        # Header
         hdu.append(fits.PrimaryHDU(header=self.head))
         hdu[0].header['COMMENT'] = 'HDU0: header'
         hdu[0].header['COMMENT'] = 'HDU1: flux'
@@ -647,26 +786,28 @@ class Spec1D:
         hdu[0].header['NDIM'] = self.ndim
         hdu[0].header['NPIX'] = self.npix
         hdu[0].header['NORDER'] = self.norder
+        if self.bc is not None:
+            hdu[0].header['BC'] = (self.bc,'barycentric correction')
         if np.isfinite(self.snr):
-            hdu[0].header['SNR'] = self.snr
+            hdu[0].header['SNR'] = (self.snr,'signal-to-noise')
         else:
-            hdu[0].header['SNR'] = str(self.snr)
-        # flux
+            hdu[0].header['SNR'] = (str(self.snr),'signal-to-noise')
+        # Flux
         hdu.append(fits.ImageHDU(self.flux))
         hdu[1].header['BUNIT'] = 'Flux'
         hdu[1].header['EXTNAME'] = 'FLUX'
-        # error
+        # Error
         hdu.append(fits.ImageHDU(self.err))
         hdu[2].header['BUNIT'] = 'Flux Error'
         hdu[2].header['EXTNAME'] = 'FLUX_ERROR' 
-        # wavelength
+        # Wavelength
         hdu.append(fits.ImageHDU(self.wave))
         hdu[3].header['BUNIT'] = 'Wavelength (Ang)'
         hdu[3].header['EXTNAME'] = 'WAVELENGTH'  
-        # mask
+        # Mask
         hdu.append(fits.ImageHDU(self.mask.astype(int)))
         hdu[4].header['BUNIT'] = 'Mask'
-        hdu[4].header['EXTNAME'] = 'MASK'        
+        hdu[4].header['EXTNAME'] = 'MASK'
         # LSF
         #  ADD A WRITE() METHOD TO LSF class
         #  can write to FITS or hdu if hdu=True is set
@@ -692,36 +833,19 @@ class Spec1D:
             hdu[5].header['NPARS'] = 0
             hdu[5].header['NPARS1'] = 0
             hdu[5].header['NPARS2'] = 0            
-        # continuum
+        # Continuum
         hdu.append(fits.ImageHDU(self._cont))
         hdu[6].header['BUNIT'] = 'Continuum'
         hdu[6].header['EXTNAME'] = 'CONTINUUM'
-        # continuum function
+        # Continuum function
         cont_func_ser = pickle.dumps(self.continuum_func)    # serialise the function
         tab = Table(np.atleast_1d(np.array(cont_func_ser)),names=['func'])  # save as FITS binary table
         hdu.append(fits.table_to_hdu(tab))
         hdu[7].header['BUNIT'] = 'Continuum function'
         # Add other attributes to the primary header
         #   these were added by the user
-        attributes = dir(self)
+        sdict,vdic = self._userattributes
         nexten = 8
-        sdict = {}   # scalar dictionary
-        vdict = {}   # vector dictionary
-        ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized','ndim','npix',
-                 'norder','snr','barycorr','continuum_func','copy','filename','interp','normalize',
-                 'pix2wave','reader','wave2pix','write','cont','head']
-        for a in attributes:
-            if a.lower() not in ckeys and a[0]!='_':
-                val = getattr(self,a)
-                # Scalar attributes
-                if dln.size(val)<=1:
-                    if val is None:
-                        sdict[a] = ['None']
-                    else:
-                        sdict[a] = [val]   # needs to be a list to construct the table later
-                # Arrays
-                else:
-                    vdict[a] = val
         # Put scalars in a separate table
         if len(sdict)>0:
             tab = Table(sdict)
@@ -743,3 +867,95 @@ class Spec1D:
                 
         hdu.writeto(outfile,overwrite=overwrite)
 
+        
+class Spec1DMultiOrder:
+
+    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
+                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
+        """ Initialize Spec1DMultiOrder object."""
+        # How many orders are there
+        
+        self.flux = flux
+        self.err = err
+        self.wave = wave
+        self.mask = mask
+        if mask is None:
+            self.mask = np.zeros(flux.shape,bool)
+        self.bitmask = bitmask
+        self.head = head
+        if lsftype.lower() not in lsfclass.keys():
+            raise ValueError(lsftype+' not supported yet')
+        self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
+        #self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
+        self.instrument = instrument
+        self.filename = filename
+        self.wavevac = wavevac
+        self.normalized = False
+        if flux.ndim==1:
+            npix = len(flux)
+            norder = 1
+        else:
+            npix,norder = flux.shape
+        self.ndim = flux.ndim
+        self.npix = npix
+        self.norder = norder
+        self.continuum_func = continuum
+        self._cont = None
+        self.bc = None
+        return
+
+    def __repr__(self):
+        pass
+
+    def __getitem__(self):
+        pass
+
+    def __setitem__(self):
+        pass    
+
+    def __len__(self):
+        pass
+
+    @property
+    def flux(self):
+        pass
+
+    @property
+    def err(self):
+        pass
+
+    @property
+    def mask(self):
+        pass
+
+    @property
+    def wave(self):
+        pass    
+
+    
+    def snr(self):
+        pass
+    
+    def cont(self):
+        pass
+    
+    def wave2pix(self):
+        pass
+
+    def pix2wave(self):
+        pass
+    
+    def normalize(self):
+        pass
+    
+    def interp(self):
+        pass
+        
+    def copy(self):
+        pass
+    
+    def barycorr(self):
+        pass
+    
+    def write(self,filename):
+        pass

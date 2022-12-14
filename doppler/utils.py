@@ -710,6 +710,8 @@ def specprep(spec):
     if spec.norder>1:
         ngood = np.sum(~spec.mask,axis=0)
         bdorder, = np.where(ngood==0)
+        if len(bdorder)==spec.norder:
+            raise ValueError('Entire spectrum is masked')
         if len(bdorder)>0:
             print('Removing order '+str(bdorder)+' that are entirely masked')
             np.delete(spec.flux,bdorder,axis=1)
