@@ -797,7 +797,7 @@ class Lsf:
         if (pars is None) & (sigma is None):
             if verbose is True: print('No LSF information input.  Assuming Nyquist sampling.')
             # constant FWHM=2.5, sigma=2.5/2.35
-            self.pars = np.atleast_2d([2.5 / 2.35])
+            self.pars = np.zeros((1,self.norder),float) + (2.5 / 2.3)
             self.xtype = 'Pixels'
 
     def __call__(self):
@@ -817,7 +817,10 @@ class Lsf:
             return self
         slc = slice(0,self.numpix[index])
         wave = self.wave[slc,index]
-        pars = self.pars[slc,index]
+        if self.pars is not None:
+            pars = self.pars[slc,index]
+        else:
+            pars = None
         if self._sigma is not None:
             sigma = self._sigma[slc,index]
         else:

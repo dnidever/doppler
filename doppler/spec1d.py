@@ -292,7 +292,7 @@ class Spec1D:
             if self.wave.shape != self.flux.shape:
                 raise ValueError('Wave and Flux array sizes do not match')            
         else:
-            self.wave = None
+            self.wave = wave
         if mask is not None:
             self.mask = self._merge_multiorder_data(mask,missing_value=True)
             if self.mask.shape != self.flux.shape:
@@ -302,7 +302,9 @@ class Spec1D:
         if bitmask is not None:
             self.bitmask = self._merge_multiorder_data(bitmask,missing_value=0)
             if self.bitmask.shape != self.flux.shape:
-                raise ValueError('Bitmask and Flux array sizes do not match')                        
+                raise ValueError('Bitmask and Flux array sizes do not match')
+        else:
+            self.bitmask = bitmask
         self.head = head
         if lsftype.lower() not in lsfclass.keys():
             raise ValueError(lsftype+' not supported yet')
@@ -368,13 +370,14 @@ class Spec1D:
             bitmask = self.bitmask[slc,index]
         else:
             bitmask = None
-        if self.lsf._sigma is not None:
-            lsfsigma = self.lsf._sigma[:,index]
+        lsf = self.lsf[index]            
+        if lsf._sigma is not None:
+            lsfsigma = lsf._sigma
         else:
             lsfsigma = None
         ospec = Spec1D(self.flux[slc,index],err=err,mask=self.mask[slc,index],wave=self.wave[slc,index],
-                       bitmask=bitmask,lsfpars=self.lsf.pars[:,index],lsftype=self.lsf.lsftype,
-                       lsfxtype=self.lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
+                       bitmask=bitmask,lsfpars=lsf.pars,lsftype=lsf.lsftype,
+                       lsfxtype=lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
                        filename=self.filename,wavevac=self.wavevac)
         ospec._child = True
         if self.bc is not None:
@@ -772,7 +775,7 @@ class Spec1D:
             newmask = None
         new = Spec1D(self.flux.copy(),err=newerr,wave=newwave,mask=newmask,
                      lsfpars=newlsfpars,lsftype=newlsf.lsftype,lsfxtype=newlsf.xtype,
-                     lsfsigma=newlsf.sigma,instrument=self.instrument,filename=self.filename)
+                     lsfsigma=None,instrument=self.instrument,filename=self.filename)
         new.lsf = newlsf  # make sure all parts of Lsf are copied over
         for name, value in vars(self).items():
             if name not in ['flux','wave','err','mask','lsf','instrument','filename']:
