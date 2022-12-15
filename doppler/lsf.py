@@ -757,6 +757,25 @@ class Lsf:
         if wave is None and xtype=='Wave':
             raise Exception('Need wavelength information if xtype=Wave')
         self.wave = wave
+        if wave.ndim==1:
+            npix = len(wave)
+            norder = 1
+        else:
+            npix,norder = wave.shape        
+        self.ndim = wave.ndim
+        self.npix = npix
+        self.norder = norder        
+        # Get number of pixels per order
+        if self.norder>1:
+            numpix = np.zeros(norder,int)
+            for i in range(norder):
+                gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
+                numpix[i] = np.max(gdpix)+1
+            self.numpix = numpix
+        else:
+            gdpix, = np.where((wave>0) & np.isfinite(wave))
+            numpix = np.max(gdpix)+1
+            self.numpix = [numpix]
         # Make sure pars are 2D
         self.pars = pars
         if pars is not None:
@@ -766,26 +785,47 @@ class Lsf:
                 self.pars = pars
         self.lsftype = lsftype
         self.xtype = xtype
-        if wave.ndim==1:
-            npix = len(wave)
-            norder = 1
+        # Make sure sigma is 2D
+        if sigma is not None:
+            if sigma.ndim==1:
+                self.sigma = np.atleast_2d(sigma).T  # 2D with order dimension at 2nd
+            else:
+                self.sigma = sigma
         else:
-            npix,norder = wave.shape
-        self.ndim = wave.ndim
-        self.npix = npix
-        self.norder = norder
-        self._sigma = sigma
+            self._sigma = sigma
         self._array = None
         if (pars is None) & (sigma is None):
             if verbose is True: print('No LSF information input.  Assuming Nyquist sampling.')
             # constant FWHM=2.5, sigma=2.5/2.35
-            self.pars = np.array([2.5 / 2.35])
+            self.pars = np.atleast_2d([2.5 / 2.35])
             self.xtype = 'Pixels'
 
     def __call__(self):
         """ Returns the Gaussian array.  Must be defined by the subclass."""
         pass
-            
+
+
+    def __getitem__(self,index):
+        """ Return a single order of the LSF object."""
+
+        if type(index) is not int:
+            raise IndexError('Index must be an integer')
+        if index>=self.norder:
+            raise IndexError('Index is too large')
+        # Single order, return self
+        if self.norder==1:
+            return self
+        slc = slice(0,self.numpix[index])
+        wave = self.wave[slc,index]
+        pars = self.pars[slc,index]
+        if self._sigma is not None:
+            sigma = self._sigma[slc,index]
+        else:
+            sigma = None
+        olsf = Lsf(wave=wave,pars=pars,xtype=self.xtype,lsftype=self.lsftype,
+                   sigma=sigma)
+        return olsf
+    
     def wave2pix(self,w,extrapolate=True,order=0):
         """
         Convert wavelength values to pixels using the LSF's dispersion

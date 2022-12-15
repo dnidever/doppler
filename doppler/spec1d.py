@@ -261,34 +261,46 @@ class Spec1D:
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
         """ Initialize Spec1D object."""
         # Figure out orders
-        npix,norder,dtype = self._info_from_input(flux)
-        self.npix = npix
+        numpix,norder,dtype = self._info_from_input(flux)
+        # Check the wavelengths for masked pixels if a 2D array was input
+        if wave is not None and type(wave) is np.ndarray:
+            numpix = np.zeros(norder,int)
+            for i in range(norder):
+                if norder>1:
+                    gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
+                else:
+                    gdpix, = np.where((wave>0) & np.isfinite(wave))                    
+                if len(gdpix)==0:
+                    raise ValueError('All masked pixels in order '+str(i))
+                numpix[i] = np.max(gdpix)+1
+        self.numpix = numpix
+        self.npix = np.max(numpix)
         self.norder = norder
         if norder==1:
             self.ndim = 1
         else:
             self.ndim = 2
-        self.flux = self._merge_multiorder_data(flux)
+        self.flux = self._merge_multiorder_data(flux,missing_value=0.0)
         if err is not None:
-            self.err = self._merge_multiorder_data(err)
+            self.err = self._merge_multiorder_data(err,missing_value=1e30)
             if self.err.shape != self.flux.shape:
                 raise ValueError('Error and Flux array sizes do not match')
         else:
             self.err = err
         if wave is not None:
-            self.wave = self._merge_multiorder_data(wave)
+            self.wave = self._merge_multiorder_data(wave,missing_value=0.0)
             if self.wave.shape != self.flux.shape:
                 raise ValueError('Wave and Flux array sizes do not match')            
         else:
             self.wave = None
         if mask is not None:
-            self.mask = self._merge_multiorder_data(mask)
+            self.mask = self._merge_multiorder_data(mask,missing_value=True)
             if self.mask.shape != self.flux.shape:
                 raise ValueError('Mask and Flux array sizes do not match')            
         if mask is None:
             self.mask = np.zeros(flux.shape,bool)
         if bitmask is not None:
-            self.bitmask = self._merge_multiorder_data(bitmask)
+            self.bitmask = self._merge_multiorder_data(bitmask,missing_value=0)
             if self.bitmask.shape != self.flux.shape:
                 raise ValueError('Bitmask and Flux array sizes do not match')                        
         self.head = head
@@ -301,8 +313,14 @@ class Spec1D:
         self.normalized = False
         self.continuum_func = continuum
         self._cont = None
+        self._child = False
         self.bc = None
         return
+
+    @property
+    def size(self):
+        """ Return number of total pixels."""
+        return np.sum(self.numpix)
 
     def __len__(self):
         return self.norder
@@ -332,16 +350,16 @@ class Spec1D:
         # Single order, return self
         if self.norder==1:
             return self
-        # Only return good pixels with good wavelengths
-        gdpix, = np.where((self.wave[:,index]>0) & np.isfinite(self.wave[:,index]))
-        if len(gdpix)==0:
-            raise ValueError('All masked pixels')
+        ## Only return good pixels with good wavelengths
+        #gdpix, = np.where((self.wave[:,index]>0) & np.isfinite(self.wave[:,index]))
+        #if len(gdpix)==0:
+        #    raise ValueError('All masked pixels')
         # We want to use a slice because that returns the data by reference
         #   using an index will return the data by value
-        slc = slice(np.min(gdpix),np.max(gdpix)+1)
-        if len(gdpix) != len(self.wave[slc,index]):
-            raise ValueError('There are gaps in the spectrum')
-        # Initialize the flux only
+        #slc = slice(np.min(gdpix),np.max(gdpix)+1)
+        #if len(gdpix) != len(self.wave[slc,index]):
+        #    raise ValueError('There are gaps in the spectrum')
+        slc = slice(0,self.numpix[index])
         if self.err is not None:
             err = self.err[slc,index]
         else:
@@ -358,6 +376,7 @@ class Spec1D:
                        bitmask=bitmask,lsfpars=self.lsf.pars[:,index],lsftype=self.lsf.lsftype,
                        lsfxtype=self.lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
                        filename=self.filename,wavevac=self.wavevac)
+        ospec._child = True
         if self.bc is not None:
             ospec.bc = self.bc
         # Add user-added scalar attributes
@@ -367,32 +386,35 @@ class Spec1D:
         return ospec
     
     def _info_from_input(self,data):
-        """ Figure out the number of orders, maximum npix, and data type for input multi-order data."""
+        """ Figure out the number of orders, number of pixels for each order, and data type for input multi-order data."""
         if type(data) in [list,tuple]:
             if type(data[0]) in (list,tuple,np.ndarray):
-                npix = 0
                 norder = len(data)
+                npix = np.zeros(norder,int)                
                 for d in data:
-                    npix = np.max([npix,np.array(d).size])
+                    npix[i] = np.array(d).size
                 return npix,norder,np.array(data[0][0]).dtype
             else:
-                return np.array(data).size,1,np.array(data[0]).dtype
+                return [np.array(data).size],1,np.array(data[0]).dtype
         elif type(data) is np.ndarray:
             if data.ndim==1:
-                return data.size,1,data.dtype
+                return [data.size],1,data.dtype
             else:
-                return data.shape[0],data.shape[1],data.dtype
+                return data.shape[1]*[data.shape[0]],data.shape[1],data.dtype
         else:
             raise ValueError('Data type '+type(data)+' not supported')
         
-    def _merge_multiorder_data(self,data):
+    def _merge_multiorder_data(self,data,missing_value=None):
         """ Combine multi-order data into a single array with buffer (if necessary)."""
-        npix,norder,dtype = self._info_from_input(data)
+        numpix,norder,dtype = self._info_from_input(data)
+        npix = np.max(numpix)
         if norder==1 or type(data) is np.ndarray:
             return data
         else:
             # list or tuple
             out = np.zeros((npix,norder),dtype)
+            if missing_value is not None:
+                out += missing_value   # default value
             for i in range(norder):
                 d = np.array(data[i],dtype)
                 out[0:len(d),i] = d
@@ -551,7 +573,15 @@ class Spec1D:
 
         if self.normalized is True:
             return
-        
+
+        # child spectrum
+        if self._child:
+            warnings.warn('Normalizing a child single-order Spec1D object.  Making copies of flux/err')
+            self.flux = self.flux.copy()
+            self.err = self.err.copy()            
+            if self._cont is not None:
+                self._cont = self._cont.copy()
+            
         self._flux = self.flux.copy()  # Save the original
 
         # Use the continuum_func to get the continuum
@@ -677,8 +707,50 @@ class Spec1D:
                        lsfxtype=lsfxtype,lsfsigma=osigma)
 
         return ospec
-                
 
+    def flatten(self):
+        """ Flatten the arrays."""
+        # This flattens multiple orders and stacks them into one long spectrum
+        if self.norder==1:
+            return self.copy()
+        flux = np.zeros(self.size)
+        wave = np.zeros(self.size)
+        mask = np.ones(self.size,bool)        
+        if self.err is not None:
+            err = np.zeros(self.size)
+        else:
+            err = None
+        if self.bitmask is not None:
+            bitmask = np.zeros(self.size,self.bitmask.dtype)
+        else:
+            bitmask = None
+        if self.lsf._sigma is not None:
+            lsfsigma = np.zeros(self.size)
+        else:
+            lsfsigma = None
+        # Loop over orders
+        cnt = 0
+        for sp in self:
+            slc = slice(cnt,cnt+sp.npix)
+            flux[slc] = sp.flux
+            if err is not None:
+                err[slc] = sp.err
+            wave[slc] = sp.wave
+            mask[slc] = sp.mask
+            if bitmask is not None:
+                bitmask[slc] = sp.bitmask
+            if lsfsigma is not None:
+                lsfsigma[slc] = sp.lsf._sigma
+            cnt += sp.npix
+        lsfpars = self[0].lsf.pars
+        # Instantiate the new spec1d object
+        ospec = Spec1D(flux,err=err,mask=mask,wave=wave,bitmask=bitmask,lsfpars=lsfpars,
+                       lsftype=self.lsf.lsftype,lsfxtype=self.lsf.xtype,lsfsigma=lsfsigma,head=self.head,
+                       instrument=self.instrument,filename=self.filename,wavevac=self.wavevac)
+        # If the LSF is in pixel units, then it won't work right.
+        ospec._child = True
+        return ospec
+        
     def copy(self):
         """ Create a new copy."""
         if self.lsf.pars is not None:
@@ -750,7 +822,8 @@ class Spec1D:
         vdict = {}   # vector dictionary
         ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
                  'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
-                 'interp','normalize','pix2wave','reader','wave2pix','write','cont','head','bc']
+                 'interp','normalize','pix2wave','reader','wave2pix','write','cont','flatten',
+                 'head','bc','size','numpix']
         for a in attributes:
             if a.lower() not in ckeys and a[0]!='_':
                 val = getattr(self,a)
@@ -866,96 +939,3 @@ class Spec1D:
                 nexten += 1
                 
         hdu.writeto(outfile,overwrite=overwrite)
-
-        
-class Spec1DMultiOrder:
-
-    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
-        """ Initialize Spec1DMultiOrder object."""
-        # How many orders are there
-        
-        self.flux = flux
-        self.err = err
-        self.wave = wave
-        self.mask = mask
-        if mask is None:
-            self.mask = np.zeros(flux.shape,bool)
-        self.bitmask = bitmask
-        self.head = head
-        if lsftype.lower() not in lsfclass.keys():
-            raise ValueError(lsftype+' not supported yet')
-        self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        #self.lsf = Lsf(wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        self.instrument = instrument
-        self.filename = filename
-        self.wavevac = wavevac
-        self.normalized = False
-        if flux.ndim==1:
-            npix = len(flux)
-            norder = 1
-        else:
-            npix,norder = flux.shape
-        self.ndim = flux.ndim
-        self.npix = npix
-        self.norder = norder
-        self.continuum_func = continuum
-        self._cont = None
-        self.bc = None
-        return
-
-    def __repr__(self):
-        pass
-
-    def __getitem__(self):
-        pass
-
-    def __setitem__(self):
-        pass    
-
-    def __len__(self):
-        pass
-
-    @property
-    def flux(self):
-        pass
-
-    @property
-    def err(self):
-        pass
-
-    @property
-    def mask(self):
-        pass
-
-    @property
-    def wave(self):
-        pass    
-
-    
-    def snr(self):
-        pass
-    
-    def cont(self):
-        pass
-    
-    def wave2pix(self):
-        pass
-
-    def pix2wave(self):
-        pass
-    
-    def normalize(self):
-        pass
-    
-    def interp(self):
-        pass
-        
-    def copy(self):
-        pass
-    
-    def barycorr(self):
-        pass
-    
-    def write(self,filename):
-        pass
