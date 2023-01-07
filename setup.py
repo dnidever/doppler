@@ -3,8 +3,12 @@
 #from distutils.core import setup
 from setuptools import setup, find_packages
 
-setup(name='Doppler',
-      version='1.1.4',
+# Change name to "thedoppler" when you want to
+#  load to PYPI
+pypiname = 'thedoppler'
+
+setup(name='doppler',
+      version='1.1.5',
       description='Generic Radial Velocity Software',
       author='David Nidever',
       author_email='dnidever@montana.edu',
