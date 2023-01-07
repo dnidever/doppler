@@ -15,7 +15,11 @@ Authors
 Installation
 ------------
 
-To install the latest version::
+The easiest way to install |Doppler| is with pip::
+
+    pip install thedoppler
+
+You can also pip install directly from GitHub::
 
     pip install git+https://github.com/dnidever/doppler
 
