@@ -788,7 +788,7 @@ class Spec1D:
         # keck = EarthLocation.of_site('Keck')  # the easiest way... but requires internet
         #keck = EarthLocation.from_geodetic(lat=19.8283*u.deg, lon=-155.4783*u.deg, height=4160*u.m)
         # Calculate the barycentric correction
-        if hasattr(self,'bc') is False:
+        if hasattr(self,'bc') is False or self.bc is None:
             if hasattr(self,'observatory') is False:
                 print('No observatory information.  Cannot calculate barycentric correction.')
                 return 0.0
