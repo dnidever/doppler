@@ -11,7 +11,7 @@ The easiest way to install |Doppler| is using pip:
 
 .. code-block:: bash
 
-    pip install doppler
+    pip install thedoppler
 
 To get the very lastest version:
 

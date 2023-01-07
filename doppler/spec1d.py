@@ -862,6 +862,8 @@ class Spec1D:
         hdu[0].header['NDIM'] = self.ndim
         hdu[0].header['NPIX'] = self.npix
         hdu[0].header['NORDER'] = self.norder
+        for i in range(self.norder):
+            hdu[0].header['NUMPIX'+str(i+1)] = self.numpix[i]
         if self.bc is not None:
             hdu[0].header['BC'] = (self.bc,'barycentric correction')
         if np.isfinite(self.snr):
