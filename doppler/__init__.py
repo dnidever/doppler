@@ -22,3 +22,6 @@ def fit(*args,**kwargs):
 
 def jointfit(*args,**kwargs):
     return rv.jointfit(*args,**kwargs)
+
+def download_data(force=False):
+    utils.download_data(force=force)

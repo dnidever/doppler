@@ -941,3 +941,64 @@ def plotspec(spec,spec2=None,model=None,figsize=10):
             yr = [np.max([yr[0],-0.2]), np.min([yr[1],2.0])]
             ax[i].set_xlim(xr)
             ax[i].set_ylim(yr)
+
+def download_data(force=False):
+    """ Download the data from my Google Drive."""
+
+    # Check if the "done" file is there
+    if os.path.exists(datadir()+'done') and force==False:
+        return
+    
+    #https://drive.google.com/drive/folders/1SXId9S9sduor3xUz9Ukfp71E-BhGeGmn?usp=share_link
+    # The entire folder: 1SXId9S9sduor3xUz9Ukfp71E-BhGeGmn
+    
+    data = [{'id':'17EDOUbzNr4cDzn7KZdPsw7R2lAj_o_np','output':'cannongrid_3000_18000_hotdwarfs_norm_cubic_model.pkl'},   
+            {'id':'1hy1Mk6Kl8OAH6UouyLeGwtBXsOKoDq1r','output':'cannongrid_3000_18000_coolstars_norm_cubic_model.pkl'},
+            {'id':'16FP-udWusOSuIghpZGmQagvYwnFlS33C','output':'payne_coolhot_0.npz'},
+            {'id':'1zgFM1UhigHvbQ_oUj_k_S99APS39nwRp','output':'payne_coolhot_1.npz'},
+            {'id':'1bGTBO8LdEpbhGztP-Rj5xvAMpocCINeP','output':'payne_coolhot_2.npz'},
+            {'id':'1iCDKTXcS1JK75in8hBnzdevW1VFYU8od','output':'payne_coolhot_3.npz'},
+            {'id':'13gsGHalkJCeOFoE0edLKVzMXPG5ZRhWA','output':'payne_coolhot_4.npz'},
+            {'id':'16hsj29H2gzZIfdSxdbvp6eWqtZ7wn3FP','output':'payne_coolhot_5.npz'},
+            {'id':'1slMxAg8P9wjomr0wVyHYmpN1SkL4dtCa','output':'payne_coolhot_6.npz'},
+            {'id':'13-S4Ecr9_6VJ8TTQoSgYCeCSF4ntfX0M','output':'payne_coolhot_7.npz'},
+            {'id':'1-9B1Netb5I1rDSyo6l-iQup0m_mAA0UV','output':'payne_coolhot_8.npz'},            
+            {'id':'1cMM0AJ49hvhZdeJpKoGAnlwcDep7GNcX','output':'payne_coolhot_9.npz'},
+            {'id':'1uYUyVuJg-YVqx2zczunUYZTnbfg-tbdL','output':'payne_coolhot_10.npz'},
+            {'id':'1u6HlTfSJ9D_sabbnbPKce0oBZ50n3YJj','output':'payne_coolhot_11.npz'},
+            {'id':'14hnD2CLWAE0WdpByhIjDkDQWOZRfGEkn','output':'payne_coolhot_12.npz'},
+            {'id':'17M1Zp55L1eBlzDDvKvxE9xk998K1m7v5','output':'payne_coolhot_13.npz'},
+            {'id':'1uFArsToJyS2tMJLt7PSvOQMHbwXcT4rt','output':'payne_coolhot_14.npz'},
+            {'id':'1q1tG_0E8907PrwG88idVzFYjO3UmOtW_','output':'payne_coolhot_15.npz'},
+            {'id':'1zBCHtlLHpvUkyocqYBlbaeH8IvzEsxCz','output':'payne_coolhot_16.npz'},
+            {'id':'1_Ab3ArNekoNUyGoQ_eGlbLEE_p6IxNTf','output':'payne_coolhot_17.npz'},
+            {'id':'1UQvZ5KDe1tHcyV9jzQnAa-YIyV5RDPmp','output':'payne_coolhot_18.npz'},
+            {'id':'1JIVkXtedeeZVQjsewDJdzdZRIcJhmQWm','output':'payne_coolhot_19.npz'},
+            {'id':'1VpDd2KO0sZMntCvLjzcv6por2vKs-R3D','output':'payne_coolhot_20.npz'},
+            {'id':'1NXG0g3yaNbcgPv0wV4awsonFT78Kmzka','output':'payne_coolhot_21.npz'},
+            {'id':'1u130026I7qvG9w1GQFymPiwP9kGkuicP','output':'payne_coolhot_22.npz'},
+            {'id':'1-MYvm-aXGsH4kZ_Hi1b_9YFI0y0IqJg2','output':'payne_coolhot_23.npz'},
+            {'id':'1VTWHL2Ie4wFSQSsKz9oowYRK4om0vsB8','output':'payne_coolhot_24.npz'},
+            {'id':'1XzIyErtLAI89aB5xj2zDgBMB3MZUMMgb','output':'payne_coolhot_25.npz'},
+            {'id':'12rqcJIpjUEJlP11onfbCyxy40nrsA-S8','output':'payne_coolhot_26.npz'},
+            {'id':'1wp1UCkFGXvWiEtFiNYRutPAemwXX67ad','output':'payne_coolhot_27.npz'},
+            {'id':'1j9sBofKrAI_Mgocq1MdxftlnHnakaWUo','output':'payne_coolhot_28.npz'},
+            {'id':'1w4CwoZsxEyBRs7DvrZ4P68PMBQuhAjav','output':'payne_coolhot_29.npz'}]
+    
+    # This should take 2-3 minutes on a good connection
+    
+    # Do the downloading
+    t0 = time.time()
+    print('Downloading data')
+    for i in range(len(data)):
+        print(str(i+1)+' '+data[i]['output'])
+        fileid = data[i]['id']
+        url = f'https://drive.google.com/uc?id={fileid}'
+        output = datadir()+data[i]['output']  # save to the data directory
+        if os.path.exists(output)==False or force:
+            gdown.download(url, output, quiet=False)
+
+    print('All done in {:.1f} seconds'.format(time.time()-t0))
+
+            
+

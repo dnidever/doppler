@@ -1148,7 +1148,10 @@ def load_models():
     files = glob(datadir+'cannongrid*.pkl')
     nfiles = len(files)
     if nfiles==0:
-        raise Exception("No Cannon model files in "+datadir)
+        # No Cannon model files.  Download them
+        print("No Cannon model files in "+datadir+". Downloading them.")
+        utils.download_data()
+        #raise Exception("No Cannon model files in "+datadir)
     models = load_cannon_model(files)
     return DopplerCannonModelSet(models)
 

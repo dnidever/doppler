@@ -58,7 +58,10 @@ def load_model():
     files = glob(datadir+'payne_coolhot_*.npz')
     nfiles = len(files)
     if nfiles==0:
-        raise Exception("No Payne model files in "+datadir)
+        # No Payne model files.  Download them
+        print("No Payne model files in "+datadir+". Downloading them.")
+        utils.download_data()
+        #raise Exception("No Payne model files in "+datadir)
     if nfiles>1:
         return PayneModelSet.read(files)
     else:

@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 #  load to PYPI
 pypiname = 'thedoppler'
 
-setup(name='doppler',
+setup(name="doppler",
       version='1.1.5',
       description='Generic Radial Velocity Software',
       author='David Nidever',
@@ -16,7 +16,7 @@ setup(name='doppler',
       packages=find_packages(exclude=["tests"]),
       scripts=['bin/doppler'],
       install_requires=['numpy','astropy(>=4.0)','scipy','dlnpyutils(>=1.0.3)','dill','emcee','corner',
-                        'annieslasso'],
+                        'annieslasso','gdown'],
       #dependency_links=['http://github.com/dnidever/AnniesLasso/tarball/v1.0.0#egg=the-cannon'],      
       include_package_data=True
 )
