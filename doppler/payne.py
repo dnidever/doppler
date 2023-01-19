@@ -52,6 +52,7 @@ def leaky_relu(z):
 def load_model():
     """
     Load the default Payne model.
+    Return as PayneModel or PayneModelSet.
     """
 
     datadir = utils.datadir()
@@ -71,7 +72,7 @@ def load_model():
 # Load a single or list of Payne models
 def load_payne_model(mfile):
     """
-    Load a  Payne model from file.
+    Load a Payne model from file.
 
     Returns
     -------
@@ -121,6 +122,7 @@ def load_models():
     """
     Load all Payne models from the Doppler data/ directory
     and return as a DopplerPayneModel.
+    Download the data files, if needed.
 
     Returns
     -------
@@ -137,7 +139,10 @@ def load_models():
     files = glob(datadir+'payne_coolhot_*.npz')
     nfiles = len(files)
     if nfiles==0:
-        raise Exception("No Payne model files in "+datadir)
+        # No Payne model files.  Download them
+        print("No Payne model files in "+datadir+". Downloading them.")
+        utils.download_data()
+        #raise Exception("No Payne model files in "+datadir)
     return DopplerPayneModel.read(files)
 
 def check_params(model,params):
@@ -255,7 +260,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         model_all_in_one = True
         wextend = 0.0
         for o in range(spec.norder):
-            dw = dln.slope(spec.wave[:,o])
+            dw = dln.slope(specwave[:,o])
             dw = np.hstack((dw,dw[-1]))
             dw = np.abs(dw)
             meddw = np.median(dw)
@@ -367,10 +372,20 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
             omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
                                   fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])
             
-        outmodel.flux[:,o] = omodelflux
-
+        if outmodel.flux.ndim==1:
+            outmodel.flux[:] = omodelflux
+        else:
+            outmodel.flux[:,o] = omodelflux        
+            
     if wave is not None:
         outmodel.wave = wave.copy()
+
+    # Change single order 2D arrays to 1D
+    if spec.norder==1:
+        outmodel.flux = outmodel.flux.flatten()
+        outmodel.err = outmodel.err.flatten()        
+        outmodel.wave = outmodel.wave.flatten()
+        outmodel.mask = outmodel.mask.flatten()        
         
     if lsfout is True:
         return outmodel,lsf_list,lsfwave_list
@@ -985,6 +1000,11 @@ class PayneModelSet(object):
                                 fill_value=(np.nan,np.nan),assume_sorted=True)(outwave)
             wavelength = outwave
 
+        # Change single order 2D arrays to 1D
+        if spectrum.ndim==1:
+            spectrum = spectrum.flatten()
+            wavelenth = wavelength.flatten()
+            
         # Return as spectrum object with wavelengths
         if fluxonly is False:
             mspec = Spec1D(spectrum,wave=wavelength,lsfsigma=None,instrument='Model')

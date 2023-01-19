@@ -257,9 +257,8 @@ def spec1d(filename):
                     setattr(spec,c,val)
             elif attribut==True and vector==True:  # vector
                 setattr(spec,name,val)
-
     hdu.close()
-
+    
     return spec
 
 
@@ -817,7 +816,7 @@ def hydra(filename):
         spec.err[0:100] = 1e30
         spec.mask[-100:] = True
         spec.err[-100:] = 1e30        
-            
+        
     return spec
 
     

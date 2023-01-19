@@ -10,8 +10,10 @@ __authors__ = 'David Nidever <dnidever@montana.edu>'
 __version__ = '20210605'  # yyyymmdd                                                                                                                           
 
 import os
+import time
 import numpy as np
 import warnings
+import gdown
 from scipy import sparse
 from scipy.interpolate import interp1d
 from dlnpyutils import utils as dln
@@ -989,7 +991,7 @@ def download_data(force=False):
     
     # Do the downloading
     t0 = time.time()
-    print('Downloading data')
+    print('Downloading '+str(len(data))+' Doppler data files')
     for i in range(len(data)):
         print(str(i+1)+' '+data[i]['output'])
         fileid = data[i]['id']

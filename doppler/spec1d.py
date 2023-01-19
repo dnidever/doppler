@@ -826,7 +826,7 @@ class Spec1D:
         ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
                  'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
                  'interp','normalize','pix2wave','reader','wave2pix','write','cont','flatten',
-                 'head','bc','size','numpix']
+                 'head','bc','size','numpix','shape']
         for a in attributes:
             if a.lower() not in ckeys and a[0]!='_':
                 val = getattr(self,a)
@@ -922,7 +922,7 @@ class Spec1D:
         hdu[7].header['BUNIT'] = 'Continuum function'
         # Add other attributes to the primary header
         #   these were added by the user
-        sdict,vdic = self._userattributes
+        sdict,vdict = self._userattributes
         nexten = 8
         # Put scalars in a separate table
         if len(sdict)>0:
