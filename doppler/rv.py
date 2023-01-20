@@ -92,7 +92,7 @@ def tweakcontinuum(spec,model,smlen=None,usepoly=False,polyorder=3):
 
     if smlen is None:
         smlen = spec.npix/10.0
-    
+        
     if hasattr(spec,'cont') is False:
         spec.cont = spec.flux.copy()*0+1
 
@@ -1639,8 +1639,8 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
     return out,mcmodel
  
 
-def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
-              figfile=None,mcmc=False,cornername=None,nthreads=None,
+def fit_payne(spectrum,model=None,fitparams=None,fixparams={},estimates=None,
+              verbose=False,figfile=None,mcmc=False,cornername=None,nthreads=None,
               notweak=False,tpoly=False,tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Payne model.
@@ -1657,6 +1657,8 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
          The default values are ['TEFF','LOGG','FE_H','ALPHA_H','RV'].
     fixparams : dict, optional
          Dictionary of parameters to hold fixed.
+    estimates : dict, optional
+         Dictionary of initial guesses.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
     mcmc : bool, optional
@@ -1741,8 +1743,19 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
         
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  
-
+    doxcorr = True
+    if estimates is not None:
+        uest = {k.upper():estimates[k] for k in estimates.keys()}
+        ukeys = uest.keys()
+        if 'TEFF' in ukeys and 'LOGG' in ukeys and 'FE_H' in ukeys and 'RV' in ukeys:
+            doxcorr = False
+    if doxcorr:
+        beststr, xmodel = fit_xcorrgrid_payne(specm,model,verbose=verbose,maxvel=1000.0)  
+    else:
+        beststr = {'teff':uest['TEFF'],'logg':uest['LOGG'],'feh':uest['FE_H'],'alphafe':0.0,'vrel':uest['RV']}
+        if 'ALPHA_FE' in ukeys:
+            beststr['alphafe'] = uest['ALPHA_FE']
+            
     # Step 4: Least Squares fitting with forward modeling
     #----------------------------------------------------
     # Tweak the continuum
@@ -1750,6 +1763,13 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},verbose=False,
     # Initial estimates
     initpar = {'TEFF':beststr['teff'],'LOGG':beststr['logg'],'FE_H':beststr['feh'],
                'ALPHA_H':beststr['alphafe']+beststr['feh'],'RV':beststr['vrel']}
+    if estimates is not None:
+        if verbose: print('Using input estimates: '+str(estimates))
+        for k in ['TEFF','LOGG','FE_H','ALPHA_FE','RV']:
+            if k in ukeys:
+                initpar[k] = uest[k]
+
+                # Run nonlinear least squares
     lsout0, lsmodel0 = fit_lsq_payne(specm,model,initpar=initpar,fitparams=fitparams,
                                    fixparams=fixparams,verbose=verbose)
     lspars0 = lsout0['pars'][0]
@@ -2777,8 +2797,9 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
     return out,mcmodel
 
 
-def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,cornername=None,
-               retpmodels=False,nthreads=None,notweak=False,tpoly=False,tpolyorder=3):
+def fit_cannon(spectrum,models=None,estimates=None,verbose=False,mcmc=False,figfile=None,
+               cornername=None,retpmodels=False,nthreads=None,notweak=False,tpoly=False,
+               tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -2789,6 +2810,8 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
     models : list of Cannon models, optional
          A list of Cannon models to use.  The default is to load all of the Cannon
          models in the data/ directory and use those.
+    estimates : dict, optional
+         Dictionary of initial guesses.
     verbose : bool, optional
          Verbose output of the various steps.  This is False by default.
     mcmc : bool, optional
@@ -2869,7 +2892,26 @@ def fit_cannon(spectrum,models=None,verbose=False,mcmc=False,figfile=None,corner
 
     # Step 3: Get initial RV using cross-correlation with rough sampling of Teff/logg parameter space
     #------------------------------------------------------------------------------------------------
-    beststr, xmodel = fit_xcorrgrid_cannon(specm,models,verbose=verbose,maxvel=1000.0)  
+    doxcorr,beststr = True,None
+    if estimates is not None:
+        uest = {k.upper():estimates[k] for k in estimates.keys()}
+        ukeys = uest.keys()
+        if 'TEFF' in ukeys and 'LOGG' in ukeys and 'FE_H' in ukeys and 'RV' in ukeys:
+            doxcorr = False
+    if doxcorr:
+        beststr, xmodel = fit_xcorrgrid_cannon(specm,models,verbose=verbose,maxvel=1000.0)  
+    # Replace values with estimates
+    if estimates is not None:
+        if verbose: print('Using input estimates: '+str(estimates))
+        if beststr is None:
+            beststr = {'teff':uest['TEFF'],'logg':uest['LOGG'],'feh':uest['FE_H'],'vrel':uest['RV']}
+        else:
+            for k in ['TEFF','LOGG','FE_H','RV']:
+                if k in ukeys:
+                    if k=='FE_H':
+                        beststr['feh'] = uest[k]
+                    else:
+                        beststr[k.lower()] = uest[k]
     
     # Step 4: Get better Cannon stellar parameters using initial RV
     #--------------------------------------------------------------
@@ -3582,9 +3624,9 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
 
 
 
-def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=False,
-        mcmc=False,figfile=None,cornername=None,retpmodels=False,nthreads=None,
-        timestamp=False,notweak=False,tpoly=False,tpolyorder=3):
+def fit(spectrum,models=None,fitparams=None,fixparams={},estimates=None,payne=False,
+        verbose=False,mcmc=False,figfile=None,cornername=None,retpmodels=False,
+        nthreads=None,timestamp=False,notweak=False,tpoly=False,tpolyorder=3):
     """
     Fit the spectrum.  Find the best RV and stellar parameters using the Cannon models.
 
@@ -3599,6 +3641,8 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
          List of Payne labels to fit.
     fixparams : dict, optional
          Dictionary of Payne labels to hold fixed.
+    estimates : dict, optional
+         Initial estimates for the parameters.
     payne : bool, optional
          Fit a Payne model.  By default, a Cannon model is used.
     verbose : bool, optional
@@ -3656,13 +3700,13 @@ def fit(spectrum,models=None,fitparams=None,fixparams={},payne=False,verbose=Fal
         
     # Cannon model
     if payne == False:
-        out = fit_cannon(spectrum,models=models,verbose=verbose,mcmc=mcmc,figfile=figfile,
-                         cornername=cornername,retpmodels=retpmodels,nthreads=nthreads,
-                         notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
+        out = fit_cannon(spectrum,models=models,estimates=estimates,verbose=verbose,mcmc=mcmc,
+                         figfile=figfile,cornername=cornername,retpmodels=retpmodels,
+                         nthreads=nthreads,notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
     # Payne model
     else:
         out = fit_payne(spectrum,model=models,fitparams=fitparams,fixparams=fixparams,
-                        verbose=verbose,mcmc=mcmc,figfile=figfile,
+                        estimates=estimates,verbose=verbose,mcmc=mcmc,figfile=figfile,
                         cornername=cornername,nthreads=nthreads,
                         notweak=notweak,tpoly=tpoly,tpolyorder=tpolyorder)
         

@@ -274,12 +274,6 @@ class Spec1D:
                     raise ValueError('All masked pixels in order '+str(i))
                 numpix[i] = np.max(gdpix)+1
         self.numpix = numpix
-        self.npix = np.max(numpix)
-        self.norder = norder
-        if norder==1:
-            self.ndim = 1
-        else:
-            self.ndim = 2
         self.flux = self._merge_multiorder_data(flux,missing_value=0.0)
         if err is not None:
             self.err = self._merge_multiorder_data(err,missing_value=1e30)
@@ -321,9 +315,27 @@ class Spec1D:
 
     @property
     def size(self):
-        """ Return number of total pixels."""
+        """ Return number of total 'good' pixels (not including buffer pixels)."""
         return np.sum(self.numpix)
 
+    @property
+    def ndim(self):
+        """ Return the number of dimensions."""
+        return self.flux.ndim
+    
+    @property
+    def npix(self):
+        """ Return the number of pixels in each order."""
+        return self.shape[0]
+
+    @property
+    def norder(self):
+        """ Return the number of orders."""
+        if self.ndim==1:
+            return 1
+        else:
+            return self.shape[1]
+    
     def __len__(self):
         return self.norder
     
@@ -448,7 +460,7 @@ class Spec1D:
 
     @property
     def shape(self):
-        return self.npix,self.norder
+        return self.flux.shape
     
     @property
     def snr(self):
