@@ -20,6 +20,7 @@ from astropy.io import fits
 from astropy.table import Table
 import thecannon as tc
 from dlnpyutils import utils as dln, bindata
+import matplotlib.pyplot as plt
 import copy
 from . import utils
 from .lsf import GaussianLsf, GaussHermiteLsf
@@ -340,6 +341,10 @@ class Spec1D:
         return self.norder
 
     @property
+    def shape(self):
+        return self.flux.shape
+    
+    @property
     def wrange(self):
         """ Wavelength range."""
         wr = [np.inf,-np.inf]
@@ -472,10 +477,6 @@ class Spec1D:
             s += "Wave = "+str(self.wave)
         return s
 
-    @property
-    def shape(self):
-        return self.flux.shape
-    
     @property
     def snr(self):
         """ Return the S/N"""
@@ -779,7 +780,31 @@ class Spec1D:
         # If the LSF is in pixel units, then it won't work right.
         ospec._child = True
         return ospec
-        
+
+    def plot(self,ax=None,c=None,masked=True):
+        if ax is None:
+            ax = plt
+            
+        """ Plot the spectrum."""
+        for i in range(self.norder):
+            npix = self.numpix[i]                
+            if self.ndim==1:
+                w = self.wave[0:npix]
+                f = self.flux[0:npix]
+                m = self.mask[0:npix]
+            else:
+                w = self.wave[0:npix,i]
+                f = self.flux[0:npix,i]
+                m = self.mask[0:npix,i]
+            if masked:
+                f = f.copy()
+                f[m] = np.nan
+            
+            if i==0:
+                line1, = ax.plot(w,f)
+            else:
+                line, = ax.plot(w,f,c=line1.get_color())              
+    
     def copy(self):
         """ Create a new copy."""
         if self.lsf.pars is not None:
