@@ -418,6 +418,108 @@ class Spec1D:
         for n in sdict:
             setattr(ospec,n,sdict[n])
         return ospec
+
+    def __add__(self, value):
+        newspec = self.copy()
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')
+            newspec.flux += value.flux
+            newspec.err = np.sqrt(newspec.err**2 + value.err**2)
+            newspec.mask = np.bitwise_or.reduce((newspec.mask,value.mask))
+        else:
+            newspec.flux += value
+        return newspec
+        
+    def __iadd__(self, value):
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')            
+            self.flux += value.flux
+        else:
+            self.flux += value
+        return self
+        
+    def __radd__(self, value):
+        return self + value
+        
+    def __sub__(self, value):
+        newspec = self.copy()
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')
+            newspec.flux -= value.flux
+            newspec.err = np.sqrt(newspec.err**2 + value.err**2)
+            newspec.mask = np.bitwise_or.reduce((newspec.mask,value.mask))
+        else:
+            newspec.flux -= value
+        return newspec
+              
+    def __isub__(self, value):
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')            
+            self.flux -= value.flux
+        else:
+            self.flux -= value
+        return self
+         
+    def __rsub__(self, value):
+        return self - value        
+    
+    def __mul__(self, value):
+        newspec = self.copy()
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')
+            newspec.flux *= value.flux
+            newspec.err *= value.flux
+            newspec.mask = np.bitwise_or.reduce((newspec.mask,value.mask))
+        else:
+            newspec.flux *= value
+            newspec.err *= value            
+        return newspec
+               
+    def __imul__(self, value):
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')            
+            self.flux *= value.flux
+            self.err *= value.flux            
+        else:
+            self.flux *= value
+            self.err *= value            
+        return self
+    
+    def __rmul__(self, value):
+        return self * value
+               
+    def __truediv__(self, value):
+        newspec = self.copy()
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')
+            newspec.flux /= value.flux
+            newspec.err /= value.flux
+            newspec.mask = np.bitwise_or.reduce((newspec.mask,value.mask))
+        else:
+            newspec.flux /= value
+            newspec.err /= value            
+        return newspec
+      
+    def __itruediv__(self, value):
+        if isinstance(value,Spec1D):
+            if self.shape != value.shape:
+                raise ValueError('Shapes do not match')            
+            self.flux /= value.flux
+            self.err /= value.flux            
+        else:
+            self.flux /= value
+            self.err /= value            
+        return self
+      
+    def __rtruediv__(self, value):
+        return self / value
     
     def _info_from_input(self,data):
         """ Figure out the number of orders, number of pixels for each order, and data type for input multi-order data."""
