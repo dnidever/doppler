@@ -782,6 +782,7 @@ class Spec1D:
         return ospec
 
     def plot(self,ax=None,c=None,masked=True):
+        """ Plot the spectrum dealing with buffer and masked pixels and keeping color constant for all orders."""
         if ax is None:
             ax = plt
             
