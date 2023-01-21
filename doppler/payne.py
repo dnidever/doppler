@@ -233,17 +233,19 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         model.wavevac = spec.wavevac   # this will set things behind the scenes
 
     # Get full wavelength range and total wavelength coverage in the orders
-    owr = dln.minmax(spec.wave)
-    owavefull = dln.valrange(spec.wave)
+    owr = spec.wrange
+    owavefull = dln.valrange(owr)
     owavechunks = 0.0
     odw = np.zeros(spec.norder,np.float64)
     specwave = spec.wave.copy()
+    specmask = spec.mask.copy()    
     if spec.wave.ndim==1:  # make 2D with order in second dimension
         specwave = np.atleast_2d(specwave).T
-    for o in range(spec.norder):
-        owavechunks += dln.valrange(specwave[:,o])
-        odw[o] = np.median(dln.slope(specwave[:,o]))
-
+        specmask = np.atleast_2d(specmask).T
+    for o,sp in enumerate(spec):
+        owavechunks += dln.valrange(sp.wrange)
+        odw[o] = np.median(dln.slope(sp.wave))
+        
     # Check input WAVE array
     if wave is not None:
         if wave.ndim==1:
@@ -259,8 +261,8 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
     if owavechunks > 0.5*owavefull:
         model_all_in_one = True
         wextend = 0.0
-        for o in range(spec.norder):
-            dw = dln.slope(specwave[:,o])
+        for o,sp in enumerate(spec):
+            dw = dln.slope(sp.wave)
             dw = np.hstack((dw,dw[-1]))
             dw = np.abs(dw)
             meddw = np.median(dw)
@@ -280,11 +282,16 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
     if wave is not None:
         outmodel.flux = np.zeros(wave.shape,float)
         outmodel.err = np.zeros(wave.shape,float)
-        outmodel.mask = np.zeros(wave.shape,bool)        
+        outmodel.mask = np.ones(wave.shape,bool)        
     lsf_list = []
     lsfwave_list = []
-    for o in range(spec.norder):
-        w = specwave[:,o]
+    for o,sp in enumerate(spec):
+        w = sp.wave
+        m = sp.mask
+        gdpix, = np.where(~m)
+        if len(gdpix)==0:
+            raise ValueError('No unmasked pixels in order ',o)
+        w = w[gdpix]
         w0 = np.min(w)
         w1 = np.max(w)
         dw = dln.slope(w)
@@ -294,7 +301,7 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         npix = len(w)
         
         if (np.min(model.dispersion)>w0) | (np.max(model.dispersion)<w1):
-                raise Exception('Model does not cover the observed wavelength range')
+            raise Exception('Model does not cover the observed wavelength range')
             
         # Trim
         nextend = int(np.ceil(len(w)*0.25))  # extend 25% on each end
@@ -371,11 +378,11 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
         else:
             omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
                                   fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])
-            
+
         if outmodel.flux.ndim==1:
-            outmodel.flux[:] = omodelflux
+            outmodel.flux[0:len(omodelflux)] = omodelflux
         else:
-            outmodel.flux[:,o] = omodelflux        
+            outmodel.flux[0:len(omodelflux),o] = omodelflux        
             
     if wave is not None:
         outmodel.wave = wave.copy()

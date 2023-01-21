@@ -338,6 +338,20 @@ class Spec1D:
     
     def __len__(self):
         return self.norder
+
+    @property
+    def wrange(self):
+        """ Wavelength range."""
+        wr = [np.inf,-np.inf]
+        if self.wave.ndim==1:
+            w = self.wave[0:self.numpix[0]]
+            wr = [np.min(w),np.max(w)]
+        else:
+            for i in range(self.norder):
+                w = self.wave[0:self.numpix[i],i]
+                wr[0] = np.min([wr[0],np.min(w)])
+                wr[1] = np.max([wr[1],np.max(w)])            
+        return wr
     
     def __getitem__(self,index):
         """

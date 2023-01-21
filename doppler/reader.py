@@ -200,6 +200,7 @@ def spec1d(filename):
     npix = hdu[0].header['NPIX']
     norder = hdu[0].header['NORDER']
     snr = float(hdu[0].header['SNR'])
+    bc = hdu[0].header.get('BC')
     # HDU1: flux
     flux = hdu[1].data
     # HDU2: flux error
@@ -239,9 +240,9 @@ def spec1d(filename):
         spec._cont = cont
     spec.continuum_func = pickle.loads(cont_func_tab['func'][0])
     spec.instrument = instrument
-    #spec.snr = snr
     spec.wavevac = True
-
+    if bc is not None: spec.bc = bc
+    
     # Add extra attributes
     if len(hdu)>8:
         for i in np.arange(8,len(hdu)):
