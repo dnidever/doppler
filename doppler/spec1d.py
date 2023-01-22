@@ -1010,7 +1010,7 @@ class Spec1D:
         ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
                  'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
                  'interp','normalize','pix2wave','reader','wave2pix','write','cont','flatten',
-                 'head','bc','size','numpix','shape','plot']
+                 'head','bc','size','numpix','shape','plot','wrange']
         for a in attributes:
             if a.lower() not in ckeys and a[0]!='_':
                 val = getattr(self,a)
