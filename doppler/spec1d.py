@@ -19,7 +19,7 @@ from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.io import fits
 from astropy.table import Table
 import thecannon as tc
-from dlnpyutils import utils as dln, bindata
+from dlnpyutils import utils as dln, bindata, astro
 import matplotlib.pyplot as plt
 import copy
 from . import utils
@@ -306,7 +306,7 @@ class Spec1D:
         self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
         self.instrument = instrument
         self.filename = filename
-        self.wavevac = wavevac
+        self._wavevac = wavevac
         self.normalized = False
         self.continuum_func = continuum
         self._cont = None
@@ -422,6 +422,7 @@ class Spec1D:
     def __add__(self, value):
         newspec = self.copy()
         if isinstance(value,Spec1D):
+            # could interpolate and mask if they don't have the same shape
             if self.shape != value.shape:
                 raise ValueError('Shapes do not match')
             newspec.flux += value.flux
@@ -520,7 +521,36 @@ class Spec1D:
       
     def __rtruediv__(self, value):
         return self / value
+
+    @property
+    def wavevac(self):
+        """ Whether wavelengths are in vacuum units."""
+        return self._wavevac
     
+    @wavevac.setter
+    def wavevac(self,wavevac):
+        """ Set/change wavelength wavevac value."""
+        # Convert wavelength from air->vacuum or vice versa
+        if self._wavevac != wavevac:
+            for i in range(self.norder):
+                npix = self.numpix[i]
+                if self.ndim==1:
+                    w = self.wave[0:npix]
+                else:
+                    w = self.wave[0:npix,i]                    
+                # Air -> Vacuum
+                if wavevac is True:
+                    wnew = astro.airtovac(w)
+                # Vacuum -> Air
+                else:
+                    wnew = astro.vactoair(w)
+                if self.ndim==1:
+                    self.wave[0:npix] = wnew
+                else:
+                    self.wave[0:npix,i] = wnew
+            # change the wavevac value
+            self._wavevac = wavevac
+                    
     def _info_from_input(self,data):
         """ Figure out the number of orders, number of pixels for each order, and data type for input multi-order data."""
         if type(data) in [list,tuple]:
@@ -980,7 +1010,7 @@ class Spec1D:
         ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
                  'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
                  'interp','normalize','pix2wave','reader','wave2pix','write','cont','flatten',
-                 'head','bc','size','numpix','shape']
+                 'head','bc','size','numpix','shape','plot']
         for a in attributes:
             if a.lower() not in ckeys and a[0]!='_':
                 val = getattr(self,a)
