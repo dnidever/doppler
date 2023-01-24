@@ -3085,7 +3085,7 @@ def fit_cannon(spectrum,models=None,estimates=None,verbose=False,mcmc=False,figf
     # How long did this take
     if verbose is True: print('dt = %5.2f sec.' % (time.time()-t0))
     
-    # Return the prpared models
+    # Return the prepared models
     if retpmodels is True:
         return out, fmodel, specm, models
     
@@ -3155,6 +3155,9 @@ def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
     lbounds[3:] = -1000
     ubounds[3:] = 1000    
     bounds = (lbounds, ubounds)
+
+    # Limit the initial guess RVs
+    initpar[3:] = np.maximum(np.minimum(initpar[3:],950),-950)
     
     # function to use with curve_fit
     def multispec_interp(x,*argv):

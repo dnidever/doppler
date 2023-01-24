@@ -564,6 +564,8 @@ class DopplerCannonModel(object):
             npix = wave.shape[0]
         # Use original input spectrum wavelength array
         elif wave is None and self.prepared:
+            if hasattr(self,'_specwave')==False:
+                import pdb; pdb.set_trace()
             npix = self._specwave.shape[0]
         # Initialize output arrays
         oflux = np.zeros((npix,norders),np.float32)
@@ -807,7 +809,7 @@ class DopplerCannonModel(object):
             self.unprepare()
             self.prepare(spec)
             return
-        # Copy a copy of the original models
+        # Keep a copy of the original models
         self._original_model = self.copy()
         # Keep uninterpolated model in ._data_nointerp, and the interpolated
         #  data in ._data
@@ -912,6 +914,11 @@ class DopplerCannonModel(object):
             new._data_nointerp = new_data_nointerp
         new._prepared = self._prepared
         new.flattened = self.flattened
+        # Copy _original_model and _specwave
+        if hasattr(self,'_specwave'):
+            new._specwave = self._specwave.copy()
+        if hasattr(self,'_original_model'):
+            new._original_model = self._original_model.copy()
         return new
     
     @classmethod
