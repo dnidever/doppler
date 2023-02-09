@@ -80,9 +80,8 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
 
     wave = spec.wave.copy().reshape(spec.npix,spec.norder)   # make 2D
     flux = spec.flux.copy().reshape(spec.npix,spec.norder)   # make 2D
-    err = spec.err.copy().reshape(spec.npix,spec.norder)     # make 2D
     mask = spec.mask.copy().reshape(spec.npix,spec.norder)   # make 2D
-    cont = err.copy()*0.0+1
+    cont = flux.copy()*0.0+1
     for o in range(spec.norder):
         w = wave[:,o].copy()
         wr = [np.min(w),np.max(w)]
