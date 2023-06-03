@@ -15,7 +15,7 @@ Authors
 Installation
 ------------
 
-The easiest way to install |Doppler| is with pip::
+The easiest way to install Doppler is with pip::
 
     pip install thedoppler
 
