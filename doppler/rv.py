@@ -675,8 +675,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
             ccf *= np.exp(-0.5*(((lag-prior[0])/prior[1])**4))*0.8+np.exp(-0.5*(((lag-prior[0])/150)**2))*0.2
         
     else:   # no good pixels
-        ccf = np.float(lag)*0.0
-        if (errccf is True) | (nofit is False): ccferr=ccf
+        ccf = np.zeros(len(lag),float)
+        if (errccf is True): ccferr=ccf
 
     # Remove the median
     ccf -= np.median(ccf)

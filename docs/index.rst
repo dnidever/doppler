@@ -11,8 +11,8 @@ Introduction
 ============
 |Doppler| [#f1]_ is a general-purpose stellar radial velocity determination software.  It uses a forward-modeling approach, convolving a
 model spectrum to the resolution or Line Spread Function (LSF) of the observed spectrum.  |Doppler| can be used with a high-resolution
-model of the `The Cannon <https://github.com/andycasey/AnniesLasso>`_ (`Casey et al. (2016) <https://ui.adsabs.harvard.edu/abs/2016arXiv160303040C/abstract>`_)
-and also of `The Payne <https://github.com/tingyuansen/The_Payne>`_ (`Ting et al. (2019) <https://ui.adsabs.harvard.edu/abs/2019ApJ...879...69T/abstract>`_),
+model of the `The Cannon <https://github.com/andycasey/AnniesLasso>`_ (`Casey et al. 2016 <https://ui.adsabs.harvard.edu/abs/2016arXiv160303040C/abstract>`_)
+and also of `The Payne <https://github.com/tingyuansen/The_Payne>`_ (`Ting et al. 2019 <https://ui.adsabs.harvard.edu/abs/2019ApJ...879...69T/abstract>`_),
 both machine-learning approaches to modeling stellar spectra.
 Doppler can determine the radial velocity (RV) and stellar parameters
 for a spectrum of any wavelength (3000-18000A) and resolution (R<20,000 at the blue end and 120,000 at the red end) with minimal setup.

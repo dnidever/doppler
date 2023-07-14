@@ -788,9 +788,9 @@ class Lsf:
         # Make sure sigma is 2D
         if sigma is not None:
             if sigma.ndim==1:
-                self.sigma = np.atleast_2d(sigma).T  # 2D with order dimension at 2nd
+                self._sigma = np.atleast_2d(sigma).T  # 2D with order dimension at 2nd
             else:
-                self.sigma = sigma
+                self._sigma = sigma
         else:
             self._sigma = sigma
         self._array = None
@@ -1125,7 +1125,7 @@ class GaussianLsf(Lsf):
         # The sigma will be returned in units given in lsf.xtype
         if self._sigma is not None:
             _sigma = self._sigma
-            if self.ndim==2: _sigma = self._sigma[:,order]
+            if self._sigma.ndim==2: _sigma = self._sigma[:,order]
             if x is None:
                 return _sigma
             else:
@@ -1133,8 +1133,9 @@ class GaussianLsf(Lsf):
                 if xtype.lower().find('wave') > -1:
                     x0 = np.array(x).copy()            # backup
                     x = self.wave2pix(x0,order=order)  # convert to pixels
+                    
                 # Integer, just return the values
-                if( type(x)==int) | (np.array(x).dtype.kind=='i'):
+                if (type(x)==int) | (np.array(x).dtype.kind=='i'):
                     return _sigma[x]
                 # Floats, interpolate
                 else:
@@ -1146,12 +1147,12 @@ class GaussianLsf(Lsf):
                         xin = np.arange(npix)
                         # At the beginning
                         if (np.min(x)<0):
-                            coef1 = dln.poly_fit(xin[0:10], _sigma[0:10], 2)
+                            coef1 = dln.poly_fit(xin[0:10], _sigma[0:10], 1)
                             bd1, nbd1 = dln.where(x <0)
                             sig[bd1] = dln.poly(x[bd1],coef1)
                         # At the end
                         if (np.max(x)>(npix-1)):
-                            coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 2)
+                            coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 1)
                             bd2, nbd2 = dln.where(x > (npix-1))
                             sig[bd2] = dln.poly(x[bd2],coef2)
                     return sig
