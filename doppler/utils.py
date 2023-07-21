@@ -264,7 +264,7 @@ def gausskernel(wave,vgauss):
     if np.max(minhalfpix) < 0.1:
         return np.ones(npix).astype(np.float64)
     else:
-        nkernel = np.int(np.max(np.ceil(minhalfpix)))*2 + 1
+        nkernel = int(np.max(np.ceil(minhalfpix)))*2 + 1
     
     xkernel = np.arange(nkernel)-nkernel//2
     xkernel2 = np.repeat(xkernel,npix).reshape((nkernel,npix)).T
@@ -318,7 +318,7 @@ def rotkernel(wave,vsini,eps=0.6):
     
     # How many pixels do we need to capture the rotational profile
     minhalfpix = np.ceil(wave*vsini/(cspeed*dw))
-    nkernel = np.int(np.max( 2*minhalfpix+1 ))
+    nkernel = int(np.max( 2*minhalfpix+1 ))
     
     # Vsini in units of pixels
     xvsini = wave*vsini/(cspeed*dw)
@@ -358,7 +358,7 @@ def check_rotkernel(wave,vsini,eps=0.6):
 #        ndim = k.ndim
 #        if ndim>1: nkernelarr[i]=k.shape[1]
 #
-#    nkernel = np.int(np.max(nkernelarr))
+#    nkernel = int(np.max(nkernelarr))
 #    kernel = np.zeros((npix,nkernel),np.float64)
 #    for i,k in enumerate(kernels):
 #        if nkernelarr[i]>1:
@@ -537,8 +537,8 @@ def make_logwave_scale(wave,vel=1000.0):
             nlo = np.zeros(norder,int)
             nhi = np.zeros(norder,int)
             for i in range(norder):
-                nlo[i] = np.int(np.ceil((np.log10(np.float64(wr[0,i]))-np.log10(np.float64(wlo[i])))/dwlog))
-                nhi[i] = np.int(np.ceil((np.log10(np.float64(whi[i]))-np.log10(np.float64(wr[1,i])))/dwlog))
+                nlo[i] = int(np.ceil((np.log10(np.float64(wr[0,i]))-np.log10(np.float64(wlo[i])))/dwlog))
+                nhi[i] = int(np.ceil((np.log10(np.float64(whi[i]))-np.log10(np.float64(wr[1,i])))/dwlog))
             # Use the maximum over all orders
             nlo = np.max(nlo)
             nhi = np.max(nhi)
@@ -550,9 +550,9 @@ def make_logwave_scale(wave,vel=1000.0):
         n = np.zeros(norder,int)
         for i in range(norder):
             if vel==0:
-                n[i] = np.int((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog)
+                n[i] = int((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog)
             else:
-                n[i] = np.int(np.ceil((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog))        
+                n[i] = int(np.ceil((np.log10(np.float64(wr[1,i]))-np.log10(np.float64(wr[0,i])))/dwlog))        
         # maximum over all orders
         n = np.max(n)
 
@@ -588,17 +588,17 @@ def make_logwave_scale(wave,vel=1000.0):
         
         # extend at the ends
         if vel>0:
-            nlo = np.int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
-            nhi = np.int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))        
+            nlo = int(np.ceil((np.log10(np.float64(wr[0]))-np.log10(np.float64(wlo)))/dwlog))    
+            nhi = int(np.ceil((np.log10(np.float64(whi))-np.log10(np.float64(wr[1])))/dwlog))        
         else:
             nlo = 0
             nhi = 0
 
         # Number of pixels
         if vel==0.0:
-            n = np.int((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog)
+            n = int((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog)
         else:
-            n = np.int(np.ceil((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog))        
+            n = int(np.ceil((np.log10(np.float64(wr[1]))-np.log10(np.float64(wr[0])))/dwlog))        
         nf = n+nlo+nhi
 
         fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )

@@ -1259,7 +1259,7 @@ class GaussianLsf(Lsf):
             xsigma[:,o] = xsig
                 
             # Figure out nLSF pixels needed, +/-3 sigma
-            nlsf = np.int(np.round(np.max(xsigma)*6))
+            nlsf = int(np.round(np.max(xsigma)*6))
             if nlsf % 2 == 0: nlsf+=1                   # must be odd
             nlsfarr[o] = nlsf
         nlsf = np.max(np.array(nlsfarr))
@@ -1346,7 +1346,7 @@ class GaussianLsf(Lsf):
             xsigma = wsigma / dw
 
         # Figure out nLSF pixels needed, +/-3 sigma
-        nlsf = np.int(np.round(np.max(xsigma)*6))
+        nlsf = int(np.round(np.max(xsigma)*6))
         if nlsf % 2 == 0: nlsf+=1                   # must be odd
         
         # Make LSF array

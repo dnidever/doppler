@@ -109,8 +109,8 @@ def tweakcontinuum(spec,model,smlen=None,usepoly=False,polyorder=3):
         # Set bad pixels to NaN, gsmooth masks those out
         if nbd>0:
             ratio[bd] = np.nan
-        ratio[0] = np.nanmedian(ratio[0:np.int(smlen/2)])
-        ratio[-1] = np.nanmedian(ratio[-np.int(smlen/2):-1])
+        ratio[0] = np.nanmedian(ratio[0:int(smlen/2)])
+        ratio[-1] = np.nanmedian(ratio[-int(smlen/2):-1])
         # Use Gaussian Smoothing
         if usepoly is False:
             sm = dln.gsmooth(ratio,smlen,boundary='extend')
@@ -611,7 +611,7 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     nlag = 2*np.round(np.abs(maxlag))+1
     if ((nlag % 2) == 0): nlag +=1  # make sure nlag is odd
     dlag = 1
-    minlag = -np.int(np.ceil(nlag/2))
+    minlag = -int(np.ceil(nlag/2))
     lag = np.arange(nlag)*dlag+minlag+1
 
     # Initialize the output structure
@@ -724,8 +724,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     estimates1[1] = best_xshift
     lbounds1 = [0.5*estimates1[0], best_xshift-4, 0.3*estimates1[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates1[3]-0.1)) ]
     ubounds1 =  [1.5*estimates1[0], best_xshift+4, 1.5*estimates1[2], dln.gt(np.max(ccf_diff)*0.5,estimates1[3]+0.1) ]
-    lo1 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates1[2]*2,5)),0))
-    hi1 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates1[2]*2,5)),len(lag)))
+    lo1 = int(dln.gt(np.floor(best_shiftind-dln.gt(estimates1[2]*2,5)),0))
+    hi1 = int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates1[2]*2,5)),len(lag)))
     pars1, cov1 = dln.gaussfit(lag[lo1:hi1],ccf_diff[lo1:hi1],estimates1,ccferr[lo1:hi1],bounds=(lbounds1,ubounds1))
     yfit1 = dln.gaussian(lag[lo1:hi1],*pars1)
     perror1 = np.sqrt(np.diag(cov1))
@@ -738,8 +738,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
                 0.3*estimates2[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates2[3]-0.1)) ]
     ubounds2 = [1.5*estimates2[0], dln.limit(best_xshift+dln.gt(estimates2[2],1), estimates2[1]+1, np.max(lag)),
                 1.5*estimates2[2], dln.gt(np.max(ccf_diff)*0.5,estimates2[3]+0.1) ]
-    lo2 = np.int(dln.gt(np.floor( best_shiftind-dln.gt(estimates2[2]*2,5)),0))
-    hi2 = np.int(dln.lt(np.ceil( best_shiftind+dln.gt(estimates2[2]*2,5)),len(lag)))
+    lo2 = int(dln.gt(np.floor( best_shiftind-dln.gt(estimates2[2]*2,5)),0))
+    hi2 = int(dln.lt(np.ceil( best_shiftind+dln.gt(estimates2[2]*2,5)),len(lag)))
     pars2, cov2 = dln.gaussfit(lag[lo2:hi2],ccf_diff[lo2:hi2],estimates2,ccferr[lo2:hi2],bounds=(lbounds2,ubounds2))
     yfit2 = dln.gaussian(lag[lo2:hi2],*pars2)    
     perror2 = np.sqrt(np.diag(cov2))
@@ -752,8 +752,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
                 0.3*estimates3[2], dln.lt(np.min(ccf_diff),dln.lt(0,estimates3[3]-0.1)) ]
     ubounds3 = [1.5*estimates3[0], dln.limit(best_xshift+dln.gt(estimates3[2],1), estimates3[1]+1, np.max(lag)),
                 1.5*estimates3[2], dln.gt(np.max(ccf_diff)*0.5,estimates3[3]+0.1) ]    
-    lo3 = np.int(dln.gt(np.floor(best_shiftind-dln.gt(estimates3[2]*2,5)),0))
-    hi3 = np.int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates3[2]*2,5)),len(lag)))
+    lo3 = int(dln.gt(np.floor(best_shiftind-dln.gt(estimates3[2]*2,5)),0))
+    hi3 = int(dln.lt(np.ceil(best_shiftind+dln.gt(estimates3[2]*2,5)),len(lag)))
     pars3, cov3 = dln.gaussfit(lag[lo3:hi3],ccf_diff[lo3:hi3],estimates3,ccferr[lo3:hi3],bounds=(lbounds3,ubounds3))
     yfit3 = dln.gaussian(lag[lo3:hi3],*pars3)    
     perror3 = np.sqrt(np.diag(cov3))
@@ -1247,7 +1247,7 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
     #------------------------------------------------------------------------------------------------
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
+    maxlag = int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     if samples is None:
         teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
@@ -1591,7 +1591,7 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
     # Run MCMC sampler
     if verbose: print('Running MCMC')
     out = sampler.run_mcmc(pos, steps)
-    samples = sampler.chain[:, np.int(steps/2):, :].reshape((-1, ndim))
+    samples = sampler.chain[:, int(steps/2):, :].reshape((-1, ndim))
 
     # Get the median and stddev values
     pars = np.zeros(ndim,float)
@@ -2114,7 +2114,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
     if nhisnr < np.ceil(0.25*nspec):
         snr = np.flip(np.sort(info['snr']))
-        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
+        snrcut = snr[np.maximum(int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
         if verbose is True:
             print('Lowering S/N cut to %5.1f so at least 25%% of the spectra pass the cut' % snrcut)
         
@@ -2553,7 +2553,7 @@ def fit_xcorrgrid_cannon(spec,models=None,samples=None,verbose=False,maxvel=1000
     #------------------------------------------------------------------------------------------------
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
+    maxlag = int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     if samples is None:
         #teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 9000.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
@@ -2756,7 +2756,7 @@ def fit_mcmc_cannon(spec,models=None,initpar=None,steps=100,cornername=None,verb
     if cornername is not None: steps=np.maximum(steps,500)  # at least 500 steps
     out = sampler.run_mcmc(pos, steps)
 
-    samples = sampler.chain[:, np.int(steps/2):, :].reshape((-1, ndim))
+    samples = sampler.chain[:, int(steps/2):, :].reshape((-1, ndim))
 
     # Get the median and stddev values
     pars = np.zeros(ndim,float)
@@ -2956,7 +2956,7 @@ def fit_cannon(spectrum,models=None,estimates=None,verbose=False,mcmc=False,figf
     m = models.get_best_model(labels).interp(wavelog)(labels,rv=0)
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
-    maxlag = np.int(np.ceil(np.log10(1+1000.0/cspeed)/dwlog))
+    maxlag = int(np.ceil(np.log10(1+1000.0/cspeed)/dwlog))
     maxlag = np.maximum(maxlag,50)
     outstr2 = specxcorr(m.wave,m.flux,obs.flux,obs.err,maxlag)
     outdtype = np.dtype([('xshift',np.float32),('vrel',np.float32),('vrelerr',np.float32),('ccpeak',np.float32),('ccpfwhm',np.float32),
@@ -3365,7 +3365,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
     hisnr, nhisnr = dln.where(info['snr']>snrcut)
     if nhisnr < np.ceil(0.25*nspec):
         snr = np.flip(np.sort(info['snr']))
-        snrcut = snr[np.maximum(np.int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
+        snrcut = snr[np.maximum(int(np.ceil(0.25*nspec)),np.minimum(4,nspec-1))]
         if verbose is True:
             print('Lowering S/N cut to %5.1f so at least 25%% of the spectra pass the cut' % snrcut)
         
