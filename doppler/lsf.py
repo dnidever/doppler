@@ -766,7 +766,7 @@ class Lsf:
         self.npix = npix
         self.norder = norder        
         # Get number of pixels per order
-        if self.norder>1:
+        if self.norder>1 or wave.ndim==2:
             numpix = np.zeros(norder,int)
             for i in range(norder):
                 gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))

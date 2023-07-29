@@ -260,13 +260,14 @@ class Spec1D:
     def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
                  lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
         """ Initialize Spec1D object."""
+        # If norder==1, then all arrays will be 1-D.
         # Figure out orders
         numpix,norder,dtype = self._info_from_input(flux)
         # Check the wavelengths for masked pixels if a 2D array was input
         if wave is not None and type(wave) is np.ndarray:
             numpix = np.zeros(norder,int)
             for i in range(norder):
-                if norder>1:
+                if norder>1 or wave.ndim==2:
                     gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
                 else:
                     gdpix, = np.where((wave>0) & np.isfinite(wave))                    
@@ -293,6 +294,8 @@ class Spec1D:
                 raise ValueError('Mask and Flux array sizes do not match')            
         if mask is None:
             self.mask = np.zeros(flux.shape,bool)
+            if norder==1:
+                self.mask = np.squeeze(self.mask)
         if bitmask is not None:
             self.bitmask = self._merge_multiorder_data(bitmask,missing_value=0)
             if self.bitmask.shape != self.flux.shape:
@@ -373,7 +376,7 @@ class Spec1D:
         [1.00000000e+03 1.57173725e-09]
 
         User-added SCALAR attributes will be passed on with this method, but ARRAY/LIST
-        attributes with *NOT*.
+        attributes will *NOT*.
         """
         if type(index) is not int:
             raise IndexError('Index must be an integer')
@@ -409,6 +412,8 @@ class Spec1D:
                        bitmask=bitmask,lsfpars=lsf.pars,lsftype=lsf.lsftype,
                        lsfxtype=lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
                        filename=self.filename,wavevac=self.wavevac)
+        if hasattr(self,'_cont'):
+            ospec._cont = self._cont[slc,index]
         ospec._child = True
         if self.bc is not None:
             ospec.bc = self.bc
@@ -574,7 +579,7 @@ class Spec1D:
         numpix,norder,dtype = self._info_from_input(data)
         npix = np.max(numpix)
         if norder==1 or type(data) is np.ndarray:
-            return data
+            out = data
         else:
             # list or tuple
             out = np.zeros((npix,norder),dtype)
@@ -583,6 +588,9 @@ class Spec1D:
             for i in range(norder):
                 d = np.array(data[i],dtype)
                 out[0:len(d),i] = d
+        # If norder=1, then return 1-D array
+        if norder==1:
+            out = np.squeeze(out)
         return out
 
     def __array__(self):
@@ -624,6 +632,8 @@ class Spec1D:
         """ Return the continuum."""
         if self._cont is None:
             cont = self.continuum_func(self,**kwargs)
+            if self.norder==1:
+                cont = np.squeeze(cont)
             self._cont = cont
         return self._cont
 
@@ -912,6 +922,137 @@ class Spec1D:
         ospec._child = True
         return ospec
 
+    def prepare(self,lsf,norm=True,continuum_func=None):
+        """
+        Return a copy of this (synthetic) spectrum convolved to the input LSF and wavelength arrays.
+
+        Parameters
+        ----------
+        lsf : LSF object
+           LSF object to use to prepare the spectrum.
+        norm : boolean, optional
+           Normalize the spectrum.
+        continuum_func : function, optional
+           The continuum function to use.
+
+        Returns
+        -------
+        pspec : Spec1D object
+           The prepared spectrum.
+
+        Example
+        -------
+
+        pspec = spec.prepare(lsf)
+
+        """
+        # Convolve with LSF and do air<->vacuum wavelength conversion
+
+        # Check some things
+        if self.norder>1:
+            raise ValueError('Can only prepare a single order synthetic spectrum')
+        if hasattr(lsf,'wave')==False:
+            raise ValueError('lsf object must have wave array')
+        
+        # Temporary working copy of this spectrum
+        tempspec = self.copy()
+
+        # Make sure they are using the same type of wavelengths
+        # Convert wavelength from air->vacuum or vice versa
+        tempspec.wavevac = lsf.wavevac   # will automatically convert behind the scences
+
+        # Initialize the output spectrum
+        if lsf.wave.ndim==2:
+            npix,norder = lsf.wave.shape
+        else:
+            npix = len(lsf.wave)
+            norder = 1
+        pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
+                       wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
+        pspec._cont = np.zeros((npix,norder),np.float32)
+        if norder==1:
+            pspec._cont = np.squeeze(pspec._cont)
+        if continuum_func is not None:
+            pspec.continuum_func = continuum_func
+        
+        # Loop over orders
+        wave = lsf.wave.copy()
+        for o in range(norder):
+            if norder==1:
+                wobs = wave
+            else:
+                wobs = wave[:,o]
+            gdw, = np.where(wobs > 0)
+            wobs = wobs[gdw]
+            npix1 = len(gdw)
+            dw = np.median(dln.slope(wobs))
+            wv1,ind1 = dln.closest(tempspec.wave,np.min(wobs)-2*np.abs(dw))
+            wv2,ind2 = dln.closest(tempspec.wave,np.max(wobs)+2*np.abs(dw))
+            outflux = tempspec.flux[ind1:ind2+1]
+            outwave = tempspec.wave[ind1:ind2+1]
+            outcont = tempspec.cont[ind1:ind2+1]
+
+            # Rebin, if necessary
+            #  get LSF FWHM (A) for a handful of positions across the spectrum
+            xp = np.arange(npix1//20)*20
+            fwhm = lsf.fwhm(wobs[xp],xtype='Wave',order=o)
+            # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
+            if lsf.xtype.lower().find('pix')>-1:
+                fwhm *= np.abs(dw)
+            #  convert FWHM (A) in number of model pixels at those positions
+            dwmod = dln.slope(outwave)
+            dwmod = np.hstack((dwmod,dwmod[-1]))
+            xpmod = dln.interp(outwave,np.arange(len(outwave)),wobs[xp],kind='cubic',assume_sorted=False,extrapolate=True)
+            xpmod = np.round(xpmod).astype(int)
+            fwhmpix = np.abs(fwhm/dwmod[xpmod])
+            # need at least ~4 pixels per LSF FWHM across the spectrum
+            #  using 3 affects the final profile shape
+            nbin = np.round(np.min(fwhmpix)//4).astype(int)
+        
+            if np.min(fwhmpix) < 3.7:
+                cmt = 'Synthetic spectrum has lower resolution than the desired output spectrum. Only '
+                cmt += str(np.min(fwhmpix))+' pixels per resolution element'
+                warnings.warn(cmt)
+            if np.min(fwhmpix) < 2.0:
+                cmt = 'Synthetic spectrum has lower resolution than the desired output spectrum. Only '
+                cmt += str(np.min(fwhmpix))+' pixels per resolution element'                
+                raise Exception(cmt)
+            if nbin>1:
+                npix2 = np.round(len(tempspec.flux) // nbin).astype(int)
+                outflux = dln.rebin(outflux[0:npix2*nbin],npix2)
+                outwave = dln.rebin(outwave[0:npix2*nbin],npix2)
+                outcont = dln.rebin(outcont[0:npix2*nbin],npix2)            
+        
+            # Convolve
+            lsf2d = lsf.anyarray(outwave,xtype='Wave',order=o,original=False)
+            cflux = utils.convolve_sparse(outflux,lsf2d)
+            # Interpolate onto final wavelength array
+            flux = dln.interp(outwave,cflux,wobs,extrapolate=False,assume_sorted=False)
+            cont = dln.interp(outwave,outcont,wobs,extrapolate=False,assume_sorted=False)            
+            #flux = synple.interp_spl(wobs, outwave, cflux)
+            #cont = synple.interp_spl(wobs, outwave, outcont)
+            if norder>1:
+                pspec.flux[0:len(flux),o] = flux
+                pspec.cont[0:len(cont),o] = cont
+            else:
+                pspec.flux[0:len(flux)] = flux
+                pspec.cont[0:len(cont)] = cont            
+            if npix1 < npix:
+                if norder>1:
+                    pspec.mask[len(flux):,o] = True
+                else:
+                    pspec.mask[len(flux):] = True                
+            pspec.normalized = False
+        
+        # Normalize
+        if norm is True:
+            newcont = pspec.continuum_func(pspec)
+            pspec.flux /= newcont
+            pspec.cont *= newcont
+            pspec.normalized = True
+        
+        return pspec
+    
     def plot(self,ax=None,c=None,masked=True):
         """ Plot the spectrum dealing with buffer and masked pixels and keeping color constant for all orders."""
         if ax is None:
