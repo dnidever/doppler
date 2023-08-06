@@ -1297,8 +1297,6 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
         printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['alphafe'],beststr['vrel']],
                   [None,None,None,None,beststr['vrelerr']])
         print('chisq = %5.2f' % beststr['chisq'])
-
-    import pdb; pdb.set_trace()
         
     return beststr, bestmodel
 
