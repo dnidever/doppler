@@ -701,7 +701,8 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
     outstr["cclag"] = lag    
     
     # Remove smooth background at large scales
-    cont = gaussian_filter1d(ccf,100)
+    #cont = gaussian_filter1d(ccf,100)
+    cont = dln.gsmooth(ccf,100)    # this works much better
     ccf_diff = ccf-cont
 
     # Get peak of CCF
@@ -1296,6 +1297,8 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
         printpars([beststr['teff'],beststr['logg'],beststr['feh'],beststr['alphafe'],beststr['vrel']],
                   [None,None,None,None,beststr['vrelerr']])
         print('chisq = %5.2f' % beststr['chisq'])
+
+    import pdb; pdb.set_trace()
         
     return beststr, bestmodel
 
@@ -1445,7 +1448,15 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
 
     # Calculate the bounds
     bounds = sp.mkbounds(fitparams,allinitpar)
-    
+
+    # Make sure the RV estimate is within the bounds
+    if 'RV' in fitparams:
+        rvind = np.where(np.array(fitparams)=='RV')[0][0]
+        rvest = allinitpar[rvind]
+        if rvest < bounds[0][rvind]: rvest=bounds[0][rvind]+5
+        if rvest > bounds[1][rvind]: rvest=bounds[1][rvind]-5
+        allinitpar[rvind] = rvest
+        
     # Use curve_fit
     tol = 5e-5  # 5e-4
     dx_lim = sp.mkdxlim(fitparams)
@@ -1461,10 +1472,9 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
         print('Least Squares RV and stellar parameters:')
         printpars(lspars,names=fitparams)
 
-    
     if nfixparams>0:
         all_labels = fitparams+list(fixparams.keys())
-        all_pars = lspars + fixparams.values()
+        all_pars = lspars + list(fixparams.values())
     else:
         all_labels = fitparams
         all_pars = lspars
@@ -1580,6 +1590,14 @@ def fit_mcmc_payne(spec,model=None,fitparams=None,fixparams={},initpar=None,step
     bounds = sp.mkbounds(fitparams,initpar)
     sp.bounds = bounds
 
+    # Make sure the RV estimate is within the bounds
+    if 'RV' in fitparams:
+        rvind = np.where(np.array(fitparams)=='RV')[0][0]
+        rvest = initpar[rvind]
+        if rvest < bounds[0][rvind]: rvest=bounds[0][rvind]+5
+        if rvest > bounds[1][rvind]: rvest=bounds[1][rvind]-5
+        initpar[rvind] = rvest
+    
     # Set up the MCMC sampler
     ndim, nwalkers = nfitparams, 20
     delta = mcmc_delta_payne(fitparams)

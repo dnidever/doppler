@@ -696,9 +696,12 @@ def specprep(spec):
     if spec.mask is not None:
         # Set errors to high value, leave flux alone
         spec.err[spec.mask] = 1e30
+
     # Fix any NaNs in flux
     bd = np.where(~np.isfinite(spec.flux))
     if len(bd[0])>0:
+        if spec.mask is None:
+            spec.mask = np.zeros(spec.shape,bool)
         if spec.norder>1:
             spec.flux[bd[0],bd[1]] = 0.0
             spec.err[bd[0],bd[1]] = 1e30
@@ -708,6 +711,14 @@ def specprep(spec):
             spec.err[bd[0]] = 1e30
             spec.mask[bd[0]] = True
 
+    # Mask bad pixels
+    snr = spec.flux/spec.err
+    bdpix, = np.where(snr < 1e-10)
+    if len(bdpix)>0:
+        if spec.mask is None:
+            spec.mask = np.zeros(spec.shape,bool)            
+            spec.mask[bdpix] = True
+    
     # Check for orders that are entirely masked
     if spec.norder>1:
         ngood = np.sum(~spec.mask,axis=0)

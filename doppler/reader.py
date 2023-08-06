@@ -543,7 +543,11 @@ def boss(filename):
     # HDU3 - table with line measurements
     head = fits.getheader(filename,0)
     tab1 = Table.read(filename,1)
+    for c in tab1.colnames:   # Make column names all lowercase
+        tab1[c].name=c.lower()
     cat1 = Table.read(filename,2)
+    for c in cat1.colnames:   # Make column names all lowercase                            
+        cat1[c].name=c.lower()
     flux = tab1["flux"].data
     wave = 10**tab1["loglam"].data
     wdisp = tab1["wdisp"].data
@@ -566,16 +570,21 @@ def boss(filename):
     spec.sptype = "spec"
     spec.waveregime = "Optical"
     spec.instrument = "BOSS"
+    if head.get('DATE-OBS') is None:
+        if head.get('INTSTART') is not None:
+            head['DATE-OBS'] = head['INTSTART']
     spec.head = head
     spec.ivar = tab1["ivar"].data
     spec.bitmask = tab1["or_mask"].data
     spec.and_mask = tab1["and_mask"].data
     spec.or_mask = tab1["or_mask"].data
     spec.sky = tab1["sky"].data
-    spec.model = tab1["model"].data
+    if 'model' in np.char.array(tab1.colnames).lower():
+        spec.model = tab1["model"].data
     spec.meta = cat1
     # What are the units?
-    #spec.snr = cat1["SN_MEDIAN_ALL"].data[0]
+    if 'sn_median_all' in np.char.array(tab1.colnames).lower():
+        spec.snr = cat1["sn_median_all"].data[0]
     spec.observatory = 'apo'
     spec.wavevac = True
     return spec        

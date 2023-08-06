@@ -922,16 +922,17 @@ class Spec1D:
         ospec._child = True
         return ospec
 
-    def prepare(self,lsf,norm=True,continuum_func=None):
+    def prepare(self,spec,norm=None,continuum_func=None):
         """
         Return a copy of this (synthetic) spectrum convolved to the input LSF and wavelength arrays.
 
         Parameters
         ----------
-        lsf : LSF object
-           LSF object to use to prepare the spectrum.
+        sp : Spec1D object
+           Spec1D object to use to prepare the spectrum.
         norm : boolean, optional
-           Normalize the spectrum.
+           Normalize the spectrum.  Default is match the normalization state
+             of the input spectrum.
         continuum_func : function, optional
            The continuum function to use.
 
@@ -951,15 +952,18 @@ class Spec1D:
         # Check some things
         if self.norder>1:
             raise ValueError('Can only prepare a single order synthetic spectrum')
-        if hasattr(lsf,'wave')==False:
-            raise ValueError('lsf object must have wave array')
+        if hasattr(spec,'wave')==False:
+            raise ValueError('spec object must have wave array')
+        if hasattr(spec,'lsf')==False:
+            raise ValueError('spec object must have lsf property')
+        lsf = spec.lsf
         
         # Temporary working copy of this spectrum
         tempspec = self.copy()
 
         # Make sure they are using the same type of wavelengths
         # Convert wavelength from air->vacuum or vice versa
-        tempspec.wavevac = lsf.wavevac   # will automatically convert behind the scences
+        tempspec.wavevac = spec.wavevac   # will automatically convert behind the scences
 
         # Initialize the output spectrum
         if lsf.wave.ndim==2:
@@ -968,7 +972,8 @@ class Spec1D:
             npix = len(lsf.wave)
             norder = 1
         pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
-                       wave=lsf.wave,lsfpars=lsf.pars,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
+                       wave=lsf.wave,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
+        pspec.lsf = lsf.copy()
         pspec._cont = np.zeros((npix,norder),np.float32)
         if norder==1:
             pspec._cont = np.squeeze(pspec._cont)
@@ -1018,7 +1023,7 @@ class Spec1D:
                 cmt += str(np.min(fwhmpix))+' pixels per resolution element'                
                 raise Exception(cmt)
             if nbin>1:
-                npix2 = np.round(len(tempspec.flux) // nbin).astype(int)
+                npix2 = np.round(len(outflux) // nbin).astype(int)
                 outflux = dln.rebin(outflux[0:npix2*nbin],npix2)
                 outwave = dln.rebin(outwave[0:npix2*nbin],npix2)
                 outcont = dln.rebin(outcont[0:npix2*nbin],npix2)            
@@ -1043,9 +1048,9 @@ class Spec1D:
                 else:
                     pspec.mask[len(flux):] = True                
             pspec.normalized = False
-        
+            
         # Normalize
-        if norm is True:
+        if norm or (norm is None and spec.normalized):
             newcont = pspec.continuum_func(pspec)
             pspec.flux /= newcont
             pspec.cont *= newcont

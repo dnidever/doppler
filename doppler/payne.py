@@ -379,11 +379,19 @@ def prepare_payne_model(model,labels,spec,rv=None,vmacro=None,vsini=None,wave=No
             omodelflux = interp1d(rmodelwave,cmodelflux,kind='cubic',bounds_error=False,
                                   fill_value=(np.nan,np.nan),assume_sorted=True)(wave[:,o])
 
-        if outmodel.flux.ndim==1:
-            outmodel.flux[0:len(omodelflux)] = omodelflux
-        else:
-            outmodel.flux[0:len(omodelflux),o] = omodelflux        
-            
+        # Stuff in the final flux array
+        if wave is None:
+            # we only selected "good" pixels at the beginning
+            if outmodel.flux.ndim==1:
+                outmodel.flux[gdpix] = omodelflux
+            else:
+                outmodel.flux[gdpix,o] = omodelflux        
+        else:  # using input wavelength array
+            if outmodel.flux.ndim==1:
+                outmodel.flux[0:len(omodelflux)] = omodelflux
+            else:
+                outmodel.flux[0:len(omodelflux),o] = omodelflux            
+                
     if wave is not None:
         outmodel.wave = wave.copy()
 
