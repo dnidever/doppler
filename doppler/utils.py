@@ -713,8 +713,8 @@ def specprep(spec):
 
     # Mask bad pixels
     snr = spec.flux/spec.err
-    bdpix, = np.where(snr < 1e-10)
-    if len(bdpix)>0:
+    bdpix = (snr < 1e-10)
+    if np.sum(bdpix)>0:
         if spec.mask is None:
             spec.mask = np.zeros(spec.shape,bool)            
             spec.mask[bdpix] = True
