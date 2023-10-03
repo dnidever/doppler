@@ -624,9 +624,9 @@ class DopplerCannonModel(object):
                     raise ValueError("Model does not have continuum information")
             # Stuff in the array
             oflux[0:len(f),i] = f
-            owave[0:len(f),i] = owave1
+            owave[0:len(owave1),i] = owave1
             omask[0:len(f),i] = False
-            
+                
         # Change single order 2D arrays to 1D
         if norders==1:
             oflux = oflux.flatten()
@@ -1561,13 +1561,14 @@ def prepare_cannon_model(model,spec,dointerp=False):
             mask = mask.reshape(npix,norder)
         # Loop over the orders
         outmodel = []
-        for o in range(norder):
-            m = mask[:,o]
-            w = wave[:,o]
-            gdpix, = np.where(~m)
-            if len(gdpix)==0:
-                raise ValueError('No unmasked pixels in order ',o)
-            w = w[gdpix]
+        for o in range(norder):            
+            #m = mask[:,o]
+            #w = wave[:,o]
+            #gdpix, = np.where(~m)
+            #if len(gdpix)==0:
+            #    raise ValueError('No unmasked pixels in order ',o)
+            #w = w[gdpix]
+            w = spec[o].wave  # this will return only the wavelengths/pixels that are defined for this order
             w0 = np.min(w)
             w1 = np.max(w)
             dw = np.gradient(w)
@@ -1595,7 +1596,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
                 
             # Rebin
             #  get LSF FWHM (A) for a handful of positions across the spectrum
-            xp = np.arange(npix//20)*20
+            xp = np.arange(np.maximum(npix//20,1))*20
             fwhm = spec.lsf.fwhm(w[xp],xtype='Wave',order=o)
             # FWHM is in units of lsf.xtype, convert to wavelength/angstroms, if necessary
             if spec.lsf.xtype.lower().find('pix')>-1:

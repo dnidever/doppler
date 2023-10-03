@@ -725,15 +725,9 @@ def specprep(spec):
         bdorder, = np.where(ngood==0)
         if len(bdorder)==spec.norder:
             raise ValueError('Entire spectrum is masked')
-        if len(bdorder)>0:
-            print('Removing order '+str(bdorder)+' that are entirely masked')
-            np.delete(spec.flux,bdorder,axis=1)
-            np.delete(spec.err,bdorder,axis=1)
-            np.delete(spec.wave,bdorder,axis=1)
-            np.delete(spec.mask,bdorder,axis=1)
-            np.delete(spec.lsf.wave,bdorder,axis=1)
-            np.delete(spec.lsf.pars,bdorder,axis=1)
-            spec.norder -= 1
+        #if len(bdorder)>0:
+        #    print('Removing order '+str(bdorder)+' that are entirely masked')
+        #    spec.remove_order(bdorder)
     else:
         ngood = np.sum(~spec.mask)
         if ngood==0:
@@ -851,8 +845,15 @@ def maskdiscrepant(spec,model,nsig=10,verbose=False):
     """
 
     print = getprintfunc() # Get print function to be used locally, allows for easy logging
-    
-    spec2 = spec.copy()
+
+    if model is None or hasattr(model,'flux')==False:
+        return spec
+
+    try:
+        spec2 = spec.copy()
+    except:
+        print('problem')
+        import pdb; pdb.set_trace()
     wave = spec2.wave.copy().reshape(spec2.npix,spec2.norder)   # make 2D
     flux = spec2.flux.copy().reshape(spec2.npix,spec2.norder)   # make 2D
     err = spec2.err.copy().reshape(spec2.npix,spec2.norder)     # make 2D

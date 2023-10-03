@@ -490,7 +490,7 @@ class Spec1D:
             if self.shape != value.shape:
                 raise ValueError('Shapes do not match')            
             self.flux *= value.flux
-            self.err *= value.flux            
+            self.err *= value.flux          
         else:
             self.flux *= value
             self.err *= value            
@@ -1108,10 +1108,106 @@ class Spec1D:
         new.lsf = newlsf  # make sure all parts of Lsf are copied over
         for name, value in vars(self).items():
             if name not in ['flux','wave','err','mask','lsf','instrument','filename']:
-                setattr(new,name,copy.deepcopy(value))           
-
+                if value is not None:
+                    newvalue = copy.deepcopy(value)
+                else:
+                    newvalue = None
+                setattr(new,name,newvalue)
         return new
 
+    def remove_order(self,order):
+        """ Remove orders from spectrum."""
+        self.flux = np.delete(self.flux,order,axis=1)
+        self.err = np.delete(self.err,order,axis=1)
+        self.wave = np.delete(self.wave,order,axis=1)
+        self.mask = np.delete(self.mask,order,axis=1)
+        if self._cont is not None:
+            self._cont = np.delete(self._cont,order,axis=1)
+        self.lsf.wave = np.delete(self.lsf.wave,order,axis=1)
+        self.lsf.pars = np.delete(self.lsf.pars,order,axis=1)
+        self.numpix = np.delete(self.numpix,order)
+
+    def add_order(self,norder=1):
+        """ Add blank orders to the spectrum."""
+        props = ['flux','err','wave','mask','_cont']
+        oldnorder = self.norder
+        for p in props:
+            if hasattr(self,p) and getattr(self,p) is not None:
+                old = getattr(self,p)
+                oldsh = list(old.shape)
+                newsh = oldsh
+                newsh[1] += 1
+                new = np.zeros(newsh,old.dtype)
+                new[:,0:oldnorder] = old  # transfer data
+                setattr(self,p,new)
+        self.numpix += [0]
+
+    def append(self,newspec):
+        """ Append a new spectrum to this one. Basically combining orders."""
+        # Make sure the LSFs are compatible same lsftype and xtype
+        if hasattr(self,'lsf') != hasattr(newspec,'lsf'):
+            raise ValueError('Spectrum and input spectrum both need to have an LSF or both not have it.')
+        if hasattr(self,'lsf'):
+            if type(self.lsf) is not type(newspec.lsf):
+                raise ValueError('Input LSF ('+str(type(newspec.lsf))+') is not compatible with spectrum LSF ('+str(type(self.lsf))+')')
+            if self.lsf.xtype != newspec.lsf.xtype:
+                raise ValueError('Input LSF xtype ('+self.lsf.xtype+') is not compatible with spectrum LSF xtype ('+self.lsf.xtype+')')
+            if hasattr(self.lsf,'pars') != hasattr(newspec.lsf,'pars'):
+                raise ValueError('Input LSF and spectrum LSF both need to have a pars array or both not have it.')
+        if self.normalized != newspec.normalized:
+            raise ValueError('Spectrum and input spectrum do NOT have the same normalization type')
+        # Get new maximum npix
+        npix = np.max([self.npix,newspec.npix])
+        # Get number of orders
+        norder = self.norder+newspec.norder
+        # Retain a copy of the old spectrum
+        origsp = self.copy()
+        # Change the arrays
+        props = ['flux','err','wave','mask','_cont']
+        newshape = [npix,norder]
+        for p in props:
+            if p != 'mask':
+                arr = np.zeros(newshape,float)
+            else:
+                arr = np.zeros(newshape,bool)
+            # Transfer the original data    
+            if hasattr(self,p) and getattr(self,p) is not None:
+                orig = getattr(origsp,p)
+                arr[0:origsp.npix,0:origsp.norder] = orig
+            else:
+                orig = None
+            # Add the new spectral information
+            if hasattr(newspec,p) and getattr(newspec,p) is not None:
+                new = getattr(newspec,p)
+                arr[0:newspec.npix,origsp.norder:] = new.copy()
+            else:
+                new = None
+            # Set the new propery
+            if orig is not None and new is not None:
+                setattr(self,p,arr)
+        # Deal with LSF stuff
+        if hasattr(self,'lsf'):
+            origlsf = self.lsf.copy()
+            self.lsf.wave = self.wave
+            # Combine pars
+            if hasattr(self.lsf,'pars') and hasattr(newspec.lsf,'pars'):
+                origpars = origlsf.pars
+                newlsfshape = [np.max([origpars.shape[0],newspec.lsf.pars.shape[0]]),norder]
+                newpars = np.zeros(newlsfshape,float)
+                # lowest power polycoefficients first, any extra ones at the end
+                newpars[0:origpars.shape[0],0:origsp.norder] = origpars
+                newpars[0:newspec.lsf.pars.shape[0]:,origsp.norder:] = newspec.lsf.pars.copy()
+                self.lsf.pars = newpars
+            # Combine _sigma
+            if (hasattr(self.lsf,'_sigma') and getattr(self.lsf,'_sigma') is not None and
+                hasattr(newspec.lsf,'_sigma') and getattr(newspec.lsf,'_sigma') is not None):
+                newsigma = np.zeros(newshape,float)
+                newsigma[0:origsp.npix,0:origsp.norder] = origsp.lsf._sigma
+                newsigma[0:newspec.npix,origsp.norder:] = newspec.lsf._sigma.copy()
+                
+        self.numpix = np.concatenate((self.numpix,newspec.numpix))
+        del origsp
+        
     def barycorr(self):
         """ calculate the barycentric correction."""
         # keck = EarthLocation.of_site('Keck')  # the easiest way... but requires internet

@@ -90,6 +90,9 @@ def mute():
 def tweakcontinuum(spec,model,smlen=None,usepoly=False,polyorder=3):
     """ Tweak the continuum normalization of an observed spectrum using a good-fit model."""
 
+    if model is None or hasattr(model,'flux')==False:
+        return spec
+    
     if smlen is None:
         smlen = spec.npix/10.0
         
@@ -591,7 +594,6 @@ def specxcorr(wave=None,tempspec=None,obsspec=None,obserr=None,maxlag=200,errccf
          out = apxcorr(wave,tempspec,spec,err)
     
     """
-
 
     # Not enough inputs
     if (wave is None) | (tempspec is None) | (obsspec is None) | (obserr is None):
@@ -1249,7 +1251,7 @@ def fit_xcorrgrid_payne(spec,model=None,samples=None,verbose=False,maxvel=1000.0
     dwlog = np.median(dln.slope(np.log10(wavelog)))
     # vrel = ( 10**(xshift*dwlog)-1 )*cspeed
     maxlag = int(np.ceil(np.log10(1+maxvel/cspeed)/dwlog))
-    maxlag = np.maximum(maxlag,50)
+    maxlag = np.maximum(maxlag,10)
     if samples is None:
         teff = [3500.0, 4000.0, 5000.0, 6000.0, 7500.0, 15000.0, 25000.0, 40000.0,  3500.0, 4300.0, 4700.0, 5200.0]
         logg = [4.8, 4.8, 4.6, 4.4, 4.0, 4.0, 4.0, 4.0,  0.5, 1.0, 2.0, 3.0]        
@@ -3458,6 +3460,13 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
             # Unweighted
             else:
                 wtpars[i] = np.mean(p)
+        # Sometimes the weighted stellar parameters are outside of the
+        #  model range, e.g. Teff=25,000K and logg=1.60
+        testmod = modlist[0](wtpars[0:3])
+        if testmod is None:
+            print('Weighted parameters are outside model range.  Using best chisq values.')
+            bestind = np.argmin(info['chisq'])
+            wtpars = np.array([info[p][bestind] for p in pars])
         if verbose is True:
             print('Initial weighted parameters are:')
             printpars(wtpars)
@@ -3503,6 +3512,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         print('Vscatter =  %6.3f km/s' % vscatter1)
         print(vhelio1)
 
+        
     # Step 4) Tweak continua and remove outliers
     if verbose is True:
         print(' ')
@@ -3517,7 +3527,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
             specmlist[i] = spm.copy()
     else:
         if verbose: print('Skipping tweaking')
-            
+
             
     # Step 5) Refit all spectra simultaneously fitting stellar parameters and RVs
     if verbose is True:
@@ -3541,7 +3551,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         print('Vhelio = %6.2f +/- %5.2f km/s' % (medvhelio2,verr2))
         print('Vscatter =  %6.3f km/s' % vscatter2)
         print(vhelio2)
-    
+        
     # Final output structure
     final = info.copy()
     final['teff'] = stelpars2[0]
