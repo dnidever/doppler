@@ -412,7 +412,7 @@ class Spec1D:
                        bitmask=bitmask,lsfpars=lsf.pars,lsftype=lsf.lsftype,
                        lsfxtype=lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
                        filename=self.filename,wavevac=self.wavevac)
-        if hasattr(self,'_cont'):
+        if hasattr(self,'_cont') and getattr(self,'_cont') is not None:
             ospec._cont = self._cont[slc,index]
         ospec._child = True
         if self.bc is not None:
