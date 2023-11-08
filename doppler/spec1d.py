@@ -9,6 +9,7 @@ from __future__ import print_function
 __authors__ = 'David Nidever <dnidever@montana.edu>'
 __version__ = '20210605'  # yyyymmdd                                                                                                                           
 
+import time
 import numpy as np
 import math
 import warnings
@@ -948,7 +949,7 @@ class Spec1D:
 
         """
         # Convolve with LSF and do air<->vacuum wavelength conversion
-
+        
         # Check some things
         if self.norder>1:
             raise ValueError('Can only prepare a single order synthetic spectrum')
@@ -961,6 +962,12 @@ class Spec1D:
         # Temporary working copy of this spectrum
         tempspec = self.copy()
 
+        # Only interpolate errors if they are not all zero
+        if np.sum(self.err) != 0.0:
+            doerr = True
+        else:
+            doerr = False
+            
         # Make sure they are using the same type of wavelengths
         # Convert wavelength from air->vacuum or vice versa
         tempspec.wavevac = spec.wavevac   # will automatically convert behind the scences
@@ -979,7 +986,7 @@ class Spec1D:
             pspec._cont = np.squeeze(pspec._cont)
         if continuum_func is not None:
             pspec.continuum_func = continuum_func
-        
+            
         # Loop over orders
         wave = lsf.wave.copy()
         for o in range(norder):
@@ -996,7 +1003,9 @@ class Spec1D:
             outflux = tempspec.flux[ind1:ind2+1]
             outwave = tempspec.wave[ind1:ind2+1]
             outcont = tempspec.cont[ind1:ind2+1]
-
+            if doerr:
+                outerr = tempspec.err[ind1:ind2+1]            
+            
             # Rebin, if necessary
             #  get LSF FWHM (A) for a handful of positions across the spectrum
             xp = np.arange(npix1//20)*20
@@ -1013,7 +1022,7 @@ class Spec1D:
             # need at least ~4 pixels per LSF FWHM across the spectrum
             #  using 3 affects the final profile shape
             nbin = np.round(np.min(fwhmpix)//4).astype(int)
-        
+            
             if np.min(fwhmpix) < 3.7:
                 cmt = 'Synthetic spectrum has lower resolution than the desired output spectrum. Only '
                 cmt += str(np.min(fwhmpix))+' pixels per resolution element'
@@ -1026,22 +1035,32 @@ class Spec1D:
                 npix2 = np.round(len(outflux) // nbin).astype(int)
                 outflux = dln.rebin(outflux[0:npix2*nbin],npix2)
                 outwave = dln.rebin(outwave[0:npix2*nbin],npix2)
-                outcont = dln.rebin(outcont[0:npix2*nbin],npix2)            
-        
+                outcont = dln.rebin(outcont[0:npix2*nbin],npix2)
+                if doerr:
+                    outerr = dln.rebin(outerr[0:npix2*nbin],npix2)                
+                
             # Convolve
             lsf2d = lsf.anyarray(outwave,xtype='Wave',order=o,original=False)
             cflux = utils.convolve_sparse(outflux,lsf2d)
+            if doerr:
+                cerr = utils.convolve_sparse(outerr,lsf2d)
             # Interpolate onto final wavelength array
             flux = dln.interp(outwave,cflux,wobs,extrapolate=False,assume_sorted=False)
-            cont = dln.interp(outwave,outcont,wobs,extrapolate=False,assume_sorted=False)            
+            cont = dln.interp(outwave,outcont,wobs,extrapolate=False,assume_sorted=False)
+            if doerr:
+                err = dln.interp(outwave,cerr,wobs,extrapolate=False,assume_sorted=False)            
             #flux = synple.interp_spl(wobs, outwave, cflux)
             #cont = synple.interp_spl(wobs, outwave, outcont)
             if norder>1:
                 pspec.flux[0:len(flux),o] = flux
                 pspec.cont[0:len(cont),o] = cont
+                if doerr:
+                    pspec.err[0:len(cont),o] = err
             else:
                 pspec.flux[0:len(flux)] = flux
-                pspec.cont[0:len(cont)] = cont            
+                pspec.cont[0:len(cont)] = cont
+                if doerr:
+                    pspec.err[0:len(cont)] = err
             if npix1 < npix:
                 if norder>1:
                     pspec.mask[len(flux):,o] = True
@@ -1054,8 +1073,10 @@ class Spec1D:
             newcont = pspec.continuum_func(pspec)
             pspec.flux /= newcont
             pspec.cont *= newcont
+            if doerr:
+                pspec.err /= newcont
             pspec.normalized = True
-        
+            
         return pspec
     
     def plot(self,ax=None,c=None,masked=True):
