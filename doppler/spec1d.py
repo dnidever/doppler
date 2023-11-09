@@ -984,6 +984,10 @@ class Spec1D:
                        wave=lsf.wave,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
         pspec.lsf = lsf.copy()
         hascont = hasattr(spec,'_cont') and spec._cont is not None
+        if hascont:
+            pspec._cont = np.zeros((npix,norder),np.float32)
+            if norder==1:
+                pspec._cont = np.squeeze(pspec._cont)
         if continuum_func is not None:
             pspec.continuum_func = continuum_func
             
@@ -1057,15 +1061,15 @@ class Spec1D:
             if norder>1:
                 pspec.flux[0:len(flux),o] = flux
                 if hascont:
-                    pspec.cont[0:len(cont),o] = cont
+                    pspec._cont[0:len(cont),o] = cont
                 if doerr:
-                    pspec.err[0:len(cont),o] = err
+                    pspec.err[0:len(err),o] = err
             else:
                 pspec.flux[0:len(flux)] = flux
                 if hascont:
-                    pspec.cont[0:len(cont)] = cont
+                    pspec._cont[0:len(cont)] = cont
                 if doerr:
-                    pspec.err[0:len(cont)] = err
+                    pspec.err[0:len(err)] = err
             if npix1 < npix:
                 if norder>1:
                     pspec.mask[len(flux):,o] = True
@@ -1078,7 +1082,7 @@ class Spec1D:
             newcont = pspec.continuum_func(pspec)
             pspec.flux /= newcont
             if hascont:
-                pspec.cont *= newcont
+                pspec._cont *= newcont
             if doerr:
                 pspec.err /= newcont
             pspec.normalized = True
