@@ -874,7 +874,7 @@ def iraf(filename):
     cdelt1 = head.get('cdelt1')
     if cdelt1 is None: cdelt1=head.get('cd1_1')
     if (crval1 is not None) & (crpix1 is not None) & (cdelt1 is not None):
-        wave = (np.arange(npix,int)+1-crpix1) * np.float64(cdelt1) + np.float64(crval1)
+        wave = (np.arange(npix)+1-crpix1) * np.float64(cdelt1) + np.float64(crval1)
         wlogflag = head.get('DC-FLAG')
         if (wlogflag is not None):
             if wlogflag==1: wave = 10**wave
@@ -894,7 +894,14 @@ def iraf(filename):
             if 'sigma' in val:
                 if (i<=norder):
                     spec.err = data[:,k]
-
+    if spec.err is None:
+        spec.err = np.sqrt(spec.flux)
+        bad = (spec.err <= 0)
+        if np.sum(bad)>0:        
+            good = (spec.err > 0)
+            minerr = np.minimum(np.min(spec.err[good]),1)
+            spec.err[bad] = minerr
+                    
     return spec
 
 # List of readers

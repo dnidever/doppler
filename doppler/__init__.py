@@ -1,5 +1,5 @@
 __all__ = ["spec1d","lsf","rv","cannon","utils","reader","payne"]
-__version__ = '1.1.14'
+__version__ = '1.1.15'
 
 from .spec1d import Spec1D
 from . import (rv, cannon)
