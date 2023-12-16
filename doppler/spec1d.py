@@ -1136,11 +1136,11 @@ class Spec1D:
                 old = getattr(self,p)
                 oldsh = list(old.shape)
                 newsh = oldsh
-                newsh[1] += 1
+                newsh[1] += norder
                 new = np.zeros(newsh,old.dtype)
                 new[:,0:oldnorder] = old  # transfer data
                 setattr(self,p,new)
-        self.numpix += [0]
+        self.numpix += norder*[0]
 
     def append(self,newspec):
         """ Append a new spectrum to this one. Basically combining orders."""
@@ -1248,10 +1248,11 @@ class Spec1D:
         attributes = dir(self)
         sdict = {}   # scalar dictionary
         vdict = {}   # vector dictionary
-        ckeys = ['flux','err','wave','mask','lsf','instrument','wavevac','normalized',
-                 'ndim','npix','norder','snr','barycorr','continuum_func','copy','filename',
-                 'interp','normalize','pix2wave','reader','wave2pix','write','cont','flatten',
-                 'head','bc','size','numpix','shape','plot','wrange']
+        # Get all of the "built-in" attributes of the Spec1D object
+        #   make "blank" spectrum and check all of the properties
+        blank = Spec1D(np.arange(10),wave=np.arange(10))
+        ckeys = dir(blank)
+        ckeys = [c for c in ckeys if c[0]!='_']
         for a in attributes:
             if a.lower() not in ckeys and a[0]!='_':
                 val = getattr(self,a)
