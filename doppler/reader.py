@@ -348,12 +348,16 @@ def apvisit(filename):
     x = np.arange(spec.npix)
     nsky = 4
     for i in range(spec.norder):
-        sky = spec.sky[:,i]
-        medsky = median_filter(sky,201,mode='reflect')
-        medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
-        medsky2 = dln.poly(x,medcoef)*np.median(medsky)
-        skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
-        mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+        try:
+            sky = spec.sky[:,i]
+            medsky = median_filter(sky,201,mode='reflect')
+            good = np.isfinite(edsky/np.nanmedian(medsky))
+            medcoef = dln.poly_fit(x[good],medsky[good]/np.nanmedian(medsky[good]),2)
+            medsky2 = dln.poly(x,medcoef)*np.nanmedian(medsky)
+            skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
+            mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+        except:
+            pass
     spec.mask = mask
     # Fix NaN pixels
     for i in range(spec.norder):
