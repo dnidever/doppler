@@ -965,7 +965,7 @@ class Spec1D:
         tempspec = self.copy()
 
         # Only interpolate errors if they are not all zero
-        if np.sum(self.err) != 0.0:
+        if self.err is not None and np.sum(self.err) != 0.0:
             doerr = True
         else:
             doerr = False
