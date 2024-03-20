@@ -2116,7 +2116,7 @@ def jointfit_payne(speclist,model=None,fitparams=None,fixparams={},mcmc=False,sn
                       ', '.join(fitparams)+' and RV for each spectrum')
     
     # Creating catalog of info on each spectrum
-    dtlist = [('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float)]
+    dtlist = [('filename',str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float)]
     for k in range(nfitparams):
         name = fitparams[k].lower()
         dtlist += [(name,np.float32),(name+'err',np.float32)]
@@ -3370,7 +3370,7 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
     # If list of filenames input, then load them
     
     # Creating catalog of info on each spectrum
-    dt = np.dtype([('filename',np.str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float),
+    dt = np.dtype([('filename',str,300),('snr',float),('vhelio',float),('vrel',float),('vrelerr',float),
                    ('teff',float),('tefferr',float),('logg',float),('loggerr',float),('feh',float),
                    ('feherr',float),('chisq',float),('bc',float)])
     info = np.zeros(nspec,dtype=dt)
