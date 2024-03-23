@@ -146,7 +146,7 @@ def read(filename=None,format=None):
             out = spec1d(filename)
             datacheck(out)
             if out is not None: return out
-        
+            
     # Loop over all readers until we get a spectrum out
     for k in _readers.keys():
         try:
@@ -404,16 +404,18 @@ def apstar(filename):
 
     # Get number of extensions
     hdulist = fits.open(filename)
+    header = hdulist[0].header
     nhdu = len(hdulist)
-    hdulist.close()
+
     
     # Check that this has the right format
     validfile = False
     if (base.find("apStar") == -1) | (base.find("asStar") == -1):
         if nhdu>=9:
-            gd, = np.where(np.char.array(hdulist[0].header['HISTORY']).astype(str).find('APSTAR') > -1)
-            if len(gd)>0: validfile=True
+            if header.get('starflag') is not None and header.get('objid') is not None:
+                validfile = True
     if validfile is False:
+        hdu.close()
         return None
     
     
@@ -443,14 +445,18 @@ def apstar(filename):
     #  these are 2D arrays with [Nvisit+2,Npix]
     #  the first two are combined and the rest are the individual spectra
 
-    head1 = fits.getheader(filename,1)
+    head1 = hdulist[1].header
+    #head1 = fits.getheader(filename,1)
     w0 = np.float64(head1["CRVAL1"])
     dw = np.float64(head1["CDELT1"])
     nw = head1["NAXIS1"]
     wave = 10**(np.arange(nw)*dw+w0)
         
     # flux, err, sky, skyerr are in units of 1e-17
-    flux = fits.getdata(filename,1).T * 1e-17
+    flux = hdulist[1].data.T * 1e-17
+    import pdb; pdb.set_trace()
+    lsfcoef = hdulist[8].data.T
+    #flux = fits.getdata(filename,1).T * 1e-17
     lsfcoef = fits.getdata(filename,8).T
     spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
     spec.reader = 'apstar'
@@ -498,7 +504,10 @@ def apstar(filename):
         spec.observatory = 'apo'
     else:
         spec.observatory = 'lco'
-    spec.wavevac = True            
+    spec.wavevac = True
+
+    hdulist.close()
+    
     return spec
 
 

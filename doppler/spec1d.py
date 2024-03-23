@@ -1399,5 +1399,5 @@ class Spec1D:
                 hdu[nexten].header['VECTOR'] = True
                 hdu[nexten].header['NAME'] = k           
                 nexten += 1
-                
+        hdu.verify('fix+warn')
         hdu.writeto(outfile,overwrite=overwrite)
