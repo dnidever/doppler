@@ -800,7 +800,6 @@ class Spec1D:
             ocont = np.zeros((nwpix,nworder),float)
         else:
             hascont = False
-        ocont = None
         for i in range(nworder):
             # Interpolate onto the final wavelength scale
             wave1 = wave[:,i]
