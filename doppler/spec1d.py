@@ -794,7 +794,13 @@ class Spec1D:
         oflux = np.zeros((nwpix,nworder),float)
         oerr = np.zeros((nwpix,nworder),float)
         omask = np.zeros((nwpix,nworder),bool)
-        osigma = np.zeros((nwpix,nworder),float)        
+        osigma = np.zeros((nwpix,nworder),float)
+        if hasattr(self,'_cont') and self._cont is not None:
+            hascont = True
+            ocont = np.zeros((nwpix,nworder),float)
+        else:
+            hascont = False
+        ocont = None
         for i in range(nworder):
             # Interpolate onto the final wavelength scale
             wave1 = wave[:,i]
@@ -811,7 +817,9 @@ class Spec1D:
                 smask[smask_bool==True] = 1
             else:
                 smask = np.zeros((self.npix,self.norder),int)
-
+            if hascont:
+                scont = self._cont.reshape(self.npix,self.norder)
+                
             # The orders are "matched", one input for one output order
             if (nworder==self.norder) & (order is None):
                 swave1 = swave[:,i]                
@@ -819,6 +827,9 @@ class Spec1D:
                 serr1 = serr[:,i]
                 ssigma1 = self.lsf.sigma(order=i)
                 smask1 = smask[:,i]
+                if hascont:
+                    scont1 = scont[:,i]
+                
                 # Some overlap
                 if (np.min(swave1)<wr1[1]) & (np.max(swave1)>wr1[0]):
                     # Fix NaN pixels
@@ -828,9 +839,15 @@ class Spec1D:
                         serr1[bd] = 1e30
                         smask1[bd] = 1
                     ind,nind = dln.where( (wave1>np.min(swave1)) & (wave1<np.max(swave1)) )
-                    oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
-                    oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False,kind='linear')
-                    osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
+                    oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,
+                                              assume_sorted=False)
+                    oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,
+                                             assume_sorted=False,kind='linear')
+                    osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,
+                                               assume_sorted=False)
+                    if hascont:
+                        ocont[ind,i] = dln.interp(swave1,scont1,wave1[ind],extrapolate=False,
+                                                  assume_sorted=False)
                     # Gauss-Hermite, convert to wavelength units
                     if self.lsf.lsftype=='Gauss-Hermite':
                         sdw1 = np.abs(swave1[1:]-swave1[0:-1])
@@ -851,13 +868,22 @@ class Spec1D:
                     serr1 = serr[:,j]
                     ssigma1 = self.lsf.sigma(order=j)                    
                     smask1 = smask[:,j]
+                    if hascont:
+                        scont1 = scont[:,j]
                     # Some overlap
                     if (np.min(swave1)<wr1[1]) & (np.max(swave1)>wr1[0]):
                         ind,nind = dln.where( (wave1>np.min(swave1)) & (wave1<np.max(swave1)) )
-                        oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,assume_sorted=False)
-                        oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,assume_sorted=False,kind='linear')
-                        osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,assume_sorted=False)
-                        mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,assume_sorted=False)                    
+                        oflux[ind,i] = dln.interp(swave1,sflux1,wave1[ind],extrapolate=False,
+                                                  assume_sorted=False)
+                        oerr[ind,i] = dln.interp(swave1,serr1,wave1[ind],extrapolate=False,
+                                                 assume_sorted=False,kind='linear')
+                        osigma[ind,i] = dln.interp(swave1,ssigma1,wave1[ind],extrapolate=False,
+                                                   assume_sorted=False)
+                        if hascont:
+                            ocont[ind,i] = dln.interp(swave1,scont1,wave1[ind],extrapolate=False,
+                                                      assume_sorted=False)
+                        mask_interp = dln.interp(swave1,smask1,wave1[ind],extrapolate=False,
+                                                 assume_sorted=False)                    
                         mask_interp_bool = np.zeros(nind,bool)
                         mask_interp_bool[mask_interp>0.4] = True
                         omask[ind,i] = mask_interp_bool
@@ -869,6 +895,8 @@ class Spec1D:
             oerr = oerr.flatten()
             osigma = osigma.flatten()            
             omask = omask.flatten()
+            if hascont:
+                ocont = ocont.flatten()
         # Create output spectrum object
         if self.lsf.lsftype=='Gauss-Hermite':
             # Can't interpolate Gauss-Hermite LSF yet
@@ -879,6 +907,8 @@ class Spec1D:
             lsfxtype = self.lsf.xtype
         ospec = Spec1D(oflux,wave=wave,err=oerr,mask=omask,lsftype='Gaussian',
                        lsfxtype=lsfxtype,lsfsigma=osigma)
+        if hascont:
+            ospec._cont = ocont
 
         return ospec
 
