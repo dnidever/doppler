@@ -278,23 +278,6 @@ class Spec1D:
                     numpix[i] = 0
                 else:
                     numpix[i] = np.max(gdpix)+1
-        # Remove any blank orders
-        blank = (numpix==0)
-        if np.sum(~blank)==0:
-            print('All orders are blank')
-            return None
-        if np.sum(blank)>0:
-            if flux is not None: flux = flux[:,~blank]
-            if err is not None: err = err[:,~blank]
-            if wave is not None: wave = wave[:,~blank]
-            if mask is not None: mask = mask[:,~blank]
-            if bitmask is not None: bitmask = bitmask[:,~blank]
-            if lsfpars is not None: lsfpars = lsfpars[:,~blank]
-            if lsfsigma is not None: lsfsigma = lsfsigma[:,~blank]
-            # Figure out orders
-            numpix,norder,dtype = self._info_from_input(flux)
-            badorders, = np.where(blank)
-            print('Removing blank order(s) '+','.join(np.char.array(badorders).astype(str)))
         self.numpix = numpix
         self.flux = self._merge_multiorder_data(flux,missing_value=0.0)
         if err is not None:
@@ -1184,11 +1167,6 @@ class Spec1D:
             newmask = None
         if self._cont is not None:
             newcont = self._cont.copy()
-            # Remove any blank orders, this is performed for the other
-            #  data when initializing Spec1D
-            blank = (np.sum(self.wave>0,axis=0) == 0)
-            if np.sum(blank)>0:
-                newcont = newcont[:,~blank]
             if newcont.ndim==2 and newcont.shape[1]==1:
                 newcont = newcont.flatten()
         else:
@@ -1217,6 +1195,8 @@ class Spec1D:
             self._cont = np.delete(self._cont,order,axis=1)
         self.lsf.wave = np.delete(self.lsf.wave,order,axis=1)
         self.lsf.pars = np.delete(self.lsf.pars,order,axis=1)
+        if self.lsf._sigma is not None:
+            self.lsf._sigma = np.delete(self.lsf._sigma,order,axis=1)
         self.numpix = np.delete(self.numpix,order)
 
     def add_order(self,norder=1):
@@ -1234,6 +1214,40 @@ class Spec1D:
                 setattr(self,p,new)
         self.numpix += norder*[0]
 
+    def remove_blank_orders(self,verbose=False):
+        """ Remove any blank orders """
+        blank = (self.numpix==0)
+        if np.sum(~blank)==0:
+            print('All orders are blank')
+            self.flux = np.array([],float)
+            if self.err is not None: self.err = np.array([],float)
+            self.wave = np.array([],float)
+            if self.mask is not None: self.mask = np.array([],bool)
+            if self.bitmask is not None: self.bitmask = np.array([],int)
+            if self._cont is not None: self._cont = np.array([],float)
+            if self.lsf.wave is not None: self.lsf.wave = np.array([],float)
+            if self.lsf.pars is not None: self.lsf.pars = np.array([],float)            
+            if self.lsf._sigma is not None: self.lsf._sigma = np.array([],float)
+            self.numpix = []
+            self.norder = 0
+        if np.sum(blank)>0:
+            for name in ['flux','err','wave','mask','bitmask','_cont']:
+                if hasattr(self,name) and getattr(self,name) is not None:
+                    val = getattr(self,name)
+                    val = val[:,~blank]
+                    if val.ndim==2 and val.shape[1]==1: val=val.flatten()
+                    setattr(self,name,val)
+            self.numpix = self.numpix[~blank]            
+            if self.lsf.wave is not None:
+                self.lsf.wave = self.lsf.wave[:,~blank]
+            if self.lsf.pars is not None:
+                self.lsf.pars = self.lsf.pars[:,~blank]                
+            if self.lsf._sigma is not None:
+                self.lsf._sigma = self.lsf._sigma[:,~blank]
+            badorders, = np.where(blank)
+            if verbose:
+                print('Removing blank order(s): '+','.join(np.char.array(badorders).astype(str)))
+        
     def append(self,newspec):
         """ Append a new spectrum to this one. Basically combining orders."""
         # Make sure the LSFs are compatible same lsftype and xtype

@@ -732,7 +732,10 @@ def specprep(spec):
         ngood = np.sum(~spec.mask)
         if ngood==0:
             raise ValueError('Entire spectrum is masked')
-            
+
+    # Remove any blank spectra
+    spec.remove_blank_orders(verbose=True)
+        
     # normalize spectrum
     if spec.normalized is False: spec.normalize()  
 
