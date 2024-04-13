@@ -280,6 +280,9 @@ class Spec1D:
                     numpix[i] = np.max(gdpix)+1
         # Remove any blank orders
         blank = (numpix==0)
+        if np.sum(~blank)==0:
+            print('All orders are blank')
+            return None
         if np.sum(blank)>0:
             if flux is not None: flux = flux[:,~blank]
             if err is not None: err = err[:,~blank]
