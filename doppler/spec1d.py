@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import copy
 from . import utils
 from .lsf import GaussianLsf, GaussHermiteLsf
+import traceback
 import dill as pickle
 try:
     import __builtin__ as builtins # Python 2
@@ -126,7 +127,7 @@ def continuum(spec,norder=6,perclevel=90.0,binsize=0.1,interp=True):
     # Flatten to 1D if norder=1
     if spec.norder==1:
         cont = cont.flatten()            
-
+        
     return cont
 
 
@@ -273,8 +274,24 @@ class Spec1D:
                 else:
                     gdpix, = np.where((wave>0) & np.isfinite(wave))                    
                 if len(gdpix)==0:
-                    raise ValueError('All masked pixels in order '+str(i))
-                numpix[i] = np.max(gdpix)+1
+                    warnings.warn('All masked pixels in order '+str(i))
+                    numpix[i] = 0
+                else:
+                    numpix[i] = np.max(gdpix)+1
+        # Remove any blank orders
+        blank = (numpix==0)
+        if np.sum(blank)>0:
+            if flux is not None: flux = flux[:,~blank]
+            if err is not None: err = err[:,~blank]
+            if wave is not None: wave = wave[:,~blank]
+            if mask is not None: mask = mask[:,~blank]
+            if bitmask is not None: bitmask = bitmask[:,~blank]
+            if lsfpars is not None: lsfpars = lsfpars[:,~blank]
+            if lsfsigma is not None: lsfsigma = lsfsigma[:,~blank]
+            # Figure out orders
+            numpix,norder,dtype = self._info_from_input(flux)
+            badorders, = np.where(blank)
+            print('Removing blank order(s) '+','.join(np.char.array(badorders).astype(str)))
         self.numpix = numpix
         self.flux = self._merge_multiorder_data(flux,missing_value=0.0)
         if err is not None:
@@ -756,7 +773,7 @@ class Spec1D:
                 self._cont = self._cont.copy()
             
         self._flux = self.flux.copy()  # Save the original
-
+        
         # Use the continuum_func to get the continuum
         cont = self.cont
         if hasattr(self,'err'):
@@ -1162,12 +1179,24 @@ class Spec1D:
             newmask = self.mask.copy()
         else:
             newmask = None
+        if self._cont is not None:
+            newcont = self._cont.copy()
+            # Remove any blank orders, this is performed for the other
+            #  data when initializing Spec1D
+            blank = (np.sum(self.wave>0,axis=0) == 0)
+            if np.sum(blank)>0:
+                newcont = newcont[:,~blank]
+            if newcont.ndim==2 and newcont.shape[1]==1:
+                newcont = newcont.flatten()
+        else:
+            newcont = None
         new = Spec1D(self.flux.copy(),err=newerr,wave=newwave,mask=newmask,
                      lsfpars=newlsfpars,lsftype=newlsf.lsftype,lsfxtype=newlsf.xtype,
                      lsfsigma=None,instrument=self.instrument,filename=self.filename)
+        new._cont = newcont
         new.lsf = newlsf  # make sure all parts of Lsf are copied over
         for name, value in vars(self).items():
-            if name not in ['flux','wave','err','mask','lsf','instrument','filename']:
+            if name not in ['flux','wave','err','mask','lsf','numpix','_cont','instrument','filename']:
                 if value is not None:
                     newvalue = copy.deepcopy(value)
                 else:
@@ -1242,7 +1271,7 @@ class Spec1D:
                 arr[0:newspec.npix,origsp.norder:] = new.copy()
             else:
                 new = None
-            # Set the new propery
+            # Set the new property
             if orig is not None and new is not None:
                 setattr(self,p,arr)
         # Deal with LSF stuff

@@ -770,11 +770,17 @@ class Lsf:
             numpix = np.zeros(norder,int)
             for i in range(norder):
                 gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
-                numpix[i] = np.max(gdpix)+1
+                if len(gdpix)>0:
+                    numpix[i] = np.max(gdpix)+1
+                else:
+                    numpix[i] = 0
             self.numpix = numpix
         else:
             gdpix, = np.where((wave>0) & np.isfinite(wave))
-            numpix = np.max(gdpix)+1
+            if len(gdpix)>0:
+                numpix = np.max(gdpix)+1
+            else:
+                numpix = 0
             self.numpix = [numpix]
         # Make sure pars are 2D
         self.pars = pars

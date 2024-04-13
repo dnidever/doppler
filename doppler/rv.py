@@ -3168,8 +3168,9 @@ def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
     lbounds = np.zeros(npar,float)+1e5
     ubounds = np.zeros(npar,float)-1e5
     for p in modlist[0]:
-        lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
-        ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
+        if p is not None:
+            lbounds[0:3] = np.minimum(lbounds[0:3],np.min(p.ranges,axis=1))
+            ubounds[0:3] = np.maximum(ubounds[0:3],np.max(p.ranges,axis=1))
     lbounds[3:] = -1000
     ubounds[3:] = 1000    
     bounds = (lbounds, ubounds)
@@ -3427,7 +3428,9 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
         else:
             if verbose is True:
                 print('Skipping: S/N=%6.1f below threshold of %6.1f.  Loading spectrum and preparing models.' % (spec.snr,snrcut))
-            modlist.append(cannon.models.copy().prepare(speclist[i]))
+            model = cannon.models.copy()
+            model.prepare(speclist[i])
+            modlist.append(model)
             sp = speclist[i].copy()
             sp = utils.specprep(sp)   # mask and normalize
             # Mask outliers
@@ -3439,7 +3442,6 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
             else:
                 info['bc'][i] = speclist[i].bc
         if verbose is True: print(' ')
-
         
     # Step 2) Find weighted stellar parameters
     if verbose is True: print('Step #2: Getting weighted stellar parameters')
@@ -3462,11 +3464,14 @@ def jointfit_cannon(speclist,models=None,mcmc=False,snrcut=10.0,saveplot=False,v
                 wtpars[i] = np.mean(p)
         # Sometimes the weighted stellar parameters are outside of the
         #  model range, e.g. Teff=25,000K and logg=1.60
-        testmod = modlist[0](wtpars[0:3])
+        if modlist is None or modlist[0] is None:
+            testmod = None
+        else:
+            testmod = modlist[0](wtpars[0:3])
         if testmod is None:
             print('Weighted parameters are outside model range.  Using best chisq values.')
-            bestind = np.argmin(info['chisq'])
-            wtpars = np.array([info[p][bestind] for p in pars])
+            bestind = np.nanargmin(info['chisq'])
+            wtpars = np.array([info[p][bestind] for p in pars])            
         if verbose is True:
             print('Initial weighted parameters are:')
             printpars(wtpars)
