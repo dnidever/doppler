@@ -1039,7 +1039,7 @@ class Spec1D:
             outflux = tempspec.flux[ind1:ind2+1]
             outwave = tempspec.wave[ind1:ind2+1]
             if hascont:
-                outcont = spec._cont[ind1:ind2+1]
+                outcont = tempspec._cont[ind1:ind2+1]
             if doerr:
                 outerr = tempspec.err[ind1:ind2+1]            
             
