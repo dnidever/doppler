@@ -576,7 +576,7 @@ def boss(filename):
     else:
         err = 1.0/np.sqrt(ivar)
         mask = np.zeros(flux.shape,bool)
-    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Wave')
+    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Pixels')
     spec.reader = 'boss'
     spec.lsf.clean()   # clean up some bad LSF values
     spec.filename = filename
