@@ -957,6 +957,72 @@ class Spec1D:
         ospec._child = True
         return ospec
 
+    def trim(self,w0,w1):
+        """
+        Trim the spectrum in wavelength.
+
+        Parameters
+        ----------
+        w0 : float
+           Lower wavelength (in Ang) to trim.
+        w1 : float
+           Upper wavelength (in Ang) to trim.
+
+        Returns
+        -------
+        Nothing is returned.  The spectrum is trimmed in place.
+
+        Examples
+        --------
+
+        spec.trim(5500.0,6500.0)
+
+        """
+
+        # Get number of pixels per 
+        ranges = np.zeros([self.norder,2],int)-1
+        ngood = np.zeros(self.norder,int)        
+        for o in range(self.norder):
+            if self.norder==1:
+                ind, = np.where((self.wave>=w0) & (self.wave<=w1))
+            else:
+                npix = self.numpix[o]
+                ind, = np.where((self.wave[:npix,o]>=w0) & (self.wave[:npix,o]<=w1))
+            ngood[o] = len(ind)
+            if len(ind)>0:
+                ranges[o,0] = ind[0]
+                ranges[o,1] = ind[-1]
+        # Check that we have some pixels
+        goodorder, = np.where(ngood>0)
+        if len(goodorder)==0:
+            raise ValueError('No pixels left')
+        # Remove blank orders
+        blankorder, = np.where(ngood==0)
+        if len(blankorder)>0:
+            self.remove_order(blankorder)
+        ranges = ranges[goodorder,:]
+        numpix = list(ranges[:,1]-ranges[:,0]+1)
+        npix = np.max(numpix)    # new npix        
+        if len(goodorder)==1:
+            ranges = ranges.flatten()
+        # Trim the remaining orders
+        default = {'flux':0.0,'err':1e30,'wave':0.0,'mask':True,'bitmask':0,'_cont':1.0}
+        for c in ['flux','err','wave','mask','bitmask','_cont']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                arr = getattr(self,c)
+                if self.norder==1:
+                    newarr = arr[ranges[0]:ranges[1]+1]
+                else:
+                    newarr = np.zeros([npix,self.norder],arr.dtype)
+                    newarr[:,:] = default[c]
+                    for o in range(self.norder):
+                        newvals = arr[ranges[o,0]:ranges[o,1]+1,o].copy()
+                        newarr[:len(newvals),o] = newvals
+                setattr(self,c,newarr)
+        self.numpix = numpix
+        # Trim the lsf
+        self.lsf.trim(w0,w1)
+            
     def prepare(self,spec,norm=None,continuum_func=None):
         """
         Return a copy of this (synthetic) spectrum convolved to the input LSF and wavelength arrays.
@@ -1187,18 +1253,17 @@ class Spec1D:
 
     def remove_order(self,order):
         """ Remove orders from spectrum."""
-        self.flux = np.delete(self.flux,order,axis=1)
-        self.err = np.delete(self.err,order,axis=1)
-        self.wave = np.delete(self.wave,order,axis=1)
-        self.mask = np.delete(self.mask,order,axis=1)
-        if self._cont is not None:
-            self._cont = np.delete(self._cont,order,axis=1)
-        self.lsf.wave = np.delete(self.lsf.wave,order,axis=1)
-        self.lsf.pars = np.delete(self.lsf.pars,order,axis=1)
-        if self.lsf._sigma is not None:
-            self.lsf._sigma = np.delete(self.lsf._sigma,order,axis=1)
+        for c in ['flux','err','wave','mask','bitmask','_cont']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                setattr(self,c,np.delete(getattr(self,c),order,axis=1))
+        self.lsf.remove_order(order)
         self.numpix = np.delete(self.numpix,order)
-
+        # Single order, use 1-D arrays
+        if self.norder==1:
+            for c in ['flux','err','wave','mask','_cont']:
+                if hasattr(self,c) and getattr(self,c) is not None:
+                    setattr(self,c,getattr(self,c).flatten())
+            
     def add_order(self,norder=1):
         """ Add blank orders to the spectrum."""
         props = ['flux','err','wave','mask','_cont']

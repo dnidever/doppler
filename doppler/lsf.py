@@ -762,9 +762,6 @@ class Lsf:
             norder = 1
         else:
             npix,norder = wave.shape        
-        self.ndim = wave.ndim
-        self.npix = npix
-        self.norder = norder        
         # Get number of pixels per order
         if self.norder>1 or wave.ndim==2:
             numpix = np.zeros(norder,int)
@@ -810,7 +807,6 @@ class Lsf:
         """ Returns the Gaussian array.  Must be defined by the subclass."""
         pass
 
-
     def __getitem__(self,index):
         """ Return a single order of the LSF object."""
 
@@ -834,7 +830,51 @@ class Lsf:
         olsf = Lsf(wave=wave,pars=pars,xtype=self.xtype,lsftype=self.lsftype,
                    sigma=sigma)
         return olsf
+
+    @property
+    def size(self):
+        """ Return number of total 'good' pixels (not including buffer pixels)."""
+        return np.sum(self.numpix)
+
+    @property
+    def ndim(self):
+        """ Return the number of dimensions."""
+        return self.wave.ndim
+
+    @property
+    def npix(self):
+        """ Return the number of pixels in each order."""
+        return self.shape[0]
     
+    @property
+    def norder(self):
+        """ Return the number of orders."""
+        if self.ndim==1:
+            return 1
+        else:
+            return self.shape[1]
+
+    def __len__(self):
+        return self.norder
+
+    @property
+    def shape(self):
+        return self.wave.shape
+    
+    @property
+    def wrange(self):
+        """ Wavelength range."""
+        wr = [np.inf,-np.inf]
+        if self.wave.ndim==1:
+            w = self.wave[0:self.numpix[0]]
+            wr = [np.min(w),np.max(w)]
+        else:
+            for i in range(self.norder):
+                w = self.wave[0:self.numpix[i],i]
+                wr[0] = np.min([wr[0],np.min(w)])
+                wr[1] = np.max([wr[1],np.max(w)])            
+        return wr
+        
     def wave2pix(self,w,extrapolate=True,order=0):
         """
         Convert wavelength values to pixels using the LSF's dispersion
@@ -974,8 +1014,22 @@ class Lsf:
         """ Create a new copy of this LSF object."""
         return copy.deepcopy(self)
 
+    def remove_order(self,order):
+        """ Remove orders from spectrum."""
+        for c in ['wave','pars','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                setattr(self,c,np.delete(getattr(self,c),order,axis=1))
+        self.numpix = np.delete(self.numpix,order)
+        # Single order, use 1-D arrays
+        if self.norder==1:
+            for c in ['wave','pars','_sigma']:
+                if hasattr(self,c) and getattr(self,c) is not None:
+                    setattr(self,c,getattr(self,c).flatten())
 
-
+    def trim(self):
+        """ Trim the LSF in wavelength."""
+        pass
+                        
 # Class for representing Gaussian LSFs
 class GaussianLsf(Lsf):
     """
@@ -1156,6 +1210,7 @@ class GaussianLsf(Lsf):
                             coef1 = dln.poly_fit(xin[0:10], _sigma[0:10], 1)
                             bd1, nbd1 = dln.where(x <0)
                             sig[bd1] = dln.poly(x[bd1],coef1)
+                        import pdb; pdb.set_trace()
                         # At the end
                         if (np.max(x)>(npix-1)):
                             coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 1)
@@ -1315,7 +1370,7 @@ class GaussianLsf(Lsf):
           The type of x-values input, either 'wave' or 'pixels'.  The default
           is 'pixels'.
         order : int, optional
-           The order for which to retrn the LSF array.  The default is 0.
+           The order for which to return the LSF array.  The default is 0.
         original : bool, optional
            If original=True, then the LSFs are returned on the original
            wavelength scale but at the centers given in "x".
@@ -1378,7 +1433,99 @@ class GaussianLsf(Lsf):
         # should I use gaussbin????
         return lsf
 
+    def trim(self,w0,w1):
+        """
+        Trim the LSF in wavelength.
 
+        Parameters
+        ----------
+        w0 : float
+           Lower wavelength (in Ang) to trim.
+        w1 : float
+           Upper wavelength (in Ang) to trim.
+
+        Returns
+        -------
+        Nothing is returned.  The spectrum is trimmed in place.
+
+        Examples
+        --------
+
+        lsf.trim(5500.0,6500.0)
+
+        """
+        # Get sigma, we might need this below
+        if self.xtype.lower().find('pix')>-1:
+            sigma = np.zeros(self.wave.shape,float)
+            for o in range(self.norder):
+                x = np.arange(self.numpix[o])
+                sigma[:self.numpix[o],o] = self.sigma(x,order=o)
+        else:
+            sigma = None
+        # Get number of pixels per order
+        ranges = np.zeros([self.norder,2],int)-1
+        ngood = np.zeros(self.norder,int)        
+        for o in range(self.norder):
+            if self.norder==1:
+                ind, = np.where((self.wave>=w0) & (self.wave<=w1))
+            else:
+                npix = self.numpix[o]
+                ind, = np.where((self.wave[:npix,o]>=w0) & (self.wave[:npix,o]<=w1))
+            ngood[o] = len(ind)
+            if len(ind)>0:
+                ranges[o,0] = ind[0]
+                ranges[o,1] = ind[-1]
+        # Check that we have some pixels
+        goodorder, = np.where(ngood>0)
+        if len(goodorder)==0:
+            raise ValueError('No pixels left')
+        # Remove blank orders
+        blankorder, = np.where(ngood==0)
+        for o in blankorder:
+            self.remove_order(o)
+        if sigma is not None:
+            sigma = sigma[:,goodorder]
+            if len(goodorder)==1:
+                sigma = sigma.flatten()
+        ranges = ranges[goodorder,:]
+        numpix = list(ranges[:,1]-ranges[:,0]+1)
+        npix = np.max(numpix)    # new npix  
+        if len(goodorder)==1:
+            ranges = ranges.flatten()
+        # Trim arrays
+        default = {'wave':0.0,'_sigma':0.0}
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                arr = getattr(self,c)
+                if self.norder==1:
+                    newarr = arr[ranges[0]:ranges[1]+1]
+                else:
+                    newarr = np.zeros([npix,self.norder],arr.dtype)
+                    newarr[:,:] = default[c]
+                    for o in range(self.norder):
+                        newvals = arr[ranges[o,0]:ranges[o,1]+1,o].copy()
+                        newarr[:len(newvals),o] = newvals
+                setattr(self,c,newarr)
+        self.numpix = numpix
+        if sigma is not None:
+            if self.norder==1:
+                sigma = sigma[ranges[0]:ranges[1]+1]
+            else:
+                for o in range(self.norder):
+                    newvals = sigma[ranges[o,0]:ranges[o,1]+1,o].copy()
+                    sigma[:len(newvals),o] = newvals
+        # Fix pars if using pixel-based values
+        #   xtype='Wave' is fine
+        if self.xtype.lower().find('pix')>-1:
+            for o in range(self.norder):
+                x = np.arange(self.numpix[o])
+                if self.norder==1:
+                    sigma1 = sigma[:self.numpix[o]]
+                else:
+                    sigma1 = sigma[:self.numpix[o],o]
+                coef = np.polyfit(x,sigma1,self.pars.shape[0]-1)
+                self.pars[:,o] = coef[::-1]
+        
 # Class for representing Gauss-Hermite LSFs
 class GaussHermiteLsf(Lsf):
     """
@@ -1655,3 +1802,38 @@ class GaussHermiteLsf(Lsf):
         # right, need to multiply by dx.
             
         return lsf
+
+    def trim(self,w0,w1):
+        """
+        Trim the LSF in wavelength.
+
+        Parameters
+        ----------
+        w0 : float
+           Lower wavelength (in Ang) to trim.
+        w1 : float
+           Upper wavelength (in Ang) to trim.
+
+        Returns
+        -------
+        Nothing is returned.  The spectrum is trimmed in place.
+
+        Examples
+        --------
+
+        lsf.trim(5500.0,6500.0)
+
+        """
+        raise NotImplementedError('trim not implemented yet for GaussHermiteLsf')
+        
+        # Trim arrays
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                if self.norder==1:
+                    setattr(self,c,getattr(self,c)[ranges[0]:ranges[1]+1])
+                else: 
+                    setattr(self,c,getattr(self,c)[ranges[0]:ranges[1]+1,o])
+        # Fix pars if using pixel-based values
+        #   xtype='Wave' is fine
+        if self.lsf.xtype.lower.find('pix')>-1:
+            import pdb; pdb.set_trace()
