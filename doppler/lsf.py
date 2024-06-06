@@ -1563,14 +1563,12 @@ class GaussianLsf(Lsf):
             raise IndexError('Index must be an integer, slice, or slice+integer')
 
         kwargs = {}
-        # Arrays
-        for c in ['wave','_sigma']:
-            if hasattr(self,c) and getattr(self,c) is not None:
-                if self.norder==1:
-                    kwargs[c] = getattr(self,c)[slc]
-                else:
-                    kwargs[c] = getattr(self,c)[slc,order]
-                if norder==1: kwargs[c] = kwargs[c].flatten()
+        if hasattr(self,'wave') and self.wave is not None:
+            if self.norder==1:
+                kwargs['wave'] = self.wave[slc]
+            else:
+                kwargs['wave'] = self.wave[slc,order]
+            if norder==1: kwargs['wave'] = kwargs['wave'].flatten()
         if hasattr(self,'pars') and self.pars is not None:
             if self.norder==1:
                 kwargs['pars'] = self.pars[:]
@@ -1581,7 +1579,14 @@ class GaussianLsf(Lsf):
             kwargs[c] = getattr(self,c)
         # Make the LSF   
         olsf = GaussianLsf(**kwargs)
-        
+        # Adding _sigma
+        if hasattr(self,'_sigma') and self._sigma is not None:
+            if self.norder==1:
+                olsf._sigma = self._sigma[slc]
+            else:
+                olsf._sigma = self._sigma[slc,order]
+            if norder==1: olsf._sigma = olsf._sigma.flatten()
+
         # Single-order pixel slicing, need to fix pars
         #   only if xtype=pixels and we have pars
         if (case==2 or case==4) and self.xtype.lower().find('pix')>-1 and hasattr(self,'pars'):
@@ -1962,22 +1967,29 @@ class GaussHermiteLsf(Lsf):
             raise IndexError('Index must be an integer, slice, or slice+integer')
 
         kwargs = {}
-        # Arrays
-        for c in ['wave','_sigma']:
-            if hasattr(self,c) and getattr(self,c) is not None:
-                if self.norder==1:
-                    kwargs[c] = getattr(self,c)[slc]
-                else:
-                    kwargs[c] = getattr(self,c)[slc,order]
-        if self.norder==1:
-            kwargs['pars'] = self.pars[:]
-        else:
-            kwargs['pars'] = self.pars[:,order]
+        if hasattr(self,'wave') and self.wave is not None:
+            if self.norder==1:
+                kwargs['wave'] = self.wave[slc]
+            else:
+                kwargs['wave'] = self.wave[slc,order]
+            if norder==1: kwargs['wave'] = kwargs['wave'].flatten()
+        if hasattr(self,'pars') and self.pars is not None:
+            if self.norder==1:
+                kwargs['pars'] = self.pars[:]
+            else:
+                kwargs['pars'] = self.pars[:,order]
         # Scalars
         for c in ['xtype','lsftype']:
             kwargs[c] = getattr(self,c)
         # Make the LSF   
         olsf = GaussHermiteLsf(**kwargs)
+        # Adding _sigma
+        if hasattr(self,'_sigma') and self._sigma is not None:
+            if self.norder==1:
+                olsf._sigma = self._sigma[slc]
+            else:
+                olsf._sigma = self._sigma[slc,order]
+            if norder==1: olsf._sigma = olsf._sigma.flatten()
         
         # Single-order pixel slicing, need to fix pars
         #   only if xtype=pixels and we have pars
