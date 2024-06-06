@@ -366,7 +366,6 @@ def gausshermitebin(x,par,binsize=1.0):
     
     return GHfunc
 
-
 def ghwingsbin(x,par,binsize=1.0,Wproftype=1):
     """This function returns profile wings with the APOGEE LSF or PSF.
 
@@ -1730,7 +1729,7 @@ class GaussHermiteLsf(Lsf):
             raise Exception("No LSF parameters")
         # Get parameters
         pars = self.pars
-        if self.ndim==2: pars=self.pars[:,order]
+        if pars.ndim==2: pars=self.pars[:,order]
         # Wavelengths input
         if xtype.lower().find('wave') > -1:
             w = x.copy()
@@ -1741,15 +1740,13 @@ class GaussHermiteLsf(Lsf):
         poly = np.polynomial.Polynomial(params['GHcoefs'][0])
         sigma = poly(x+params['Xoffset'])
         return sigma
-
     
     # Clean up bad LSF values
     def clean(self):
         """ Clean the LSF values.  This is not implemented for Gauss-Hermite LSF."""
         # No cleaning for now
         pass
-
-    
+   
     # Return full LSF values for the spectrum
     def array(self,order=None):
         """
@@ -1896,19 +1893,56 @@ class GaussHermiteLsf(Lsf):
         lsf.trim(5500.0,6500.0)
 
         """
-        raise NotImplementedError('trim not implemented yet for GaussHermiteLsf')
-        
+        # Get number of pixels per order
+        ranges = np.zeros([self.norder,2],int)-1
+        ngood = np.zeros(self.norder,int)        
+        for o in range(self.norder):
+            if self.norder==1:
+                ind, = np.where((self.wave>=w0) & (self.wave<=w1))
+            else:
+                npix = self.numpix[o]
+                ind, = np.where((self.wave[:npix,o]>=w0) & (self.wave[:npix,o]<=w1))
+            ngood[o] = len(ind)
+            if len(ind)>0:
+                ranges[o,0] = ind[0]
+                ranges[o,1] = ind[-1]
+        # Check that we have some pixels
+        goodorder, = np.where(ngood>0)
+        if len(goodorder)==0:
+            raise ValueError('No pixels left')
+        # Remove blank orders
+        blankorder, = np.where(ngood==0)
+        for o in blankorder:
+            self.remove_order(o)
+        ranges = ranges[goodorder,:]
+        numpix = list(ranges[:,1]-ranges[:,0]+1)
+        npix = np.max(numpix)    # new npix  
+        if len(goodorder)==1:
+            ranges = ranges.flatten()
         # Trim arrays
+        default = {'wave':0.0,'_sigma':0.0}
         for c in ['wave','_sigma']:
             if hasattr(self,c) and getattr(self,c) is not None:
+                arr = getattr(self,c)
                 if self.norder==1:
-                    setattr(self,c,getattr(self,c)[ranges[0]:ranges[1]+1])
-                else: 
-                    setattr(self,c,getattr(self,c)[ranges[0]:ranges[1]+1,o])
+                    newarr = arr[ranges[0]:ranges[1]+1]
+                else:
+                    newarr = np.zeros([npix,self.norder],arr.dtype)
+                    newarr[:,:] = default[c]
+                    for o in range(self.norder):
+                        newvals = arr[ranges[o,0]:ranges[o,1]+1,o].copy()
+                        newarr[:len(newvals),o] = newvals
+                setattr(self,c,newarr)
+        self.numpix = numpix
         # Fix pars if using pixel-based values
         #   xtype='Wave' is fine
-        if self.lsf.xtype.lower.find('pix')>-1:
-            import pdb; pdb.set_trace()
+        if self.xtype.lower().find('pix')>-1:
+            # Just shift the Xshift parameter
+            if self.norder==1:
+                self.pars[1,0] += ranges[0]
+            else:
+                for o in range(self.norder):
+                    self.pars[1,o] += ranges[o,0]
 
     def __getitem__(self,index):
         """ 
@@ -1975,9 +2009,9 @@ class GaussHermiteLsf(Lsf):
             if norder==1: kwargs['wave'] = kwargs['wave'].flatten()
         if hasattr(self,'pars') and self.pars is not None:
             if self.norder==1:
-                kwargs['pars'] = self.pars[:]
+                kwargs['pars'] = self.pars[:].copy()
             else:
-                kwargs['pars'] = self.pars[:,order]
+                kwargs['pars'] = self.pars[:,order].copy()
         # Scalars
         for c in ['xtype','lsftype']:
             kwargs[c] = getattr(self,c)
@@ -1994,11 +2028,7 @@ class GaussHermiteLsf(Lsf):
         # Single-order pixel slicing, need to fix pars
         #   only if xtype=pixels and we have pars
         if (case==2 or case==4) and self.xtype.lower().find('pix')>-1 and hasattr(self,'pars'):
-            # Temporary fix
-            # just evaluate the sigma, slice it and use that for _sigma
-            # refitting Gauss-Hermite parameters is hard
-            sigma1 = self.sigma(order=order)[slc]
-            olsf._sigma = sigma1
-            olsf.pars = None
-
+            # Just shift the Xshift parameter
+            olsf.pars[1,0] += slc[0]
+            
         return olsf
