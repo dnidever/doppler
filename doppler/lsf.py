@@ -1210,7 +1210,6 @@ class GaussianLsf(Lsf):
                             coef1 = dln.poly_fit(xin[0:10], _sigma[0:10], 1)
                             bd1, nbd1 = dln.where(x <0)
                             sig[bd1] = dln.poly(x[bd1],coef1)
-                        import pdb; pdb.set_trace()
                         # At the end
                         if (np.max(x)>(npix-1)):
                             coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 1)
