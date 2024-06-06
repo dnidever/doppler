@@ -808,28 +808,8 @@ class Lsf:
         pass
 
     def __getitem__(self,index):
-        """ Return a single order of the LSF object."""
-
-        if type(index) is not int:
-            raise IndexError('Index must be an integer')
-        if index>=self.norder:
-            raise IndexError('Index is too large')
-        # Single order, return self
-        if self.norder==1:
-            return self
-        slc = slice(0,self.numpix[index])
-        wave = self.wave[slc,index]
-        if self.pars is not None:
-            pars = self.pars[slc,index]
-        else:
-            pars = None
-        if self._sigma is not None:
-            sigma = self._sigma[slc,index]
-        else:
-            sigma = None
-        olsf = Lsf(wave=wave,pars=pars,xtype=self.xtype,lsftype=self.lsftype,
-                   sigma=sigma)
-        return olsf
+        """ Return a slice or subset of the LSF object."""
+        pass
 
     @property
     def size(self):
@@ -1221,6 +1201,7 @@ class GaussianLsf(Lsf):
         else:
             if x is None:
                 x = np.arange(self.npix)
+                xtype = 'Pixels'
             if self.pars is None:
                 raise Exception("No LSF parameters")
             # Get parameters
@@ -1524,7 +1505,94 @@ class GaussianLsf(Lsf):
                     sigma1 = sigma[:self.numpix[o],o]
                 coef = np.polyfit(x,sigma1,self.pars.shape[0]-1)
                 self.pars[:,o] = coef[::-1]
+
+    def __getitem__(self,index):
+        """ 
+        Return slice or subset of LSF object.
+
+        This returns a new GaussianLSF with arrays/attributes that are passed by REFERENCE.
+        This way you can modify the values in the returned object
+        and it will modify the original arrays.
+
+        There are four types of inputs
+        1) integer - returns a specific order
+        2) 1-D slice (single order) - return that slice of the data
+        3) 1-D slice (multiple orders) - return multiple orders using slice
+        4) 1-D slice + integer - returns slice of data for order index
+        """
+
+        # Single index requested
+        if isinstance(index,int):
+            case = 1
+            order = index
+            norder = 1
+            slc = slice(0,self.numpix[order])
+            if index>=self.norder:
+                raise IndexError('Index is too large')
+        # Slice
+        elif isinstance(index,slice):
+            # Single order
+            if self.norder==1:
+                case = 2
+                order = 0
+                norder = 1
+                slc = np.arange(self.numpix[order])[index]
+                #   this ensures that the slice returns the minimum size                
+            # Multiple orders
+            else:
+                case = 3
+                order = index
+                oindex = np.arange(self.norder)[order]
+                norder = len(oindex)
+                slc = slice(None,None,None)  # all
+                if norder==0:
+                    raise IndexError('Order index out of bounds for size '+str(self.norder))
+                # Want all of the orders
+                if norder==self.norder:
+                    return self
+        # Slice + index
+        elif isinstance(index,tuple):
+            case = 4
+            if isinstance(index[0],slice)==False or isinstance(index[1],int)==False:
+                raise IndexError('Must be slice + order index')
+            order = index[1]
+            slc = np.arange(self.numpix[order])[index[0]]
+            #   this ensures that the slice returns the minimum size
+            norder = 1
+        else:
+            raise IndexError('Index must be an integer, slice, or slice+integer')
+
+        kwargs = {}
+        # Arrays
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                if self.norder==1:
+                    kwargs[c] = getattr(self,c)[slc]
+                else:
+                    kwargs[c] = getattr(self,c)[slc,order]
+                if norder==1: kwargs[c] = kwargs[c].flatten()
+        if hasattr(self,'pars') and self.pars is not None:
+            if self.norder==1:
+                kwargs['pars'] = self.pars[:]
+            else:
+                kwargs['pars'] = self.pars[:,order]
+        # Scalars
+        for c in ['xtype','lsftype']:
+            kwargs[c] = getattr(self,c)
+        # Make the LSF   
+        olsf = GaussianLsf(**kwargs)
         
+        # Single-order pixel slicing, need to fix pars
+        #   only if xtype=pixels and we have pars
+        if (case==2 or case==4) and self.xtype.lower().find('pix')>-1 and hasattr(self,'pars'):
+            sigma1 = self.sigma(order=order)[slc]
+            x = np.arange(olsf.npix)
+            coef = np.polyfit(x,sigma1,len(self.pars.shape[:,0])-1)
+            olsf.pars[:,0] = coef[::-1]
+            
+        return olsf
+
+                
 # Class for representing Gauss-Hermite LSFs
 class GaussHermiteLsf(Lsf):
     """
@@ -1836,3 +1904,89 @@ class GaussHermiteLsf(Lsf):
         #   xtype='Wave' is fine
         if self.lsf.xtype.lower.find('pix')>-1:
             import pdb; pdb.set_trace()
+
+    def __getitem__(self,index):
+        """ 
+        Return slice or subset of LSF object.
+
+        This returns a new GaussHermiteLSF with arrays/attributes that are passed by REFERENCE.
+        This way you can modify the values in the returned object
+        and it will modify the original arrays.
+
+        There are four types of inputs
+        1) integer - returns a specific order
+        2) 1-D slice (single order) - return that slice of the data
+        3) 1-D slice (multiple orders) - return multiple orders using slice
+        4) 1-D slice + integer - returns slice of data for order index
+        """
+
+        # Single index requested
+        if isinstance(index,int):
+            case = 1
+            order = index
+            norder = 1
+            slc = slice(0,self.numpix[order])
+            if index>=self.norder:
+                raise IndexError('Index is too large')
+        # Slice
+        elif isinstance(index,slice):
+            # Single order
+            if self.norder==1:
+                case = 2
+                order = 0
+                norder = 1
+                slc = np.arange(self.numpix[order])[index]
+                #   this ensures that the slice returns the minimum size                
+            # Multiple orders
+            else:
+                case = 3
+                order = index
+                oindex = np.arange(self.norder)[order]
+                norder = len(oindex)
+                slc = slice(None,None,None)  # all
+                if norder==0:
+                    raise IndexError('Order index out of bounds for size '+str(self.norder))
+                # Want all of the orders
+                if norder==self.norder:
+                    return self
+        # Slice + index
+        elif isinstance(index,tuple):
+            case = 4
+            if isinstance(index[0],slice)==False or isinstance(index[1],int)==False:
+                raise IndexError('Must be slice + order index')
+            order = index[1]
+            slc = np.arange(self.numpix[order])[index[0]]
+            #   this ensures that the slice returns the minimum size
+            norder = 1
+        else:
+            raise IndexError('Index must be an integer, slice, or slice+integer')
+
+        kwargs = {}
+        # Arrays
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                if self.norder==1:
+                    kwargs[c] = getattr(self,c)[slc]
+                else:
+                    kwargs[c] = getattr(self,c)[slc,order]
+        if self.norder==1:
+            kwargs['pars'] = self.pars[:]
+        else:
+            kwargs['pars'] = self.pars[:,order]
+        # Scalars
+        for c in ['xtype','lsftype']:
+            kwargs[c] = getattr(self,c)
+        # Make the LSF   
+        olsf = GaussHermiteLsf(**kwargs)
+        
+        # Single-order pixel slicing, need to fix pars
+        #   only if xtype=pixels and we have pars
+        if (case==2 or case==4) and self.xtype.lower().find('pix')>-1 and hasattr(self,'pars'):
+            # Temporary fix
+            # just evaluate the sigma, slice it and use that for _sigma
+            # refitting Gauss-Hermite parameters is hard
+            sigma1 = self.sigma(order=order)[slc]
+            olsf._sigma = sigma1
+            olsf.pars = None
+
+        return olsf

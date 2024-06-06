@@ -366,11 +366,17 @@ class Spec1D:
     
     def __getitem__(self,index):
         """
-        Return a separate spectral order
+        Return a slice or subset of spectral orders
 
         This returns a new Spec1D with arrays/attributes that are passed by REFERENCE.
         This way you can modify the values in the returned object
         and it will modify the original arrays.
+
+        There are four types of inputs
+        1) integer - returns a specific order
+        2) 1-D slice (single order) - return that slice of the data
+        3) 1-D slice (multiple orders) - return multiple orders using slice
+        4) 1-D slice + integer - returns slice of data for order index
 
         For example,
         sp[0].flux[0] = 1000
@@ -382,42 +388,90 @@ class Spec1D:
         User-added SCALAR attributes will be passed on with this method, but ARRAY/LIST
         attributes will *NOT*.
         """
-        if type(index) is not int:
-            raise IndexError('Index must be an integer')
-        if index>=self.norder:
-            raise IndexError('Index is too large')
-        # Single order, return self
-        if self.norder==1:
-            return self
-        ## Only return good pixels with good wavelengths
-        #gdpix, = np.where((self.wave[:,index]>0) & np.isfinite(self.wave[:,index]))
-        #if len(gdpix)==0:
-        #    raise ValueError('All masked pixels')
-        # We want to use a slice because that returns the data by reference
+
+        # Four types of inputs
+        # 1) integer - returns a specific order
+        # 2) 1-D slice (single order) - return that slice of the data
+        # 3) 1-D slice (multiple orders) - return multiple orders using slice
+        # 4) 1-D slice + integer - returns slice of data for order index
+
+        # Single index requested
+        if isinstance(index,int):
+            case = 1
+            order = index
+            norder = 1
+            slc = slice(0,self.numpix[order])
+            if index>=self.norder:
+                raise IndexError('Index is too large')
+        # Slice
+        elif isinstance(index,slice):
+            # Single order
+            if self.norder==1:
+                case = 2
+                order = 0
+                norder = 1
+                slc = np.arange(self.numpix[order])[index]
+                #   this ensures that the slice returns the minimum size                
+            # Multiple orders
+            else:
+                case = 3
+                order = index
+                oindex = np.arange(self.norder)[order]
+                norder = len(oindex)
+                slc = slice(None,None,None)  # all
+                if norder==0:
+                    raise IndexError('Order index out of bounds for size '+str(self.norder))
+                # Want all of the orders
+                if norder==self.norder:
+                    return self
+        # Slice + index
+        elif isinstance(index,tuple):
+            case = 4
+            if isinstance(index[0],slice)==False or isinstance(index[1],int)==False:
+                raise IndexError('Must be slice + order index')
+            order = index[1]
+            slc = np.arange(self.numpix[order])[index[0]]
+            #   this ensures that the slice returns the minimum size
+            norder = 1
+        else:
+            raise IndexError('Index must be an integer, slice, or slice+integer')
+
+        # Use a slice because that returns the data by reference
         #   using an index will return the data by value
-        #slc = slice(np.min(gdpix),np.max(gdpix)+1)
-        #if len(gdpix) != len(self.wave[slc,index]):
-        #    raise ValueError('There are gaps in the spectrum')
-        slc = slice(0,self.numpix[index])
-        if self.err is not None:
-            err = self.err[slc,index]
+
+        if self.norder==1:
+            flux = self.flux[slc]
         else:
-            err = None
-        if self.bitmask is not None:
-            bitmask = self.bitmask[slc,index]
-        else:
-            bitmask = None
-        lsf = self.lsf[index]            
-        if lsf._sigma is not None:
-            lsfsigma = lsf._sigma
-        else:
-            lsfsigma = None
-        ospec = Spec1D(self.flux[slc,index],err=err,mask=self.mask[slc,index],wave=self.wave[slc,index],
-                       bitmask=bitmask,lsfpars=lsf.pars,lsftype=lsf.lsftype,
-                       lsfxtype=lsf.xtype,lsfsigma=lsfsigma,head=self.head,instrument=self.instrument,
-                       filename=self.filename,wavevac=self.wavevac)
+            flux = self.flux[slc,order]
+        if norder==1: flux = flux.flatten()
+        # keyword parameters
+        kwargs = {}
+        for c in ['err','wave','mask','bitmask']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                if self.norder==1:
+                    kwargs[c] = getattr(self,c)[slc]
+                else:
+                    kwargs[c] = getattr(self,c)[slc,order]
+                if norder==1: kwargs[c] = kwargs[c].flatten()
+        # LSF keyword parameters
+        lsf = self.lsf[index]
+        kwargs['lsfpars'] = lsf.pars
+        kwargs['lsftype'] = lsf.lsftype
+        kwargs['lsfxtype'] = lsf.xtype
+        kwargs['lsfsigma'] = lsf._sigma
+        # Other keywords
+        for c in ['head','instrument','filename','wavevac']:
+            kwargs[c] = getattr(self,c)
+            
+        # Make the spectrum
+        ospec = Spec1D(flux,**kwargs)
+        
+        # Add extras
         if hasattr(self,'_cont') and getattr(self,'_cont') is not None:
-            ospec._cont = self._cont[slc,index]
+            if self.norder==1:
+                ospec._cont = self._cont[slc]
+            else:
+                ospec._cont = self._cont[slc,order]                
         ospec._child = True
         if self.bc is not None:
             ospec.bc = self.bc
@@ -1070,7 +1124,7 @@ class Spec1D:
             
         # Make sure they are using the same type of wavelengths
         # Convert wavelength from air->vacuum or vice versa
-        tempspec.wavevac = spec.wavevac   # will automatically convert behind the scences
+        tempspec.wavevac = spec.wavevac   # will automatically convert behind the scenes
 
         # Initialize the output spectrum
         if lsf.wave.ndim==2:
@@ -1081,13 +1135,17 @@ class Spec1D:
         pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
                        wave=lsf.wave,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
         pspec.lsf = lsf.copy()
-        hascont = hasattr(spec,'_cont') and spec._cont is not None
+        hascont = hasattr(tempspec,'_cont') and tempspec._cont is not None
         if hascont:
             pspec._cont = np.zeros((npix,norder),np.float32)
             if norder==1:
                 pspec._cont = np.squeeze(pspec._cont)
         if continuum_func is not None:
             pspec.continuum_func = continuum_func
+
+        # Check that the requested wavelengths are covered
+        if self.wrange[0]>np.min(lsf.wave) or self.wrange[1]<np.max(lsf.wave):
+            raise ValueError('Requested wavelength range not fully covered')
             
         # Loop over orders
         wave = lsf.wave.copy()
