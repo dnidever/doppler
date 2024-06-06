@@ -1455,7 +1455,7 @@ class GaussianLsf(Lsf):
         """
         # Get sigma, we might need this below
         if self.xtype.lower().find('pix')>-1:
-            sigma = np.zeros(self.wave.shape,float)
+            sigma = np.zeros([self.npix,self.norder],float)
             for o in range(self.norder):
                 x = np.arange(self.numpix[o])
                 sigma[:self.numpix[o],o] = self.sigma(x,order=o)
@@ -1515,7 +1515,7 @@ class GaussianLsf(Lsf):
                     sigma[:len(newvals),o] = newvals
         # Fix pars if using pixel-based values
         #   xtype='Wave' is fine
-        if self.xtype.lower().find('pix')>-1:
+        if self.xtype.lower().find('pix')>-1 and hasattr(self,'pars') and self.pars is not None:
             for o in range(self.norder):
                 x = np.arange(self.numpix[o])
                 if self.norder==1:
