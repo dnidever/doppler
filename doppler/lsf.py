@@ -1137,12 +1137,12 @@ class GaussianLsf(Lsf):
         Parameters
         ----------
         x : array, optional
-          The x-values for which to return the Gaussian sigma values.
+           The x-values for which to return the Gaussian sigma values.
         xtype : string, optional
            The type of x-value input, either 'wave' or 'pixels'.  Default is 'pixels'.
         order : int, optional
-            The order to use if there are multiple orders.
-            The default is 0.
+           The order to use if there are multiple orders.
+           The default is 0.
         extrapolate : bool, optional
            Extrapolate beyond the dispersion solution, if necessary.
            True by default.
@@ -1150,8 +1150,8 @@ class GaussianLsf(Lsf):
         Returns
         -------
         sigma : array
-            The array of Gaussian sigma values.  The sigma values will
-             be in units of lsf.xtype.
+           The array of Gaussian sigma values.  The sigma values will
+           *always* be in units of lsf.xtype.
 
         Example
         -------
@@ -1196,7 +1196,7 @@ class GaussianLsf(Lsf):
                             sig[bd2] = dln.poly(x[bd2],coef2)
                     return sig
                         
-        # Need to calculate
+        # Need to calculate sigma from pars
         else:
             if x is None:
                 x = np.arange(self.npix)
