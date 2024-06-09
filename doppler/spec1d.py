@@ -1033,7 +1033,7 @@ class Spec1D:
 
         """
 
-        # Get number of pixels per 
+        # Get number of pixels per order
         ranges = np.zeros([self.norder,2],int)-1
         ngood = np.zeros(self.norder,int)        
         for o in range(self.norder):
@@ -1076,7 +1076,50 @@ class Spec1D:
         self.numpix = numpix
         # Trim the lsf
         self.lsf.trim(w0,w1)
-            
+
+    def rebin(self,nbin,mean=False):
+        """
+        Bin the data spectrally.
+        """
+        # Only keep complete bins and remove any excess
+        newnpix = self.npix//nbin
+        numpix = self.numpix.copy()
+        # Bin the data
+        default = {'flux':0.0,'err':1e30,'wave':0.0,'mask':True,'bitmask':0,'_cont':1.0}
+        for c in ['flux','err','wave','mask','bitmask','_cont']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                # Type of binning
+                kwargs = {'tot':False,'bitwiseor':False}                
+                if c in ['wave','mask']:
+                    kwargs['tot'] = False
+                elif c=='bitmask':
+                    kwargs['bitwiseor'] = True
+                elif c=='err':
+                    kwargs['tot'] = True
+                else:  # flux and _cont
+                    kwargs['tot'] = (not mean)
+                # Do the rebinning
+                arr = getattr(self,c)                
+                if self.norder==1:
+                    arr = np.atleast_2d(arr).T
+                newarr = np.zeros([newnpix,self.norder],arr.dtype)
+                newarr[:,:] = default[c]
+                for o in range(self.norder):
+                    arr1 = arr[:self.numpix[o],o]   # trim to good values
+                    if c=='err': arr1 = arr1**2
+                    newvals = dln.rebin(arr1,binsize=nbin,**kwargs)
+                    if c=='err':   # add err in quadrature
+                        newvals = np.sqrt(newvals)
+                        if mean: newvals /= nbin                            
+                    newarr[:len(newvals),o] = newvals
+                    numpix[o] = len(newvals)
+                if self.norder==1:
+                    newarr = newarr.flatten()
+                setattr(self,c,newarr)
+        self.numpix = numpix
+        # Bin the lsf
+        self.lsf.rebin(nbin,mean=mean)
+        
     def prepare(self,spec,norm=None,continuum_func=None):
         """
         Return a copy of this (synthetic) spectrum convolved to the input LSF and wavelength arrays.

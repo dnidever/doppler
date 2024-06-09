@@ -188,9 +188,6 @@ def gausshermitebin(x,par,binsize=1.0):
     
     nx = x.shape[0]
     npar = par.shape[1]
-
-    #import pdb; pdb.set_trace()
-
     
     # HH hermite polynomials
     # GHfunc  the output value
@@ -720,6 +717,70 @@ def unpack_ghlsf_params(lsfarr):
     out['Wcoefs'] = Wcoefs
     return out
 
+def repack_ghlsf_params(params):
+    """
+    Repack the APOGEE Gauss-Hermite LSF dictionary into the parameter array.
+
+    Parameters
+    ----------
+    params : dictionary
+        Dictionary with unpacked parameters and parameter values: 
+          binsize: The width of a pixel in X-units
+          Xoffset: An additive x-offset; used for GH parameters that vary globally
+          Horder: The highest Hermite order
+          Porder: Polynomial order array for global variation of each LSF parameter
+          GHcoefs: Polynomial coefficients for sigma and the Horder Hermite parameters
+          Wproftype: Wing profile type
+          nWpar: Number of wing parameters
+          WPorder: Polynomial order for the global variation of each wing parameter          
+          Wcoefs: Polynomial coefficients for the wings parameters
+
+    Returns
+    -------
+    lsfarr : array
+        Array of APOGEE Gauss-Hermite LSF parameters.
+
+    Examples
+    --------
+    .. code-block:: python
+
+         lsfarr = repack_ghlsf_params(params)
+
+    """
+    
+    # If 2D then iterate over orders and return list
+    if type(params) is list:
+        out = []
+        for p in params:
+            out.append(repack_ghlsf_params(p))
+        out = np.array(out).T
+        return out
+
+    # Process single chip parameter dictionary
+    lsfarr = np.array([],float)
+    # binsize: The width of a pixel in X-units
+    lsfarr = np.append(lsfarr,params['binsize'])
+    # X0: An additive x-offset; used for GH parameters that vary globally
+    lsfarr = np.append(lsfarr,params['Xoffset'])
+    # Horder: The highest Hermite order
+    lsfarr = np.append(lsfarr,params['Horder'])
+    # Porder: Polynomial order array for global variation of each LSF parameter
+    lsfarr = np.append(lsfarr,params['Porder'])
+    # GHcoefs: Polynomial coefficients for sigma and the Horder Hermite parameters
+    for i in range(len(params['Porder'])):
+        ghcoef = params['GHcoefs'][i,:]
+        lsfarr = np.append(lsfarr,ghcoef[:params['Porder'][i]+1])
+    # Wproftype: Wing profile type
+    lsfarr = np.append(lsfarr,params['Wproftype'])
+    # nWpar: Number of wing parameters
+    lsfarr = np.append(lsfarr,params['nWpar'])
+    # WPorder: Polynomial order for the global variation of each wing parameter
+    lsfarr = np.append(lsfarr,params['WPorder'])
+    # Wcoefs: Polynomial coefficients for the wings parameters
+    for i in range(len(params['WPorder'])):
+        wcoef = params['Wcoefs'][i,:]
+        lsfarr = np.append(lsfarr,wcoef[:params['WPorder'][i]+1])
+    return lsfarr
 
 # Base class for representing LSF (line spread function)
 class Lsf:
@@ -1008,7 +1069,11 @@ class Lsf:
     def trim(self):
         """ Trim the LSF in wavelength."""
         pass
-                        
+
+    def rebin(self,nbin):
+        """ Rebin the data."""
+        pass
+    
 # Class for representing Gaussian LSFs
 class GaussianLsf(Lsf):
     """
@@ -1505,6 +1570,64 @@ class GaussianLsf(Lsf):
                 coef = np.polyfit(x,sigma1,self.pars.shape[0]-1)
                 self.pars[:,o] = coef[::-1]
 
+    def rebin(self,nbin,mean=False):
+        """
+        Rebin the LSF information in the spectral dimension.
+
+        Parameters
+        ----------
+        nbin : int
+            Integer number of pixels to bin.
+        mean : bool, optional
+            Take the mean instead of the default sum.
+
+        Returns
+        -------
+        Nothing is returned.  The spectrum is rebinned in place.
+
+        Examples
+        --------
+
+        lsf.rebin(2)
+
+        """
+        # Only keep complete bins and remove any excess
+        newnpix = self.npix//nbin
+        numpix = self.numpix.copy()        
+        # Bin the data
+        default = {'wave':0.0,'_sigma':0.0}
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                arr = getattr(self,c)
+                if self.norder==1:
+                    arr = np.atleast_2d(arr).T
+                # Use mean for both wave and _sigma
+                newarr = np.zeros([newnpix,self.norder],arr.dtype)
+                newarr[:,:] = default[c]
+                for o in range(self.norder):
+                    arr1 = arr[:self.numpix[o],o]  # trim to good values
+                    newvals = dln.rebin(arr1,binsize=nbin)
+                    if c=='_sigma' and self.xtype.lower().find('pix')>-1:
+                        newvals /= nbin    # reduce for new binsize
+                    newarr[:len(newvals),o] = newvals
+                    numpix[o] = len(newvals)
+                if self.norder==1:
+                    newarr = newarr.flatten()
+                setattr(self,c,newarr)
+        self.numpix = numpix
+        # Fix pars if using pixel-based values
+        #   xtype='Wave' is fine
+        if self.xtype.lower().find('pix')>-1 and hasattr(self,'pars') and self.pars is not None:
+            # Since we are going from X -> X/nbin
+            # we need to scale the polynomial coefficients
+            # c0 -> c0
+            # c1 -> c1*nbin
+            # c2 -> c2*nbin**2
+            for i in range(self.pars.shape[0]):
+                self.pars[i,:] *= nbin**i
+            # Reduce sigma since our pixels are getting larget
+            self.pars /= nbin
+        
     def __getitem__(self,index):
         """ 
         Return slice or subset of LSF object.
@@ -1570,7 +1693,7 @@ class GaussianLsf(Lsf):
             if norder==1: kwargs['wave'] = kwargs['wave'].flatten()
         if hasattr(self,'pars') and self.pars is not None:
             if self.norder==1:
-                kwargs['pars'] = self.pars[:]
+                kwargs['pars'] = self.pars[:,0]
             else:
                 kwargs['pars'] = self.pars[:,order]
         # Scalars
@@ -1944,6 +2067,86 @@ class GaussHermiteLsf(Lsf):
                 for o in range(self.norder):
                     self.pars[1,o] += ranges[o,0]
 
+    def rebin(self,nbin,mean=False):
+        """
+        Rebin the LSF information in the spectral dimension.
+
+        Parameters
+        ----------
+        nbin : int
+            Integer number of pixels to bin.
+        mean : bool, optional
+            Take the mean instead of the default sum.
+
+        Returns
+        -------
+        Nothing is returned.  The spectrum is rebinned in place.
+
+        Examples
+        --------
+
+        lsf.rebin(2)
+
+        """
+        # Only keep complete bins and remove any excess
+        newnpix = self.npix//nbin
+        numpix = self.numpix.copy()
+        oldnumpix = self.numpix.copy()
+        # Bin the data
+        default = {'wave':0.0,'_sigma':0.0}
+        for c in ['wave','_sigma']:
+            if hasattr(self,c) and getattr(self,c) is not None:
+                arr = getattr(self,c)
+                if self.norder==1:
+                    arr = np.atleast_2d(arr).T
+                # Use mean for both wave and _sigma
+                newarr = np.zeros([newnpix,self.norder],arr.dtype)
+                newarr[:,:] = default[c]
+                for o in range(self.norder):
+                    arr1 = arr[:self.numpix[o],o]  # trim to good values
+                    newvals = dln.rebin(arr1,binsize=nbin)
+                    if c=='_sigma' and self.xtype.lower().find('pix')>-1:
+                        newvals /= nbin    # reduce for new binsize
+                    newarr[:len(newvals),o] = newvals
+                    numpix[o] = len(newvals)
+                if self.norder==1:
+                    newarr = newarr.flatten()
+                setattr(self,c,newarr)
+        self.numpix = numpix
+        # Fix pars if using pixel-based values
+        #   xtype='Wave' is fine
+        if self.xtype.lower().find('pix')>-1:
+            # apogee_drp apdithercomb.pro does something similar
+            pardict = unpack_ghlsf_params(self.pars)            
+            for o in range(self.norder):
+                params = pardict[o]
+                newparams = params.copy()
+                newparams['binsize'] *= nbin
+                newparams['Xoffset'] /= nbin
+                # The Gauss-Hermite coefficients:
+                # [sigma, H0, H1, H2, H3, H4, ...] up to H9.
+                # Since we're changing X -> X/nbin we need to scale the
+                # polynomial coefficients depending on their power
+                # c0 -> c0
+                # c1 -> c1*nbin
+                # c2 -> c2*nbin**2   and so on
+                # GHcoefs is [GH parameter, Polynomial order]
+                #  skip 1st, constant them
+                for i in np.arange(1,np.max(params['Porder'])+1):
+                    # change all GH parameters of the ith order
+                    #   if they are zero, nothing will cahnge
+                    newparams['GHcoefs'][:,i] *= nbin**i
+                # Reduce GH sigma (1st parameter) since our pixels are getting larger
+                newparams['GHcoefs'][0,:] /= nbin
+                # Same for wing parameters
+                for i in np.arange(1,np.max(params['WPorder'])+1):
+                    newparams['Wcoefs'][:,i] *= nbin**i
+                # Reduce wing sigma (1st parameter) since our pixels are getting larger
+                newparams['Wcoefs'][0,:] /= nbin
+                pardict[o] = newparams
+            lsfarr = repack_ghlsf_params(pardict)
+            self.pars = lsfarr
+                
     def __getitem__(self,index):
         """ 
         Return slice or subset of LSF object.
