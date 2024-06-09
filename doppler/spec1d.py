@@ -220,7 +220,7 @@ def combine(speclist,wave=None,sum=False):
 
 
 # Object for representing 1D spectra
-class Spec1D:
+class Spec1D(object):
     """
     A class to represent 1D spectra.
 
@@ -259,60 +259,87 @@ class Spec1D:
 
     
     # Initialize the object
-    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,lsftype='Gaussian',
-                 lsfxtype='Wave',lsfsigma=None,instrument=None,filename=None,wavevac=True):
+    def __init__(self,flux,err=None,wave=None,mask=None,bitmask=None,head=None,lsfpars=None,
+                 lsftype='Gaussian',lsfxtype='Wave',lsfsigma=None,instrument=None,
+                 filename=None,wavevac=True):
         """ Initialize Spec1D object."""
+        # Add everything to kw dictionary
+        kw = {'flux':flux,'err':err,'wave':wave,'mask':mask,'bitmask':bitmask,
+              'head':head,'lsfpars':lsfpars,'lsftype':lsftype,'lsfxtype':lsfxtype,
+              'lsfsigma':lsfsigma,'instrument':instrument,'filename':filename,
+              'wavevac':wavevac}
+        # Spec1D object input, overwrite defaults in kw
+        if isinstance(flux,Spec1D):
+            sp = flux
+            kw['flux'] = None
+            for k in kw.keys():
+                # LSF attributes
+                if k.startswith('lsf') and hasattr(sp,'lsf'):
+                    klsf = k[3:]
+                    if klsf=='sigma': klsf='_sigma'
+                    if hasattr(sp.lsf,klsf):
+                        kw[k] = getattr(sp.lsf,klsf)
+                # Spec1D attributes
+                else:
+                    if hasattr(sp,k):
+                        kw[k] = getattr(sp,k)
+            # Get LSF class name
+            for k in lsfclass.keys():
+                if sp.lsf.__class__ == lsfclass[k]:
+                    kw['lsftype'] = k
         # If norder==1, then all arrays will be 1-D.
         # Figure out orders
-        numpix,norder,dtype = self._info_from_input(flux)
+        numpix,norder,dtype = self._info_from_input(kw['flux'])
         # Check the wavelengths for masked pixels if a 2D array was input
-        if wave is not None and type(wave) is np.ndarray:
+        if kw['wave'] is not None and type(kw['wave']) is np.ndarray:
             numpix = np.zeros(norder,int)
             for i in range(norder):
                 if norder>1 or wave.ndim==2:
-                    gdpix, = np.where((wave[:,i]>0) & np.isfinite(wave[:,i]))
+                    gdpix, = np.where((kw['wave'][:,i]>0) & np.isfinite(kw['wave'][:,i]))
                 else:
-                    gdpix, = np.where((wave>0) & np.isfinite(wave))                    
+                    gdpix, = np.where((kw['wave']>0) & np.isfinite(kw['wave']))                    
                 if len(gdpix)==0:
                     warnings.warn('All masked pixels in order '+str(i))
                     numpix[i] = 0
                 else:
                     numpix[i] = np.max(gdpix)+1
         self.numpix = numpix
-        self.flux = self._merge_multiorder_data(flux,missing_value=0.0)
-        if err is not None:
-            self.err = self._merge_multiorder_data(err,missing_value=1e30)
+        self.flux = self._merge_multiorder_data(kw['flux'],missing_value=0.0)
+        if kw['err'] is not None:
+            self.err = self._merge_multiorder_data(kw['err'],missing_value=1e30)
             if self.err.shape != self.flux.shape:
                 raise ValueError('Error and Flux array sizes do not match')
         else:
-            self.err = err
-        if wave is not None:
-            self.wave = self._merge_multiorder_data(wave,missing_value=0.0)
+            self.err = kw['err']
+        if kw['wave'] is not None:
+            self.wave = self._merge_multiorder_data(kw['wave'],missing_value=0.0)
             if self.wave.shape != self.flux.shape:
                 raise ValueError('Wave and Flux array sizes do not match')            
         else:
-            self.wave = wave
-        if mask is not None:
-            self.mask = self._merge_multiorder_data(mask,missing_value=True)
+            self.wave = kw['wave']
+        if kw['mask'] is not None:
+            self.mask = self._merge_multiorder_data(kw['mask'],missing_value=True)
             if self.mask.shape != self.flux.shape:
                 raise ValueError('Mask and Flux array sizes do not match')            
-        if mask is None:
-            self.mask = np.zeros(flux.shape,bool)
+        if kw['mask'] is None:
+            self.mask = np.zeros(kw['flux'].shape,bool)
             if norder==1:
                 self.mask = np.squeeze(self.mask)
-        if bitmask is not None:
-            self.bitmask = self._merge_multiorder_data(bitmask,missing_value=0)
+        if kw['bitmask'] is not None:
+            self.bitmask = self._merge_multiorder_data(kw['bitmask'],missing_value=0)
             if self.bitmask.shape != self.flux.shape:
                 raise ValueError('Bitmask and Flux array sizes do not match')
         else:
-            self.bitmask = bitmask
-        self.head = head
-        if lsftype.lower() not in lsfclass.keys():
-            raise ValueError(lsftype+' not supported yet')
-        self.lsf = lsfclass[lsftype.lower()](wave=wave,pars=lsfpars,xtype=lsfxtype,lsftype=lsftype,sigma=lsfsigma)
-        self.instrument = instrument
-        self.filename = filename
-        self._wavevac = wavevac
+            self.bitmask = kw['bitmask']
+        self.head = kw['head']
+        if kw['lsftype'].lower() not in lsfclass.keys():
+            raise ValueError(kw['lsftype']+' not supported yet')
+        self.lsf = lsfclass[kw['lsftype'].lower()](wave=kw['wave'],pars=kw['lsfpars'],
+                                                   xtype=kw['lsfxtype'],lsftype=kw['lsftype'],
+                                                   sigma=kw['lsfsigma'])
+        self.instrument = kw['instrument']
+        self.filename = kw['filename']
+        self._wavevac = kw['wavevac']
         self.normalized = False
         self.continuum_func = continuum
         self._cont = None
@@ -1176,7 +1203,7 @@ class Spec1D:
             npix = len(lsf.wave)
             norder = 1
         pspec = Spec1D(np.zeros((npix,norder),np.float32),err=np.zeros((npix,norder),np.float32),
-                       wave=lsf.wave,lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
+                       wave=lsf.wave.copy(),lsftype=lsf.lsftype,lsfxtype=lsf.xtype)
         pspec.lsf = lsf.copy()
         hascont = hasattr(tempspec,'_cont') and tempspec._cont is not None
         if hascont:
@@ -1226,6 +1253,7 @@ class Spec1D:
             # need at least ~4 pixels per LSF FWHM across the spectrum
             #  using 3 affects the final profile shape
             nbin = np.round(np.min(fwhmpix)//4).astype(int)
+            print('prepare:',np.median(fwhm/2.35),nbin)
             
             if np.min(fwhmpix) < 3.7:
                 cmt = 'Synthetic spectrum has lower resolution than the desired output spectrum. Only '
