@@ -754,21 +754,14 @@ class Spec1D(object):
 
              x = spec.wave2pix(w)
 
-        """
-        
+        """        
         if self.wave is None:
             raise Exception("No wavelength information")
-        return utils.w2p(self[order].wave,w,extrapolate=extrapolate)        
-        #if self.wave.ndim==2:
-        #    # Order is always the second dimension
-        #    return utils.w2p(self.wave[:,order],w,extrapolate=extrapolate)            
-        #else:
-        #    return utils.w2p(self.wave,w,extrapolate=extrapolate)
-
+        return utils.w2p(self[order].wave,w,assume_sorted=False,extrapolate=extrapolate)        
         
     def pix2wave(self,x,extrapolate=True,order=0):
         """
-        Convert pixel values to wavelengths using the spectrum dispersion
+        Convert pixel values to wavelengths using the spectrum wavelength
         solution.
 
         Parameters
@@ -776,7 +769,7 @@ class Spec1D(object):
         x : array
           Array of pixel values to convert.
         extrapolate : bool, optional
-           Extrapolate beyond the boundaries of the dispersion solution,
+           Extrapolate beyond the boundaries of the wavelength solution,
            if necessary.  True by default.
         order : int, optional
             The order to use if there are multiple orders.
@@ -793,17 +786,57 @@ class Spec1D(object):
 
              w = spec.pix2wave(x)
 
-        """
-        
+        """        
         if self.wave is None:
             raise Exception("No wavelength information")
-        return utils.p2w(self[order].wave,x,extrapolate=extrapolate)        
-        #if self.wave.ndim==2:
-        #     # Order is always the second dimension
-        #    return utils.p2w(self.wave[:,order],x,extrapolate=extrapolate)
-        #else:
-        #    return utils.p2w(self.wave,x,extrapolate=extrapolate)            
+        return utils.p2w(self[order].wave,x,assume_sorted=False,extrapolate=extrapolate)        
 
+    def dispersion(self,x=None,xtype='pixels',extrapolate=True,order=0):
+        """
+        Wavelength dispersion or step (delta wavelength) at a given pixel
+        or wavelength.  This is *always* positive.
+
+        Parameters
+        ----------
+        x : array, optional
+           Array of pixel values at which to return the dispersion.
+           Default is to return the values for all pixels.
+        xtype : str, optional
+           The type of x-value in put (either 'wave' or 'pixels').  The default
+           is 'pixels'.
+        extrapolate : bool, optional
+           Extrapolate beyond the boundaries of the wavelength solution,
+           if necessary.  True by default.
+        order : int, optional
+           The order to use if there are multiple orders.
+           The default is 0.
+              
+        Returns
+        -------
+        dw : array
+           The array of wavelengths dispersion/gradient values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             dw = spec.dispersion(x)
+
+        """        
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        wave = self[order].wave
+        dwave = np.abs(np.gradient(wave))
+        if x is None:
+            return dwave
+        if xtype.lower().find('pix')>-1:
+            abscissa = np.arange(len(wave))
+        else:
+            abscissa = x
+        dw = dln.interp(abscissa,dwave,x,kind='quadratic',assume_sorted=False,
+                        extrapolate=extrapolate,exporder=1)
+        if np.array(x).ndim==0: dw=dw[0]
+        return dw
         
     def normalize(self,**kwargs):
         """
@@ -826,7 +859,6 @@ class Spec1D(object):
              spec.normalize()
 
         """
-
         if self.normalized is True:
             return
 
@@ -1247,13 +1279,13 @@ class Spec1D(object):
             #  convert FWHM (A) in number of model pixels at those positions
             dwmod = dln.slope(outwave)
             dwmod = np.hstack((dwmod,dwmod[-1]))
-            xpmod = dln.interp(outwave,np.arange(len(outwave)),wobs[xp],kind='cubic',assume_sorted=False,extrapolate=True)
+            xpmod = dln.interp(outwave,np.arange(len(outwave)),wobs[xp],kind='cubic',
+                               assume_sorted=False,extrapolate=True)
             xpmod = np.round(xpmod).astype(int)
             fwhmpix = np.abs(fwhm/dwmod[xpmod])
             # need at least ~4 pixels per LSF FWHM across the spectrum
             #  using 3 affects the final profile shape
             nbin = np.round(np.min(fwhmpix)//4).astype(int)
-            print('prepare:',np.median(fwhm/2.35),nbin)
             
             if np.min(fwhmpix) < 3.7:
                 cmt = 'Synthetic spectrum has lower resolution than the desired output spectrum. Only '
@@ -1270,21 +1302,19 @@ class Spec1D(object):
                 if hascont:
                     outcont = dln.rebin(outcont[0:npix2*nbin],npix2)
                 if doerr:
-                    outerr = dln.rebin(outerr[0:npix2*nbin],npix2)                
+                    outerr = np.sqrt(dln.rebin(outerr[0:npix2*nbin]**2,npix2))
                 
             # Convolve
             lsf2d = lsf.anyarray(outwave,xtype='Wave',order=o,original=False)
             cflux = utils.convolve_sparse(outflux,lsf2d)
             if doerr:
-                cerr = utils.convolve_sparse(outerr,lsf2d)
+                cerr = np.sqrt(utils.convolve_sparse(outerr**2,lsf2d))
             # Interpolate onto final wavelength array
             flux = dln.interp(outwave,cflux,wobs,extrapolate=False,assume_sorted=False)
             if hascont:
                 cont = dln.interp(outwave,outcont,wobs,extrapolate=False,assume_sorted=False)
             if doerr:
                 err = dln.interp(outwave,cerr,wobs,extrapolate=False,assume_sorted=False)            
-            #flux = synple.interp_spl(wobs, outwave, cflux)
-            #cont = synple.interp_spl(wobs, outwave, outcont)
             if norder>1:
                 pspec.flux[0:len(flux),o] = flux
                 if hascont:

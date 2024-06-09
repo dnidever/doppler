@@ -842,10 +842,10 @@ class Lsf:
         # Make sure pars are 2D
         self.pars = pars
         if pars is not None:
-            if pars.ndim==1:
+            if np.array(pars).ndim==1:
                 self.pars = np.atleast_2d(pars).T   # 2D with order dimension at 2nd
             else:
-                self.pars = pars
+                self.pars = np.array(pars)
         self.lsftype = lsftype
         self.xtype = xtype
         # Make sure sigma is 2D
@@ -985,15 +985,56 @@ class Lsf:
         
         if self.wave is None:
             raise Exception("No wavelength information")
-        if self.ndim==2:
-             # Order is always the second dimension
-            wave = self.wave[:,order]
-        else:
-            wave = self.wave
-        gdwave, = np.where((wave>0) & np.isfinite(wave))
-        return utils.p2w(wave[gdwave],x,extrapolate=extrapolate)        
+        return utils.p2w(self[order].wave,x,assume_sorted=False,extrapolate=extrapolate)
 
+    def dispersion(self,x=None,xtype='pixels',extrapolate=True,order=0):
+        """
+        Wavelength dispersion or step (delta wavelength) at a given pixel
+        or wavelength.  This is *always* positive.
+
+        Parameters
+        ----------
+        x : array
+           Array of pixel values at which to return the dispersion
+        xtype : str, optional
+           The type of x-value in put (either 'wave' or 'pixels').  The default
+           is 'pixels'.
+        extrapolate : bool, optional
+           Extrapolate beyond the boundaries of the wavelength solution,
+           if necessary.  True by default.
+        order : int, optional
+           The order to use if there are multiple orders.
+           The default is 0.
+              
+        Returns
+        -------
+        dw : array
+           The array of wavelengths dispersion/gradient values.
+
+        Example
+        -------
+        .. code-block:: python
+
+             dw = lsf.dispersion(x)
+
+        """
         
+        if self.wave is None:
+            raise Exception("No wavelength information")
+        wave = self[order].wave
+        dwave = np.abs(np.gradient(wave))
+        if x is None:
+            return dwave
+        if xtype.lower().find('pix')>-1:
+            abscissa = np.arange(len(wave))
+        else:
+            abscissa = x
+        dw = dln.interp(abscissa,dwave,x,kind='quadratic',assume_sorted=False,
+                        extrapolate=extrapolate,exporder=1)
+        if np.array(x).ndim==0: dw=dw[0]
+        return dw
+
+    
     # Return FWHM at some positions
     def fwhm(self,x=None,xtype='pixels',order=0):
         """
@@ -1419,7 +1460,7 @@ class GaussianLsf(Lsf):
            If original=True, then the LSFs are returned on the original
            wavelength scale but at the centers given in "x".
            If the LSF is desired on a completely new wavelength scale
-           (given by "x"), then orignal=False should be used instead.
+           (given by "x"), then original=False should be used instead.
 
         Returns
         -------
@@ -1435,7 +1476,7 @@ class GaussianLsf(Lsf):
         """
 
         nx = len(x)
-        # returns xsigma in units of self.xtype not necessarily xtype
+        # returns xsigma in units of self.xtype (NOTE: not necessarily *input* xtype)
         xsigma = self.sigma(x,xtype=xtype,order=order)
         
         # Get wavelength and pixel arrays
@@ -1458,6 +1499,17 @@ class GaussianLsf(Lsf):
                 dw = np.hstack((dw,dw[-1]))            
             xsigma = wsigma / dw
 
+        # Convert sigma from original pixels to new
+        #  wavelength/pixel scale, if necessary
+        else:
+            # New wavelength/pixel scale
+            if original==False:
+                origdw = self.dispersion(x,xtype='pixels',order=order)
+                #w1 = self.pix2wave(np.array(x)+1,order=order)
+                #origdw = np.abs(w1-w)
+                newdw = np.abs(np.gradient(w))
+                xsigma *= origdw / newdw
+            
         # Figure out nLSF pixels needed, +/-3 sigma
         nlsf = int(np.round(np.max(xsigma)*6))
         if nlsf % 2 == 0: nlsf+=1                   # must be odd
@@ -1693,7 +1745,10 @@ class GaussianLsf(Lsf):
             if norder==1: kwargs['wave'] = kwargs['wave'].flatten()
         if hasattr(self,'pars') and self.pars is not None:
             if self.norder==1:
-                kwargs['pars'] = self.pars[:,0]
+                if np.array(self.pars).ndim==2:
+                    kwargs['pars'] = self.pars[:,0]
+                else:
+                    kwargs['pars'] = self.pars
             else:
                 kwargs['pars'] = self.pars[:,order]
         # Scalars
