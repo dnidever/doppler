@@ -278,11 +278,11 @@ class Spec1D(object):
                     klsf = k[3:]
                     if klsf=='sigma': klsf='_sigma'
                     if hasattr(sp.lsf,klsf):
-                        kw[k] = getattr(sp.lsf,klsf)
+                        kw[k] = copy.deepcopy(getattr(sp.lsf,klsf))
                 # Spec1D attributes
                 else:
                     if hasattr(sp,k):
-                        kw[k] = getattr(sp,k)
+                        kw[k] = copy.deepcopy(getattr(sp,k))
             # Get LSF class name
             for k in lsfclass.keys():
                 if sp.lsf.__class__ == lsfclass[k]:
