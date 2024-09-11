@@ -71,7 +71,8 @@ def w2p(dispersion,w,extrapolate=True):
          x = w2p(disp,w)
 
     """
-    x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(w)
+    x = interp1d(dispersion,np.arange(len(dispersion)),kind='cubic',bounds_error=False,
+                 fill_value=(np.nan,np.nan),assume_sorted=False)(w)
     # Need to extrapolate
     if ((np.min(w)<np.min(dispersion)) | (np.max(w)>np.max(dispersion))) & (extrapolate is True):
         win = dispersion
@@ -125,7 +126,8 @@ def p2w(dispersion,x,extrapolate=True):
     """
 
     npix = len(dispersion)
-    w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,fill_value=(np.nan,np.nan),assume_sorted=False)(x)
+    w = interp1d(np.arange(len(dispersion)),dispersion,kind='cubic',bounds_error=False,
+                 fill_value=(np.nan,np.nan),assume_sorted=False)(x)
     # Need to extrapolate
     if ((np.min(x)<0) | (np.max(x)>(npix-1))) & (extrapolate is True):
         xin = np.arange(npix)

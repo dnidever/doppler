@@ -985,7 +985,7 @@ class Lsf:
         
         if self.wave is None:
             raise Exception("No wavelength information")
-        return utils.p2w(self[order].wave,x,assume_sorted=False,extrapolate=extrapolate)
+        return utils.p2w(self[order].wave,x,extrapolate=extrapolate)
 
     def dispersion(self,x=None,xtype='pixels',extrapolate=True,order=0):
         """
