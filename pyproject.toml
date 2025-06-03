@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+#requires = ["hatchling"]
+#build-backend = "hatchling.build"
+
+[project]
+name = "doppler"
+version = "1.1.19"
+dependencies = [
+  "scipy",
+  "numpy",
+  "matplotlib",
+  "astropy",
+  "dill",
+  "dlnpyutils",
+  "emcee",
+  "corner",
+  "annieslasso",
+  "gdown",
+]
+requires-python = ">=3.9"
+#requires-python = ">=3.11"
+authors = [
+  {name = "David Nidever", email = "dnidever@montana.edu"},
+]
+maintainers = [
+  {name = "David Nidever", email = "dnidever@montana.edu"}
+]
+description = "Generic Radial Velocity Software"
+readme = "README.rst"
+license = {file = "LICENSE"}
+keywords = ["spectra", "radial velocity", "stars"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python"
+]
+
+[project.optional-dependencies]
+gui = ["PyQt5"]
+cli = [
+  "rich",
+  "click",
+]
+
+[project.urls]
+#Homepage = "https://example.com"
+Documentation = "https://doppler.readthedocs.org"
+Repository = "https://github.com/dnidever/doppler"
+#Issues = "https://github.com/dnidever/doppler/issues"
+#Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
