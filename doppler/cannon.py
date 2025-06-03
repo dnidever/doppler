@@ -1411,7 +1411,7 @@ def interp_cannon_model(model,xout=None,wout=None):
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
-        
+
     return omodel
 
 
@@ -1482,7 +1482,7 @@ def convolve_cannon_model(model,lsf):
         # Copy continuum information
         if hasattr(model,'continuum'):
             omodel.continuum = cannon_copy(model.continuum)
-        
+
     return omodel
 
 
@@ -1644,7 +1644,7 @@ def prepare_cannon_model(model,spec,dointerp=False):
           #  # Copy continuum information
           #  if hasattr(model,'continuum'):
           #      omodel.continuum = cannon_copy(model.continuum)
-          
+
             # Append to final output
             outmodel.append(omodel)
 

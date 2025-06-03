@@ -1032,6 +1032,17 @@ class Lsf:
         dw = dln.interp(abscissa,dwave,x,kind='quadratic',assume_sorted=False,
                         extrapolate=extrapolate,exporder=1)
         if np.array(x).ndim==0: dw=dw[0]
+        # fix negative values when extrapolating
+        if extrapolate:
+            bad = (dw < 0)
+            if np.sum(bad)>0:
+                # set to values on the ends
+                bdlo, = np.where(x < abscissa[0])
+                if len(bdlo)>0:
+                    dw[bdlo] = dwave[0]
+                bdhi, = np.where(x > abscissa[-1])
+                if len(bdhi)>0:
+                    dw[bdhi] = dwave[-1]
         return dw
 
     
@@ -1300,6 +1311,7 @@ class GaussianLsf(Lsf):
                             coef2 = dln.poly_fit(xin[npix-10:], _sigma[npix-10:], 1)
                             bd2, nbd2 = dln.where(x > (npix-1))
                             sig[bd2] = dln.poly(x[bd2],coef2)
+
                     return sig
                         
         # Need to calculate sigma from pars
