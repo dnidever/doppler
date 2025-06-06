@@ -451,30 +451,28 @@ def apstar(filename):
     dw = np.float64(head1["CDELT1"])
     nw = head1["NAXIS1"]
     wave = 10**(np.arange(nw)*dw+w0)
-        
+
+    # ONLY load the FIRST combined spectrum
+    
     # flux, err, sky, skyerr are in units of 1e-17
-    flux = hdulist[1].data.T * 1e-17
-    import pdb; pdb.set_trace()
-    lsfcoef = hdulist[8].data.T
-    #flux = fits.getdata(filename,1).T * 1e-17
-    lsfcoef = fits.getdata(filename,8).T
+    flux = hdulist[1].data[0] * 1e-17
+    lsfcoef = hdulist[8].data
     spec = Spec1D(flux,wave=wave,lsfpars=lsfcoef,lsftype='Gauss-Hermite',lsfxtype='Pixels')
     spec.reader = 'apstar'
     spec.filename = filename
     spec.sptype = "apStar"
     spec.waveregime = "NIR"
     spec.instrument = "APOGEE"
-    spec.head = fits.getheader(filename,0)
-    spec.err = fits.getdata(filename,2).T * 1e-17
+    spec.head = header
+    spec.err = hdulist[2].data[0] * 1e-17
     #bad = (spec.err<=0)   # fix bad error values
     #if np.sum(bad) > 0:
     #    spec.err[bad] = 1e30
-    spec.bitmask = fits.getdata(filename,3)
-    spec.sky = fits.getdata(filename,4).T * 1e-17
-    spec.skyerr = fits.getdata(filename,5).T * 1e-17
-    spec.telluric = fits.getdata(filename,6).T
-    spec.telerr = fits.getdata(filename,7).T
-    spec.lsf = fits.getdata(filename,8).T
+    spec.bitmask = hdulist[3].data[0]
+    spec.sky = hdulist[4].data[0] * 1e-17
+    spec.skyerr = hdulist[5].data[0] * 1e-17
+    spec.telluric = hdulist[6].data[0]
+    spec.telerr = hdulist[7].data[0]
     # Create the bad pixel mask
     # "bad" pixels:
     #   flag = ['BADPIX','CRPIX','SATPIX','UNFIXABLE','BADDARK','BADFLAT','BADERR','NOSKY',
@@ -486,20 +484,23 @@ def apstar(filename):
     x = np.arange(spec.npix)
     nsky = 4
     medsky = median_filter(spec.sky,201,mode='reflect')
-    medcoef = dln.poly_fit(x,medsky/np.median(medsky),2)
+    medsky[~np.isfinite(medsky)] = 0.0
+    mmedsky = np.nanmedian(medsky)
+    if mmedsky==0:
+        mmedsky = 1.0
+    medcoef = dln.poly_fit(x,(medsky/mmedsky),2)
     medsky2 = dln.poly(x,medcoef)*np.median(medsky)
-    skymask1 = (sky>nsky*medsky2)    # pixels Nsig above median sky
-    mask[:,i] = np.logical_or(mask[:,i],skymask1)    # OR combine
+    skymask1 = (spec.sky>nsky*medsky2)     # pixels Nsig above median sky
+    mask = np.logical_or(mask,skymask1)    # OR combine
     spec.mask = mask
     # Fix NaN or bad pixels pixels
-    bd,nbd = dln.where( (np.isfinite(spec.flux[:,i])==False) | (spec.err[:,i] <= 0.0) )
+    bd,nbd = dln.where( (np.isfinite(spec.flux)==False) | (spec.err <= 0.0) )
     if nbd>0:
         spec.flux[bd] = 0.0
         spec.err[bd] = 1e30
         spec.mask[bd] = True
     if nhdu>=9:
-        spec.meta = fits.getdata(filename,9)    # meta-data
-    #spec.snr = spec.head["SNR"]
+        spec.meta = hdulist[9].data    # meta-data
     if base.find("apStar") > -1:
         spec.observatory = 'apo'
     else:
