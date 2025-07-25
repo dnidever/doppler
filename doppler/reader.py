@@ -565,6 +565,16 @@ def boss(filename):
     flux = tab1["flux"].data
     wave = 10**tab1["loglam"].data
     wdisp = tab1["wdisp"].data
+    lsfsigma = wdisp
+    lsfxtype = 'Pixels'
+    # Use WRESL by default
+    if 'wresl' in tab1.colnames:
+        gd, = np.where((tab1['wresl'].data > 0) & np.isfinite(tab1['wresl'].data))
+        if len(gd)==0:
+            print('No good values in WRESL. Using WDISP instead')
+        else:
+            lsfsigma = tab1["wresl"].data / 2.35
+            lsfxtype = 'Wave'
     # checking for zeros in IVAR
     ivar = tab1["ivar"].data.copy()
     bad = (ivar<=0)
@@ -577,7 +587,7 @@ def boss(filename):
     else:
         err = 1.0/np.sqrt(ivar)
         mask = np.zeros(flux.shape,bool)
-    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=wdisp,lsfxtype='Pixels')
+    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=lsfsigma,lsfxtype=lsfxtype)
     spec.reader = 'boss'
     spec.lsf.clean()   # clean up some bad LSF values
     spec.filename = filename
