@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doppler"
-version = "1.1.21"
+version = "1.1.22"
 dependencies = [
   "scipy",
   "numpy",
