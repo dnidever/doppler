@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 68.2.2"]
 build-backend = "setuptools.build_meta"
 #requires = ["hatchling"]
 #build-backend = "hatchling.build"
 
 [project]
-name = "doppler"
-version = "1.1.22"
+name = "thedoppler"
+version = "1.1.23"
 dependencies = [
   "scipy",
   "numpy",
