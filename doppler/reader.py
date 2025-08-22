@@ -15,6 +15,7 @@ import warnings
 import astropy
 from astropy.io import fits
 from astropy.table import Table
+from astropy.time import Time
 from scipy.ndimage.filters import median_filter
 from dlnpyutils import utils as dln, bindata
 import dill as pickle
@@ -587,7 +588,8 @@ def boss(filename):
     else:
         err = 1.0/np.sqrt(ivar)
         mask = np.zeros(flux.shape,bool)
-    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=lsfsigma,lsfxtype=lsfxtype)
+    spec = Spec1D(flux,err=err,wave=wave,mask=mask,lsfsigma=lsfsigma,
+                  lsfxtype=lsfxtype,wavevac=True)
     spec.reader = 'boss'
     spec.lsf.clean()   # clean up some bad LSF values
     spec.filename = filename
@@ -597,6 +599,8 @@ def boss(filename):
     if head.get('DATE-OBS') is None:
         if head.get('INTSTART') is not None:
             head['DATE-OBS'] = head['INTSTART']
+    if head.get('DATE-OBS') is None and 'mjd_final' in cat1.colnames:
+        head['DATE-OBS'] = Time(cat1['mjd_final'][0],format='mjd').isot
     spec.head = head
     spec.ivar = tab1["ivar"].data
     spec.bitmask = tab1["or_mask"].data
@@ -609,8 +613,24 @@ def boss(filename):
     # What are the units?
     if 'sn_median_all' in np.char.array(tab1.colnames).lower():
         spec.snr = cat1["sn_median_all"].data[0]
-    spec.observatory = 'apo'
-    spec.wavevac = True
+    # coordinates
+    if 'racat' in cat1.colnames and 'deccat' in cat1.colnames:
+        spec.ra = cat1['racat'][0]
+        spec.dec = cat1['deccat'][0]
+        spec.head['RA'] = cat1['racat'][0]
+        spec.head['DEC'] = cat1['deccat'][0]
+    else:
+        if spec.head.get('RA') is not None:
+            spec.ra = spec.head.get('RA')
+            spec.dec = spec.head.get('DEC')
+        elif spec.head.get('PLUG_RA') is not None:
+            spec.ra = spec.head.get('PLUG_RA')
+            spec.dec = spec.head.get('PLUG_DEC')
+    spec.observatory = None
+    if spec.head.get('observat') is not None:
+        spec.observatory = spec.head.get('observat').strip().lower()
+    if spec.observatory is None:
+        spec.observatory = 'apo'
     return spec        
 
     
