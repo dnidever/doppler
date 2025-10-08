@@ -144,7 +144,7 @@ def read(filename=None,format=None):
     else:
         head = fits.getheader(filename)
         if head.get('SPECTYPE')=='SPEC1D':
-            out = spec1d(filename)
+            out = spectrum1d(filename)
             datacheck(out)
             if out is not None: return out
             
@@ -163,7 +163,7 @@ def read(filename=None,format=None):
 
 
 # read spectrum written with Spec1D.write()
-def spec1d(filename):
+def spectrum1d(filename):
     """
     Read a Doppler written spectrum.
 
@@ -180,7 +180,7 @@ def spec1d(filename):
     Examples
     --------
     
-    spec = spec1d('spec.fits')
+    spec = spectrum1d('spec.fits')
 
     """
 
@@ -950,4 +950,4 @@ def iraf(filename):
 
 # List of readers
 _readers = {'apvisit':apvisit, 'apstar':apstar, 'boss':boss, 'mastar':mastar, 'iraf':iraf,
-            'spec1d':spec1d, 'imacs':imacs, 'hydra':hydra}
+            'spec1d':spectrum1d, 'imacs':imacs, 'hydra':hydra}
