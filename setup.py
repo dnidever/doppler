@@ -8,7 +8,7 @@ from setuptools import setup, find_packages
 pypiname = 'thedoppler'
 
 setup(name="thedoppler",
-      version='1.1.24',
+      version='1.1.25',
       description='Generic Radial Velocity Software',
       author='David Nidever',
       author_email='dnidever@montana.edu',
