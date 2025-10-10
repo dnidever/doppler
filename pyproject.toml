@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 #build-backend = "hatchling.build"
 
 [project]
-name = "thedoppler"
-version = "1.1.26"
+name = "doppler"
+version = "1.1.28"
 dependencies = [
   "scipy",
   "numpy",
