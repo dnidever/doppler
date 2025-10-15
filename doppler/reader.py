@@ -142,12 +142,12 @@ def read(filename=None,format=None):
         if out is not None: return out
     # Check if it's spec1d
     else:
-        head = fits.getheader(filename)
+        head = fits.getheader(filename,verify='fix')
         if head.get('SPECTYPE')=='SPEC1D':
             out = spectrum1d(filename)
             datacheck(out)
             if out is not None: return out
-            
+
     # Loop over all readers until we get a spectrum out
     for k in _readers.keys():
         try:
@@ -187,7 +187,7 @@ def spectrum1d(filename):
     base, ext = os.path.splitext(os.path.basename(filename))
 
     # Get number of extensions
-    hdu = fits.open(filename)
+    hdu = fits.open(filename,verify='fix')
     
     # Check that this has the right format
     if hdu[0].header['SPECTYPE'] != 'SPEC1D':
@@ -289,7 +289,7 @@ def apvisit(filename):
     base, ext = os.path.splitext(os.path.basename(filename))
 
     # Get number of extensions
-    hdulist = fits.open(filename)
+    hdulist = fits.open(filename,verify='fix')
     nhdu = len(hdulist)
     hdulist.close()
     
@@ -404,7 +404,7 @@ def apstar(filename):
     base, ext = os.path.splitext(os.path.basename(filename))
 
     # Get number of extensions
-    hdulist = fits.open(filename)
+    hdulist = fits.open(filename,verify='fix')
     header = hdulist[0].header
     nhdu = len(hdulist)
 
@@ -538,7 +538,7 @@ def boss(filename):
     base, ext = os.path.splitext(os.path.basename(filename))
 
     # Get number of extensions
-    hdulist = fits.open(filename)
+    hdulist = fits.open(filename,verify='fix')
     nhdu = len(hdulist)
     hdulist.close()
     
@@ -659,7 +659,7 @@ def mastar(filename):
     base, ext = os.path.splitext(os.path.basename(filename))
 
     # Get number of extensions
-    hdulist = fits.open(filename)
+    hdulist = fits.open(filename,verify='fix')
     nhdu = len(hdulist)
     hdulist.close()
     
@@ -741,7 +741,7 @@ def imacs(filename):
     # BANDID1 = 'spectrum: background median, weights variance, clean yes' /          
     # BANDID2 = 'sigma - background median, weights variance, clean yes' /            
     # BANDID3 = 'mask - 0:good, 1:bad' / 
-    data,head = fits.getdata(filename,0,header=True)
+    data,head = fits.getdata(filename,0,header=True,verify='fix')
     ndim = data.ndim
     # often the 2nd dimension is unnecessary, e.g. [3, 1, 1649]
     if (ndim==3):
@@ -806,7 +806,7 @@ def hydra(filename):
     # BANDID1 = 'spectrum: background median, weights variance, clean yes' /          
     # BANDID2 = 'sigma - background median, weights variance, clean yes' /            
     # BANDID3 = 'mask - 0:good, 1:bad' / 
-    data,head = fits.getdata(filename,0,header=True)
+    data,head = fits.getdata(filename,0,header=True,verify='fix')
     ndim = data.ndim
     # often the 2nd dimension is unnecessary, e.g. [3, 1, 1649]
     if (ndim==3):
@@ -903,7 +903,7 @@ def iraf(filename):
     #BANDID2 = 'spectrum: background fit, weights none, clean no'                    
     #BANDID3 = 'background: background fit'                                          
     #BANDID4 = 'sigma - background fit, weights variance, clean no'  
-    data,head = fits.getdata(filename,0,header=True)
+    data,head = fits.getdata(filename,0,header=True,verify='fix')
     ndim = data.ndim
     if ndim==2: 
         npix,norder = data.shape
