@@ -1474,10 +1474,11 @@ def fit_lsq_payne(spec,model=None,initpar=None,fitparams=None,fixparams={},verbo
 
     if nfixparams>0:
         all_labels = fitparams+list(fixparams.keys())
-        all_pars = lspars + list(fixparams.values())
+        all_pars = np.concatenate((lspars, np.array(list(fixparams.values()))))
     else:
         all_labels = fitparams
         all_pars = lspars
+
     bestlabels = model.mklabels(dict(zip(all_labels,all_pars)))    
     lsmodel = model(bestlabels)
     
@@ -1841,6 +1842,8 @@ def fit_payne(spectrum,model=None,fitparams=None,fixparams={},estimates=None,
     fchisq = finechisq
     finput = dict(zip(fitparams,fpars.copy()))
     finput['RV'] = finerv
+    if nfixparams>0:
+        finput = finput | fixparams   # merge the dictionaries
     flabels = model.mklabels(finput)
     fmodel = model(flabels)
     
