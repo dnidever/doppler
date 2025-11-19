@@ -586,7 +586,7 @@ def make_logwave_scale(wave,vel=1000.0):
 
         # logarithmic step
         gdwave, = np.where((wave>0) & np.isfinite(wave))
-        dwlog = np.median(np.gradient(np.log10(np.float64(wave[gdwave]))))
+        dwlog = np.median(np.abs(np.gradient(np.log10(np.float64(wave[gdwave])))))
         
         # extend at the ends
         if vel>0:
@@ -606,8 +606,9 @@ def make_logwave_scale(wave,vel=1000.0):
         fwave = 10**( (np.arange(nf)-nlo)*dwlog+np.log10(np.float64(wr[0])) )
 
         # Make sure the element that's associated with the first input wavelength is identical
-        fwave -= fwave[nlo]-wave[0]
-    
+        indlow, = np.where(wave==wr[0])
+        fwave -= fwave[nlo]-wave[indlow]
+        
     # w=10**(w0log+i*dwlog)
     return fwave
 
