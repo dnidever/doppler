@@ -657,14 +657,22 @@ class Spec1D(object):
             else:
                 return data.shape[1]*[data.shape[0]],data.shape[1],data.dtype
         else:
-            raise ValueError('Data type '+type(data)+' not supported')
+            # Try converting it to a numpy array
+            try:
+                newdata = np.array(data)
+                if newdata.ndim==1:
+                    return [newdata.size],1,newdata.dtype
+                else:
+                    return newdata.shape[1]*[newdata.shape[0]],newdata.shape[1],newdata.dtype
+            except:
+                raise ValueError('Data type '+str(type(data))+' not supported')
         
     def _merge_multiorder_data(self,data,missing_value=None):
         """ Combine multi-order data into a single array with buffer (if necessary)."""
         numpix,norder,dtype = self._info_from_input(data)
         npix = np.max(numpix)
-        if norder==1 or type(data) is np.ndarray:
-            out = data
+        if norder==1 or isinstance(data,np.ndarray):
+            out = np.array(data)  # make sure it's np.ndarray, for astropy columns
         else:
             # list or tuple
             out = np.zeros((npix,norder),dtype)
@@ -866,7 +874,7 @@ class Spec1D(object):
         if self._child:
             warnings.warn('Normalizing a child single-order Spec1D object.  Making copies of flux/err')
             self.flux = self.flux.copy()
-            if hasattr(self,'err'):
+            if hasattr(self,'err') and self.err is not None:
                 self.err = self.err.copy()            
             if self._cont is not None:
                 self._cont = self._cont.copy()
@@ -875,7 +883,7 @@ class Spec1D(object):
         
         # Use the continuum_func to get the continuum
         cont = self.cont
-        if hasattr(self,'err'):
+        if hasattr(self,'err') and self.err is not None:
             self.err /= cont
         self.flux /= cont
         self.cont = cont
