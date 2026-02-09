@@ -3271,6 +3271,11 @@ def multifit_lsq_cannon(speclist,modlist,initpar=None,verbose=False):
         flux[cnt:cnt+npx] = sp.flux.T.flatten()
         err[cnt:cnt+npx] = sp.err.T.flatten()
         cnt += npx
+
+    # Fix bad error values                                                                                                  
+    bd, = np.where((np.isfinite(err)==False) | (err <= 0.0))
+    if len(bd)>0:
+        err[bd] = 1e30
         
     # Use curve_fit
     diff_step = np.zeros(npar,float)
